@@ -1,0 +1,1707 @@
+
+SixtyFour AI Documentation home pagedark logo
+
+Search or ask...
+⌘K
+Support
+Dashboard
+
+Resources
+Documentation
+GitHub
+Blog
+Get Started
+Welcome to SixtyFour
+Enrichment API
+Introduction
+Search
+Enrich company
+Enrich lead
+Find email
+Inbound Tool
+API Reference
+Getting Started with Inbound API
+Google sheets
+Starter Notebooks
+Find leads on small and medium businesses
+Get Started
+Welcome to SixtyFour
+Learn how to use SixtyFour’s APIs to improve your sales research pipelines.
+
+Hero Dark
+​
+Get Started
+Discover the full range of features and capabilities.
+
+Inbound Tool
+Immediately enirch inbound leads and get notifications if they fit your ICP.
+
+Enrichment API
+Extract any piece of information about a company or person.
+
+Introduction
+On this page
+Get Started
+SixtyFour AI Documentation home pagedark logo
+Dashboard
+Pricing
+Documentation
+Blog
+About
+Contact
+x
+github
+Powered by Mintlify
+
+
+
+Welcome to SixtyFour - SixtyFour AI Documentation
+
+
+
+
+Documentation
+GitHub
+Blog
+Get Started
+Welcome to SixtyFour
+Enrichment API
+Introduction
+Search
+Enrich company
+Enrich lead
+Find email
+Inbound Tool
+API Reference
+Getting Started with Inbound API
+Google sheets
+Starter Notebooks
+Find leads on small and medium businesses
+Enrichment API
+Introduction
+Welcome to the official Sixtyfour API reference documentation.
+
+​
+Sixtyfour API Documentation
+Welcome to the Sixtyfour API documentation. This API allows you to find and enrich business data, including company information and contact details.
+
+
+All API requests require an API key, which should be included in the x-api-key header along with the Content-Type header set to application/json:
+
+
+Copy
+x-api-key: your_api_key_here
+Content-Type: application/json
+​
+Base URL
+All API endpoints are available at:
+
+
+Copy
+https://api.sixtyfour.ai
+​
+Rate Limits
+The API is rate limited to 10000 requests per hour per API key when you initially create your account, but let us know if you need more.
+
+​
+Endpoints
+The API provides the following endpoints:
+
+Search for Businesses - Find businesses based on natural language queries
+Enrich Company Data - Enrich company data with additional information and find associated people
+Find Email Address - Find email addresses for leads
+Enrich Lead Information - Enrich lead information with additional details such as contact information, social profiles, and company details
+​
+Error Handling
+All errors return a JSON response with the following structure:
+
+
+Copy
+{
+  "error": "Error Type",
+  "message": "Detailed error message"
+}
+​
+Getting Started
+To get started with the Sixtyfour API:
+
+Sign up at https://app.sixtyfour.ai
+Get your API key from the dashboard
+Make your first API request using one of the example code snippets in the endpoint documentation
+​
+Support
+For support, please contact team@sixtyfour.ai
+
+Welcome to SixtyFour
+
+
+Search
+​
+Search for Businesses
+Note: This endpoint is currently in beta. The API response format and behavior may change in future releases.
+
+Search for businesses based on natural language queries.
+
+​
+Endpoint
+
+Copy
+POST /search
+​
+Request
+​
+Headers
+Name	Type	Required	Description
+x-api-key	string	Yes	Your Sixtyfour API key
+Content-Type	string	Yes	Must be application/json
+​
+Body
+Field	Type	Required	Description
+search_query	string	Yes	Natural language description of businesses to find
+struct	object	Yes	Fields to collect for each business
+​
+Example Request
+
+Copy
+{
+  "search_query": "Find me all photographers in La Jolla, California",
+  "struct": {
+    "company_name": "Name of the company",
+    "company_email": "Email for the company",
+    "address": "Where are they located",
+    "city": "City they are located in",
+    "state": "Which state do they operate in",
+    "phone_number": "Their phone number",
+    "company_linkedin": "Linkedin profile of the company if available",
+    "google_profile": "Google business profile if found",
+    "website": "Website of the company",
+    "key_people": "name of people here separated by commas"
+  }
+}
+​
+Response
+​
+Success Response (200)
+Returns an array of matching businesses with the requested fields.
+
+
+Copy
+[
+  {
+    "company_name": "Sunset Shores Photography",
+    "company_email": "hello@sunsetshores.photo",
+    "address": "789 Ocean View Dr, La Jolla, CA 92037",
+    "city": "La Jolla",
+    "state": "CA",
+    "phone_number": "+16195551234",
+    "company_linkedin": null,
+    "google_profile": "https://g.page/sunset-shores-photography",
+    "website": "https://www.sunsetshores.photo",
+    "key_people": "Alex Rivera, Taylor Morgan"
+  },
+  {
+    "company_name": "La Jolla Photo Studio",
+    "company_email": "info@lajollaphoto.com",
+    "address": "1234 Prospect St, La Jolla, CA 92037",
+    "city": "La Jolla",
+    "state": "CA",
+    "phone_number": "+18585551234",
+    "company_linkedin": "https://linkedin.com/company/lajollaphoto",
+    "google_profile": "https://g.page/lajollaphoto",
+    "website": "https://www.lajollaphoto.com",
+    "key_people": "Sarah Johnson, Michael Chen"
+  }
+]
+​
+Error Response (400)
+
+Copy
+{
+  "error": "Bad Request",
+  "message": "Invalid search query"
+}
+​
+Rate Limits
+The API is rate limited to 1000 requests per minute per API key.
+
+​
+Example Usage
+
+Copy
+import requests
+
+response = requests.post(
+    'https://api.sixtyfour.ai/search',
+    headers={
+        'x-api-key': 'your_api_key',
+        'Content-Type': 'application/json'
+    },
+    json={
+        "search_query": "Find me all photographers in La Jolla, California",
+        "struct": {
+            "company_name": "Name of the company",
+            "address": "Where are they located",
+            "phone_number": "Their phone number",
+            "website": "Website of the company"
+        }
+    }
+)
+
+results = response.json()
+Introduction
+Enrich company
+
+
+Enrich company
+​
+Enrich Company Data
+Enrich company data with additional information and find associated people.
+
+​
+Endpoint
+
+Copy
+POST /enrich-company
+​
+Request
+​
+Headers
+Name	Type	Required	Description
+x-api-key	string	Yes	Your Sixtyfour API key
+Content-Type	string	Yes	Must be application/json
+​
+Body
+Field	Type	Required	Description
+target_company	object	Yes	Company data to enrich
+struct	object	Yes	Fields to collect
+find_people	boolean	No	Whether to find people associated with the company
+research_plan	string	No	Optional research plan to guide enrichment
+people_focus_prompt	string	No	Description of people to find, typically includes the roles or responsibilities of the people you’re looking for
+​
+Example Request
+
+Copy
+{
+  "target_company": {
+    "company_name": "Pacific View Studios",
+    "address": "1234 Ocean View Dr, La Jolla, CA 92037",
+    "phone_number": "+16195551234",
+    "website": "https://pacificview.studio"
+  },
+  "struct": {
+    "instagram_url": "Instagram url for the photography company",
+    "num_employees": "How many employees work there, give approximation if you don't have exact number"
+  },
+  "find_people": true,
+  "research_plan": "Check their website, online profiles, and linkedin for the people. Looking for the individual portfolios of the employees can help too",
+  "people_focus_prompt": "Find me the owners of the company and the office manager"
+}
+​
+Response
+​
+Success Response (200)
+Returns enriched company data including leads if requested.
+
+
+Copy
+{
+  "notes": "Pacific View Studios is a boutique photography company based in La Jolla, California. They specialize in luxury wedding photography, high-end portrait sessions, and commercial work for local businesses. The company has a strong social media presence and professional website. The business operates with a small, dedicated team of photographers and support staff.",
+  "structured_data": {
+    "company_name": "Pacific View Studios",
+    "address": "1234 Ocean View Dr, La Jolla, CA 92037",
+    "phone_number": "+16195551234",
+    "website": "https://pacificview.studio",
+    "num_employees": "5-10 employees",
+    "instagram_url": "https://www.instagram.com/pacificview.studio",
+    "leads": [
+      {
+        "name": "Sarah Chen",
+        "email": "sarah@pacificview.studio",
+        "title": "Creative Director & Lead Photographer",
+        "phone": "+16195551234",
+        "score": 9,
+        "linkedin": "https://www.linkedin.com/in/sarah-chen-photography"
+      },
+      {
+        "name": "Michael Rodriguez",
+        "email": "michael@pacificview.studio",
+        "title": "Office Manager",
+        "phone": "+16195551234",
+        "score": 8,
+        "linkedin": "https://www.linkedin.com/in/michael-rodriguez-pvs"
+      }
+    ]
+  },
+  "findings": [
+    "Company specializes in luxury wedding photography and high-end portraits",
+    "Located at 1234 Ocean View Dr, La Jolla, CA 92037",
+    "Phone number: +16195551234",
+    "Website: https://pacificview.studio",
+    "Instagram: https://www.instagram.com/pacificview.studio",
+    "Team size: 5-10 employees",
+    "Creative Director: Sarah Chen",
+    "Office Manager: Michael Rodriguez"
+  ],
+  "references": {
+    "https://pacificview.studio": "Official company website with services and portfolio",
+    "https://www.instagram.com/pacificview.studio": "Company Instagram profile showing recent work",
+    "https://www.linkedin.com/in/sarah-chen-photography": "LinkedIn profile of the Creative Director",
+    "https://www.linkedin.com/in/michael-rodriguez-pvs": "LinkedIn profile of the Office Manager"
+  },
+  "confidence_score": 9.5
+}
+​
+Error Response (400)
+
+Copy
+{
+  "error": "Bad Request",
+  "message": "Invalid company data"
+}
+​
+Rate Limits
+The API is rate limited to 1000 requests per minute per API key.
+
+​
+Example Usage
+
+Copy
+import requests
+
+response = requests.post(
+    'https://api.sixtyfour.ai/enrich-company',
+    headers={
+        'x-api-key': 'your_api_key',
+        'Content-Type': 'application/json'
+    },
+    json={
+        "target_company": {
+            "company_name": "Pacific View Studios",
+            "address": "1234 Ocean View Dr, La Jolla, CA 92037",
+            "phone_number": "+16195551234",
+            "website": "https://pacificview.studio"
+        },
+        "struct": {
+            "instagram_url": "Instagram url for the photography company",
+            "num_employees": "How many employees work there"
+        },
+        "find_people": true,
+        "people_focus_prompt": "Find me the owners of the company"
+    }
+)
+
+results = response.json()
+Search
+Enrich lead
+
+
+Enrichment API
+Enrich lead
+​
+Enrich Lead Information
+Enrich lead information with additional details such as contact information, social profiles, and company details.
+
+​
+Endpoint
+
+Copy
+POST /enrich-lead
+​
+Request
+​
+Headers
+Name	Type	Required	Description
+x-api-key	string	Yes	Your Sixtyfour API key
+Content-Type	string	Yes	Must be application/json
+​
+Body
+Field	Type	Required	Description
+lead_info	object	Yes	Initial lead information as key-value pairs
+struct	object	Yes	Fields to collect about the lead
+​
+Example Request
+
+Copy
+{
+  "lead_info": {
+    "name": "Saarth Shah",
+    "title": "CEO & Co-Founder @ Sixtyfour AI",
+    "company": "Sixtyfour AI",
+    "location": "San Francisco",
+    "linkedin": "https://www.linkedin.com/in/saarthshah"
+  },
+  "struct": {
+    "name": "The individual's full name",
+    "email": "The individual's email address",
+    "phone": "The individual's phone number",
+    "company": "The company the individual is associated with",
+    "title": "The individual's job title",
+    "linkedin": "LinkedIn URL for the person",
+    "website": "Company website URL",
+    "location": "The individual's location and/or company location",
+    "industry": "Industry the person operates in",
+    "github_url": "url for their github profile",
+    "github_notes": "Take detailed notes on their github profile."
+  }
+}
+​
+Response
+​
+Success Response (200)
+Returns enriched lead data with detailed information and sources.
+
+
+Copy
+{
+  "notes": "Saarth Shah is the Co-Founder and CEO of Sixtyfour AI, an AI company focused on building AI agents to help GTM (Go-To-Market) teams sell better and faster to SMBs. He is based in San Francisco, California. His LinkedIn profile is https://www.linkedin.com/in/saarthshah, which shows 500+ connections and highlights his education with Y Combinator and UC Berkeley...",
+  "structured_data": {
+    "name": "Saarth Shah",
+    "email": "saarth@sixtyfour.ai",
+    "phone": "",
+    "company": "Sixtyfour AI",
+    "title": "CEO & Co-Founder",
+    "linkedin": "https://www.linkedin.com/in/saarthshah",
+    "website": "https://www.sixtyfour.ai/",
+    "location": "San Francisco, California, USA",
+    "industry": "Artificial Intelligence and Sales Technology",
+    "github_url": "https://github.com/SaarthShah",
+    "github_notes": "Saarth Shah's GitHub profile demonstrates technical expertise with projects related to AI and full-stack development. Notable repositories include search spelling correction, AI chatbots, and data science models, corroborating his data science background."
+  },
+  "findings": [
+    "Saarth Shah is CEO & Co-Founder of Sixtyfour AI",
+    "Company website: https://www.sixtyfour.ai/",
+    "LinkedIn profile: https://www.linkedin.com/in/saarthshah",
+    "Located in San Francisco, California",
+    "GitHub profile: https://github.com/SaarthShah",
+    "Email partially known: s******@gmail.com",
+    "Phone partially known: 732-318-****",
+    "Background includes UC Berkeley, Y Combinator, and AI-related roles"
+  ],
+  "references": {
+    "https://www.linkedin.com/in/saarthshah": "Saarth Shah LinkedIn profile with current role, location, and background information.",
+    "https://www.sixtyfour.ai/": "Sixtyfour AI official company website detailing services and confirming company location and focus area.",
+    "https://github.com/SaarthShah": "GitHub profile showing Saarth Shah's repositories and technical projects related to AI and full-stack development.",
+    "https://rocketreach.co/saarth-shah-email_292174962": "Partial email and phone contact details found via RocketReach.",
+    "https://www.saarthshah.com/": "Personal website of Saarth Shah with bio, projects, and contact email saarth@sixtyfour.ai."
+  },
+  "confidence_score": 9.5
+}
+​
+Error Response (400)
+
+Copy
+{
+  "error": "Bad Request",
+  "message": "Invalid lead information"
+}
+​
+Rate Limits
+The API is rate limited to 1000 requests per minute per API key.
+
+​
+Example Usage
+
+Copy
+import requests
+
+response = requests.post(
+    'https://api.sixtyfour.ai/enrich-lead',
+    headers={
+        'x-api-key': 'your_api_key',
+        'Content-Type': 'application/json'
+    },
+    json={
+        "lead_info": {
+            "name": "Saarth Shah",
+            "title": "CEO & Co-Founder @ Sixtyfour AI",
+            "company": "Sixtyfour AI",
+            "location": "San Francisco",
+            "linkedin": "https://www.linkedin.com/in/saarthshah"
+        },
+        "struct": {
+            "name": "The individual's full name",
+            "email": "The individual's email address",
+            "phone": "The individual's phone number",
+            "company": "The company the individual is associated with",
+            "title": "The individual's job title",
+            "linkedin": "LinkedIn URL for the person",
+            "website": "Company website URL",
+            "location": "The individual's location and/or company location",
+            "industry": "Industry the person operates in",
+            "github_url": "url for their github profile",
+            "github_notes": "Take detailed notes on their github profile."
+        }
+    }
+)
+
+results = response.json()
+
+
+
+Enrichment API
+Find email
+​
+Find Email Address
+Note: This endpoint is currently in beta. The API response format and behavior may change in future releases.
+
+Find email address for a lead.
+
+​
+Endpoint
+
+Copy
+POST /find-email
+​
+Request
+​
+Headers
+Name	Type	Required	Description
+x-api-key	string	Yes	Your Sixtyfour API key
+Content-Type	string	Yes	Must be application/json
+​
+Body
+Field	Type	Required	Description
+lead	object	Yes	Lead information to find email for
+bruteforce	boolean	No	Whether to use bruteforce to find email. Default is true, in brute force mode, the API will try to find an email address by appending common email suffixes to the domain part of the lead’s name and then check if the email exists.
+only_company_emails	boolean	No	When set to true, the API will only return company email addresses. Default is false.
+​
+Example Request
+
+Copy
+{
+  "lead": {
+    "name": "Sarah Chen",
+    "company": "Pacific View Studios",
+    "title": "Creative Director & Lead Photographer",
+    "phone": "+16195551234",
+    "linkedin": "https://www.linkedin.com/in/sarah-chen-photography"
+  },
+  "bruteforce": false,
+  "only_company_emails": true
+}
+​
+Response
+​
+Success Response (200)
+Returns the found email address and confidence score.
+
+
+Copy
+{
+  "name": "Sarah Chen",
+  "company": "Pacific View Studios",
+  "title": "Creative Director & Lead Photographer",
+  "phone": "+16195551234",
+  "linkedin": "https://www.linkedin.com/in/sarah-chen-photography",
+  "email": [["sarah@pacificview.studio", "OK", "COMPANY"]]
+}
+The email field contains a list of tuples, where each tuple consists of:
+
+Email address (string)
+Validation status (string):
+"OK": The email address has been validated and is likely deliverable
+"UNKNOWN": The email address could not be validated or its deliverability status is uncertain, most likely because of catch all domains.
+Email type (string):
+"COMPANY": The email address is associated with the company domain
+"PERSONAL": The email address is a personal email address (e.g., Gmail, Yahoo, etc.)
+If the lead information already includes an ‘email’ field, it will be returned unchanged in the response without attempting to find or validate a new email address. However, it will have the status "OK" and the type depending on the email address.
+
+​
+Error Response (400)
+
+Copy
+{
+  "error": "Bad Request",
+  "message": "Invalid lead data"
+}
+​
+Rate Limits
+The API is rate limited to 1000 requests per minute per API key.
+
+​
+Example Usage
+
+Copy
+import requests
+
+response = requests.post(
+    'https://api.sixtyfour.ai/find-email',
+    headers={
+        'x-api-key': 'your_api_key',
+        'Content-Type': 'application/json'
+    },
+    json={
+        "lead": {
+            "name": "Sarah Chen",
+            "company": "Pacific View Studios",
+            "title": "Creative Director & Lead Photographer",
+            "phone": "+16195551234",
+            "linkedin": "https://www.linkedin.com/in/sarah-chen-photography"
+        }
+    }
+)
+
+results = response.json()
+
+
+
+
+Inbound Tool
+API Reference
+Complete API documentation for the Inbound Tool
+
+​
+Authentication
+All API requests require two credentials:
+
+SIXTYFOUR_API_KEY: Your API key
+SIXTYFOUR_CUSTOMER_ID: Your customer identifier
+These credentials serve to verify requests and link lead data to your account. In frontend applications, particularly with NextJS, create a server-side endpoint to process the API request, ensuring your API key remains secure and not exposed to the client.
+
+​
+Lead Data Structure
+The API accepts lead data in the following format:
+
+
+Copy
+{
+  "name": "Saarth Shah",
+  "email": "saarth@berkeley.edu"
+}
+The enrichment engine can work with minimal information—just an official email address or a name combined with other identifiers like:
+
+Company name
+Location
+Education history
+Phone number
+​
+API Endpoint
+​
+Enrich Lead
+Send lead data to be enriched:
+
+
+Copy
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: {SIXTYFOUR_API_KEY}" \
+  -d '{
+    "lead_data": {
+      "name": "Saarth Shah",
+      "email": "saarth@berkeley.edu"
+    },
+    "customer_id": "{SIXTYFOUR_CUSTOMER_ID}"
+  }' https://api.inbound.sixtyfour.ai/enrich-lead
+Example Request:
+
+
+Copy
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: 3dfnflndlfkldfklwlkf76" \
+  -d '{
+    "lead_data": {
+      "name": "Robert Vazquez",
+      "phone": "415-826-7575"
+    },
+    "customer_id": "test-ai"
+  }' https://api.inbound.sixtyfour.ai/enrich-lead
+​
+Response
+After submitting a lead:
+
+You’ll receive a task ID in the response
+If the lead is qualified, an enriched profile will be emailed to you within ~60 seconds
+All enriched leads (qualified or not) will be visible on your SixtyFour dashboard
+The API automatically rejects duplicate requests to save you money and avoid overwhelming our servers.
+Here’s how the email will look:Example of Enriched Lead Email
+
+​
+Configuration
+To update notification email addresses or prompting criteria, please contact support at saarth@sixtyfour.ai. A self-serve dashboard for managing these settings will be available soon.
+
+Find email
+Getting Started with Inbound API
+
+
+
+
+Inbound Tool
+Getting Started with Inbound API
+Learn how to integrate SixtyFour AI into your Next.js application
+
+
+​
+Prerequisites
+A Next.js application (version 13 or higher recommended)
+Your SixtyFour AI API credentials:
+SIXTYFOUR_INBOUND_API_KEY
+SIXTYFOUR_ORG_ID
+​
+Step 1: Set Up Environment Variables
+First, add your SixtyFour AI credentials to your .env.local file:
+
+
+Copy
+SIXTYFOUR_INBOUND_API_KEY=your_api_key_here
+SIXTYFOUR_ORG_ID=your_organization_id_here
+NEXT_PUBLIC_API_ENDPOINT=https://api.inbound.sixtyfour.ai/enrich-lead
+Once you have an active subscription, you will see your API Key in the api-keys tab like this:API Key Location
+
+Your org-id is visible on the sidebar when you hover over your profile picture.Org ID Location
+
+Note: While we’re using NEXT_PUBLIC_ prefix for simplicity in this example, in production you should handle the API key server-side only.
+
+​
+Step 2: Create the API Route
+Create a new API route in your Next.js application at app/api/interestForm/route.ts:
+
+
+Copy
+import { NextResponse } from 'next/server';
+
+export async function POST(request: Request) {
+  try {
+    const formData = await request.json();
+
+    // Generate unique IDs for tracking
+    const submission_id = Math.random().toString(36).substring(2, 8);
+    const respondent_id = Math.random().toString(36).substring(2, 8);
+
+    // These coould be any fields of your choice
+    // We recommend collecting atleast the name + company email + company name for best results
+    const payload = {
+      lead_data: {
+        submission_id,
+        respondent_id,
+        submitted_at: new Date().toISOString(),
+        name: formData.name,
+        email: formData.email,
+        phone_number: null,
+        inquiry: null,
+        upload_link: null,
+        role: null,
+        role_other: null,
+        heard_about_us: "Website Form",
+        heard_about_us_other: null,
+        terms_agreed: null
+      },
+      // Make sure to pass this
+      customer_id: process.env.SIXTYFOUR_ORG_ID
+    };
+
+    const response = await fetch(process.env.NEXT_PUBLIC_API_ENDPOINT!, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.SIXTYFOUR_INBOUND_API_KEY!
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const statusCode = response.status;
+      throw new Error(`Failed to submit lead: API responded with status ${statusCode}. ${JSON.stringify(errorData)}`);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error submitting lead:', error);
+    return NextResponse.json(
+      { error: 'Failed to submit lead' },
+      { status: 500 }
+    );
+  }
+}
+​
+Step 3: Create the Frontend Form Component
+Create a new component for your lead capture form. Here’s an example using React and Shadcn UI:
+
+
+Copy
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card } from '@/components/ui/card'
+import { CheckCircle } from 'lucide-react'
+
+export default function LeadCaptureForm() {
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    const [isSubmitted, setIsSubmitted] = useState(false)
+    const [formDisabled, setFormDisabled] = useState(false)
+
+    // Check if form was already submitted in this session
+    useEffect(() => {
+        const hasSubmitted = sessionStorage.getItem('formSubmitted') === 'true'
+        if (hasSubmitted) {
+            setFormDisabled(true)
+            setIsSubmitted(true)
+        }
+    }, [])
+
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        const form = e.currentTarget;
+        const formData = {
+            name: (form.elements.namedItem('name') as HTMLInputElement).value,
+            email: (form.elements.namedItem('email') as HTMLInputElement).value,
+            company: (form.elements.namedItem('company') as HTMLInputElement).value,
+        };
+
+        try {
+            const response = await fetch('/api/interestForm', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData),
+            });
+
+            if (!response.ok) {
+                throw new Error('Submission failed');
+            }
+
+            // Clear form and update state
+            form.reset();
+            setIsSubmitted(true);
+            setFormDisabled(true);
+            sessionStorage.setItem('formSubmitted', 'true');
+        } catch (error) {
+            console.error('Error:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <Card className="mx-auto max-w-lg p-8 shadow-md">
+            <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-3">
+                    <Label htmlFor="name">Full name</Label>
+                    <Input type="text" id="name" required disabled={formDisabled} />
+                </div>
+                <div className="space-y-3">
+                    <Label htmlFor="email">Work Email</Label>
+                    <Input type="email" id="email" required disabled={formDisabled} />
+                </div>
+                <div className="space-y-3">
+                    <Label htmlFor="company">Company</Label>
+                    <Input type="text" id="company" required disabled={formDisabled} />
+                </div>
+
+                <Button 
+                    type="submit" 
+                    className="w-full bg-gradient-to-r from-[#5FA5F9] to-[#2463EB] hover:opacity-90 hover:shadow-lg"
+                    disabled={isSubmitting || formDisabled}
+                >
+                    {isSubmitting ? (
+                        <span className="flex items-center justify-center">
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Submitting...
+                        </span>
+                    ) : isSubmitted ? (
+                        <span className="flex items-center justify-center">
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                            Submitted!
+                        </span>
+                    ) : (
+                        "Talk to Sales"
+                    )}
+                </Button>
+            </form>
+        </Card>
+    );
+}
+​
+Step 4: Add the Form to Your Page
+Import and use the LeadCaptureForm component in your page:
+
+
+Copy
+import LeadCaptureForm from '@/components/LeadCaptureForm'
+
+export default function ContactPage() {
+    return (
+        <section className="py-16">
+            <div className="mx-auto max-w-3xl px-6">
+                <h2 className="text-center text-4xl font-semibold">
+                    Ready to discover prospects your competitors can't see?
+                </h2>
+                <p className="mt-4 text-center">
+                    If traditional lead sources aren't delivering the quality or quantity of prospects you need, we'd be glad to explore how our approach might help.
+                </p>
+                <div className="mt-12">
+                    <LeadCaptureForm />
+                </div>
+            </div>
+        </section>
+    );
+}
+​
+How It Works
+When a user submits the form, the data is sent to your Next.js API route
+The API route adds tracking information and forwards the data to SixtyFour AI
+SixtyFour AI processes the lead and:
+If qualified, sends an enriched profile to your email within ~60 seconds
+All leads (qualified or not) appear on your SixtyFour dashboard
+The form prevents duplicate submissions using session storage
+​
+Best Practices
+Security: In production, consider moving the API key to server-side only
+Error Handling: Implement proper error messages for users
+Validation: Add client-side validation before submission
+Loading States: Show appropriate loading states during submission
+Success States: Provide clear feedback when submission is successful
+​
+Troubleshooting
+If you encounter issues:
+
+Check your environment variables are correctly set
+Verify the API endpoint is correct
+Ensure your API key has the necessary permissions
+Check the browser console and server logs for errors
+Contact support at saarth@sixtyfour.ai for assistance
+API Reference
+
+
+
+
+Documentation
+GitHub
+Blog
+Get Started
+Welcome to SixtyFour
+Enrichment API
+Introduction
+Search
+Enrich company
+Enrich lead
+Find email
+Inbound Tool
+API Reference
+Getting Started with Inbound API
+Google sheets
+Starter Notebooks
+Find leads on small and medium businesses
+Inbound Tool
+Google sheets
+​
+Google Sheets Inbound Tool
+This tool monitors a Google Sheet for new entries and automatically sends them to the SixtyFour AI enrichment API for processing.
+
+​
+Overview
+The tool is implemented as a Google Apps Script that:
+
+Monitors the active sheet for new rows
+Sanitizes column headers to create valid JSON keys
+Formats the data according to the API requirements
+Sends the data to the enrichment endpoint
+​
+Implementation
+The main function sendNewRowToAPI() performs the following steps:
+
+Data Collection:
+
+Gets the active sheet and all its data
+Extracts headers from the first row
+Gets the last row of data (new entry)
+Data Sanitization:
+
+Cleans column headers by:
+Removing newlines, carriage returns, and tabs
+Converting spaces to underscores
+Removing non-alphanumeric characters
+Converting to lowercase
+Removing leading underscores
+Data Formatting:
+
+Creates a JSON object using sanitized headers as keys
+Adds required fields:
+id: Empty string (to be populated by API)
+created_at: Current UTC timestamp
+company_id: Set to “bild-ai”
+API Integration:
+
+Sends data to https://api.inbound.sixtyfour.ai/enrich-lead
+Includes additional fields:
+heard_about_us: Set to “Website Form”
+terms_agreed: Set to null
+Requires API key authentication
+​
+Complete Code
+Copy and paste the following code into your Google Apps Script editor:
+
+
+Copy
+function sendNewRowToAPI() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const data = sheet.getDataRange().getValues(); // Get all data from sheet
+  let headers = data[0]; // First row as column headers
+  const lastRow = data[data.length - 1]; // Last row of data
+
+  // Function to clean and sanitize column names (headers)
+  function sanitizeKey(key) {
+    // Remove newlines, carriage returns, tabs
+    key = key.replace(/[\n\r\t]+/g, " ")
+             .replace(/\s+/g, "_")  // Replace spaces with underscores
+             .replace(/[^\w_]/g, "") // Remove non-alphanumeric characters (except underscore)
+             .toLowerCase()  // Convert to lowercase for consistency
+             .trim();
+    
+    // Remove leading underscores
+    if (key.startsWith("_")) {
+      key = key.substring(1);
+    }
+    
+    return key;
+  }
+
+  // Sanitize headers
+  headers = headers.map(sanitizeKey);
+
+  // Convert row into JSON using sanitized headers as keys
+  let rowData = {};
+  headers.forEach((header, index) => {
+    rowData[header] = lastRow[index];
+  });
+
+  // Add required env variables
+  rowData["id"] = "";
+  rowData["created_at"] = new Date().toISOString(); // UTC timestamp
+  rowData["company_id"] = "bild-ai";
+
+  // Hardcoded API details
+  const API_ENDPOINT = "https://api.inbound.sixtyfour.ai/enrich-lead";
+  const API_KEY = "YOUR_API_KEY";
+  const CUSTOMER_ID = "YOUR_CUSTOMER_ID";
+
+  // Add API-required fields
+  const payload = {
+    lead_data: {
+      ...rowData,
+      heard_about_us: "Website Form",
+      terms_agreed: null
+    },
+    customer_id: CUSTOMER_ID
+  };
+
+  console.log(payload)
+
+  const options = {
+    method: "POST",
+    contentType: "application/json",
+    headers: {
+      "x-api-key": API_KEY
+    },
+    payload: JSON.stringify(payload)
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(API_ENDPOINT, options);
+    Logger.log("API Response: " + response.getContentText());
+  } catch (error) {
+    Logger.log("Error sending data: " + error.toString());
+  }
+}
+​
+Configuration
+Before using the tool, you need to set the following variables in the code:
+
+
+Copy
+const API_KEY = "YOUR_API_KEY";
+const CUSTOMER_ID = "YOUR_CUSTOMER_ID";
+​
+Error Handling
+The function includes error handling that:
+
+Logs successful API responses
+Catches and logs any errors during the API call
+​
+Usage
+Open your Google Sheet
+Go to Extensions > Apps Script
+Create a new script
+Copy and paste the function code
+Set up your API key and customer ID
+Create a trigger to run the function when new rows are added
+​
+Example Payload
+The function sends data in this format:
+
+
+Copy
+{
+  "lead_data": {
+    "column1": "value1",
+    "column2": "value2",
+    "id": "",
+    "created_at": "2024-03-21T12:00:00.000Z",
+    "company_id": "bild-ai",
+    "heard_about_us": "Website Form",
+    "terms_agreed": null
+  },
+  "customer_id": "YOUR_CUSTOMER_ID"
+}
+​
+Notes
+The function processes only the last row of the sheet
+Column headers are automatically sanitized to create valid JSON keys
+All timestamps are in UTC format
+The API requires authentication via x-api-key header
+
+
+
+
+
+Documentation
+GitHub
+Blog
+Get Started
+Welcome to SixtyFour
+Enrichment API
+Introduction
+Search
+Enrich company
+Enrich lead
+Find email
+Inbound Tool
+API Reference
+Getting Started with Inbound API
+Google sheets
+Starter Notebooks
+Find leads on small and medium businesses
+Starter Notebooks
+Find leads on small and medium businesses
+This notebook teaches you how to use the Sixtyfour API to find and enrich businesses via our API. To get started, go to https://app.sixtyfour.ai and sign up to create an account with an API key.
+
+​
+Notebook Versions
+You can access this notebook in different formats:
+
+Open In ColabOpen In Github
+
+​
+Prerequisites
+Before you begin, make sure you have:
+
+A Sixtyfour API key (get it from the dashboard after signing up)
+Python 3.7+ installed
+Required Python packages:
+pandas
+requests
+python-dotenv
+httpx
+nest-asyncio
+​
+Set up
+First, let’s import the necessary libraries and set up our environment:
+
+
+Copy
+import pandas as pd
+import requests
+import os
+from dotenv import load_dotenv
+import asyncio
+import httpx
+import nest_asyncio
+nest_asyncio.apply()
+
+load_dotenv()
+SIXTYFOUR_API_KEY = os.getenv('SIXTYFOUR_API_KEY')
+Make sure to create a .env file in your project directory with your API key:
+
+
+Copy
+SIXTYFOUR_API_KEY=your_api_key_here
+​
+Searching for businesses
+Let’s start by defining our search query. The search query can be any natural language description of the businesses you want to find:
+
+
+Copy
+search_query = 'Find me all photographers in La Jolla, California'
+We can define the fields we want to collect for each business. These fields will be populated by the API based on available information:
+
+
+Copy
+fields = {
+    "company_name": "Name of the company",
+    "company_email": "Email for the company",
+    "address": "Where are they located",
+    "city": "City they are located in",
+    "state": "Which state do they operate in",
+    "phone_number": "Their phone number",
+    "company_linkedin": "Linkedin profile of the company if available",
+    "google_profile": "Google business profile if found",
+    "website": "Website of the company",
+    "key_people": "name of people here separated by commas"
+}
+Now let’s make the API call to search for businesses. The API will return a list of businesses matching your search criteria:
+
+
+Copy
+res = requests.post('https://api.sixtyfour.ai/search', 
+    headers={
+        'x-api-key': SIXTYFOUR_API_KEY,
+        "Content-Type": "application/json"
+    }, 
+    json={
+        "search_query": search_query,
+        "struct": fields
+    }
+)
+
+df = pd.DataFrame(res.json())
+Example search results:
+
+
+Copy
+# Display the first few rows of the dataframe
+df[['company_name', 'address', 'phone_number', 'website']].head(2)
+company_name	address	phone_number	website
+Maria V Photography	13634 Vian Rd, Poway, CA 92064	+18133352197	https://www.mariavphotography.com/
+Zeena Gregg Photography	15604 Riparian Rd, Poway, CA 92064	+18587800510	http://www.zeenagregg.com/
+​
+Enriching company data
+Let’s first enrich one company to see how it works. We’ll select a company from our search results:
+
+
+Copy
+random_company = df.iloc[15].to_dict()
+
+# Define additional fields for enrichment
+new_fields = {
+    "instagram_url": "Instagram url for the photography company",
+    "num_employees": "How many employees work there, give approximation if you don't have exact number"
+}
+
+# Set up people search parameters
+find_people = True
+people_focus_prompt = "Find me the owners of the company and the office manager"
+lead_struct = {
+    "name": "name of the person",
+    "title": "title of the person at the company",
+    "email": "email of the person",
+    "phone_number": "phone number of the person",
+    "instagram_url": "instagram url for the person"
+}
+
+# Optional research plan to guide the enrichment process
+research_plan = "Check their website, online profiles, and linkedin for the people. Looking for the individual portfolios of the employees can help too"
+
+# Make the enrichment API call
+req = requests.post(
+    "https://api.sixtyfour.ai/enrich-company",
+    headers={
+        'x-api-key': SIXTYFOUR_API_KEY,
+        "Content-Type": "application/json"
+    },
+    json={
+        "target_company": random_company,
+        "struct": new_fields,
+        "find_people": find_people,
+        "research_plan": research_plan,
+        "people_focus_prompt": people_focus_prompt
+    }
+)
+
+res = req.json()
+Example enrichment results:
+
+
+Copy
+# Display the enriched company data
+pd.DataFrame([res['structured_data']])[['company_name', 'address', 'phone_number', 'website', 'num_employees', 'instagram_url']]
+company_name	address	phone_number	website	num_employees	instagram_url
+Elle G Photography	1070 Sapphire St, San Diego, CA 92109	+18583441068	https://ellegphotography.com/	Less than 10 core staff members	https://www.instagram.com/ellegphotography/
+
+Copy
+# Display the leads found for this company
+pd.DataFrame(res['structured_data']['leads'])
+name	email	title	phone	score	linkedin
+Lisa Gisczinski	ellegphotography@me.com	Owner and Principal Photographer	+18583441068	9	https://www.linkedin.com/in/studioellephotography
+​
+Processing all companies
+Now let’s create functions to process all companies asynchronously. This allows us to enrich multiple companies in parallel:
+
+
+Copy
+async def enrich_company(
+    client: httpx.AsyncClient,
+    semaphore: asyncio.Semaphore,
+    company: dict,
+    max_retries: int = 3
+):
+    """Enrich company info using the SixtyFour API with retries and concurrency limits."""
+    async with semaphore:
+        for attempt in range(max_retries):
+            try:
+                response = await client.post(
+                    "https://api.sixtyfour.ai/enrich-company",
+                    headers={
+                        'x-api-key': SIXTYFOUR_API_KEY,
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "target_company": company,
+                        "struct": new_fields,
+                        "find_people": find_people,
+                        "research_plan": research_plan,
+                        "people_focus_prompt": people_focus_prompt
+                    }
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as http_err:
+                print(f"HTTP error occurred: {http_err}")
+            except httpx.RequestError as req_err:
+                print(f"Request error occurred: {req_err}")
+                if attempt < max_retries - 1:
+                    print(f"Retrying ({attempt + 1}/{max_retries})...")
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+            return None
+    return None
+
+async def process_leads(df: pd.DataFrame) -> list:
+    results = []
+    semaphore = asyncio.Semaphore(100)  # Limit concurrent requests
+    timeout = httpx.Timeout(300.0, connect=10.0)
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+        tasks = [enrich_company(client, semaphore, df.iloc[i].to_dict()) for i in range(len(df))]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    return results
+
+# Process the first 20 companies
+results = asyncio.run(process_leads(df.head(20)))
+df_enriched = pd.DataFrame(results)
+df_enriched_data = pd.DataFrame(df_enriched['structured_data'].to_list())
+​
+Extracting individual leads
+Let’s create a function to extract individual leads from the enriched data. This will help us create a more detailed contact list:
+
+
+Copy
+def generate_lead_rows(company_data):
+    """
+    Given a company_data dictionary containing company info and a list of leads,
+    this function returns a list of dictionaries, where each dictionary represents
+    a row containing both the company information and the individual lead details.
+    """
+    company_info = {key: value for key, value in company_data.items() if key != "leads"}
+    lead_rows = []
+
+    for lead in company_data.get("leads", []):
+        row = company_info.copy()
+        row.update(lead)
+        lead_rows.append(row)
+
+    if not lead_rows:
+        return [company_info]
+
+    return lead_rows
+
+individual_leads = pd.DataFrame(df_enriched_data.apply(generate_lead_rows, axis=1).sum())
+Example lead extraction results:
+
+
+Copy
+# Display the first few leads with key information
+individual_leads[['name', 'company', 'title', 'email', 'phone', 'score']].head(2)
+name	company	title	email	phone	score
+Maria Velasquez	Maria V Photography	Owner, Primary Photographer	maria@mariavphotography.com	+18133352197	9
+Zeena Gregg	Zeena Gregg Photography	Owner / Lead Photographer	zeena@zeenagregg.com	+18587800510	8
+​
+Finding email addresses
+Let’s create functions to find email addresses for the leads. This will help us verify and find additional contact information:
+
+
+Copy
+async def fetch_email(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, lead: dict, max_retries: int = 3):
+    """Fetch email with concurrency control and retry mechanism."""
+    async with semaphore:
+        for attempt in range(max_retries):
+            try:
+                response = await client.post(
+                    "https://api.sixtyfour.ai/find-email",
+                 headers={
+                        'x-api-key': SIXTYFOUR_API_KEY,
+                        "Content-Type": "application/json"
+                    },
+                    json={"lead": lead}
+                )
+                response.raise_for_status()
+                return response.text
+            except httpx.HTTPStatusError as http_err:
+                print(f"HTTP error occurred: {http_err}")
+            except httpx.RequestError as req_err:
+                print(f"Request error occurred: {req_err}")
+                if attempt < max_retries - 1:
+                    print(f"Retrying ({attempt + 1}/{max_retries})...")
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+            return None
+    return None
+
+async def process_leads_email(df: pd.DataFrame) -> list:
+    results = []
+    semaphore = asyncio.Semaphore(100)
+    timeout = httpx.Timeout(300.0, connect=10.0)
+    
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+        tasks = [fetch_email(client, semaphore, df.iloc[i].to_dict()) for i in range(len(df))]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    return results
+
+# Process emails for all leads
+results_email = asyncio.run(process_leads_email(individual_leads))
+final_df = pd.DataFrame([eval(r) for r in results_email])
+
+# Clean up email data
+final_df['email'] = final_df['email'].apply(
+    lambda x: x if not isinstance(x, list) else x[0][0] if x and x[0][1] != 'UNKNOWN' else ''
+)
+​
+Saving the results
+Finally, you can save the enriched data to CSV files for use in your CRM or other systems:
+
+
+Copy
+# Save account level data
+df_enriched_data.to_csv('account_level.csv')
+
+# Save individual leads data
+final_df.to_csv('leads.csv')
+​
+Summary
+This notebook demonstrates how to:
+
+Search for businesses using the Sixtyfour API
+Enrich company data with additional information
+Extract individual leads from company data
+Find email addresses for leads
+Save the results for use in your CRM or other systems
+The process is designed to be scalable and efficient, using asynchronous processing to handle multiple companies simultaneously. The results can be used for:
+
+Sales prospecting
+Market research
+Lead generation
+Business development
+Competitive analysis
+​
+Best Practices
+Rate Limiting: The code includes a semaphore to limit concurrent requests to 100. Adjust this based on your API plan limits.
+Error Handling: The code includes retry logic with exponential backoff for failed requests.
+Data Quality: The email cleaning step helps ensure data quality by removing unverified email addresses.
+Scalability: The async processing allows for efficient handling of large datasets.
+Data Export: Results are saved in CSV format for easy integration with other tools.
+​
+Next Steps
+Integrate with your CRM system
+Set up automated lead scoring
+Create email campaigns
+Track engagement metrics
+Refine search criteria based on results
+
+
+
+
+
+Type / to search
+Code
+Issues
+Pull requests
+Actions
+Projects
+Security
+Insights
+Owner avatar
+docs
+Public
+generated from mintlify/starter
+sixtyfour-ai/docs
+Go to file
+t
+Name		
+SaarthShah
+SaarthShah
+sizing fix
+2494b03
+ · 
+2 weeks ago
+api-reference
+added confidence score
+2 weeks ago
+images
+Initial commit
+last month
+inbound-tool
+sizing fix
+2 weeks ago
+logo
+logos
+last month
+snippets
+Initial commit
+last month
+starter-notebooks
+notebook 1
+last month
+README.md
+Initial commit
+last month
+docs.json
+inbound api tutorial
+2 weeks ago
+favicon.svg
+docs
+last month
+introduction.mdx
+added google notes stuff to docs
+3 weeks ago
+Repository files navigation
+README
+Mintlify Starter Kit
+Click on Use this template to copy the Mintlify starter kit. The starter kit contains examples including
+
+Guide pages
+Navigation
+Customizations
+API Reference pages
+Use of popular components
+Development
+Install the Mintlify CLI to preview the documentation changes locally. To install, use the following command
+
+npm i -g mintlify
+Run the following command at the root of your documentation (where docs.json is)
+
+mintlify dev
+Publishing Changes
+Install our Github App to auto propagate changes from your repo to your deployment. Changes will be deployed to production automatically after pushing to the default branch. Find the link to install on your dashboard.
+
+Troubleshooting
+Mintlify dev isn't running - Run mintlify install it'll re-install dependencies.
+Page loads as a 404 - Make sure you are running in a folder with docs.json
+About
+No description, website, or topics provided.
+Resources
+ Readme
+ Activity
+ Custom properties
+Stars
+ 0 stars
+Watchers
+ 1 watching
+Forks
+ 0 forks
+Report repository
+Releases
+No releases published
+Packages
+No packages published
+Deployments
+33
+ staging 2 weeks ago
++ 32 deployments
+Languages
+MDX
+100.0%
+Footer
+© 2025 GitHub, Inc.
+Footer navigation
+Terms
+Privacy
+Security
+Status
+Docs
+Contact
+Manage cookies
+
+
+
+Browse
+Customer Stories
+Case Study: How Conduit Unlocked the STR Market with SixtyFour
+Conduit uses Sixtyfour to find every customer of legacy property management software companies.
+
+Saarth Shah's avatar
+Saarth Shah
+CEO & Co-Founder on April 3, 2025
+Case Study: How Conduit Unlocked the STR Market with SixtyFour
+Conduit (formerly HostAI) builds AI agents for real estate—specifically for short-term and long-term rental management companies. If you run dozens of listings across Airbnb, Vrbo, Booking.com, or Tripadvisor, and you use a property management system like Guesty, HostAway, or RentManager, Conduit can automate your entire operations stack.
+
+But there was one major problem: Conduit's market is big but very fragmented and hard to reach.
+
+The Discovery Problem
+Many STR management companies operate behind listing platforms that actively block backlinks to company landing pages. Most of these companies aren't big or well-known, and they’re distributed globally. Traditional data vendors like Apollo, ZoomInfo, BuiltWith, and Clay couldn’t help. After trying all of them, Conduit was left with only 500 qualified leads—nowhere near the volume needed to run effective outbound.
+
+They even tried niche data providers. Still, the results were either duplicates, stale, or completely off-target.
+
+Conduit was stuck. Until they found SixtyFour.
+
+How SixtyFour Cracked the Code
+At SixtyFour, our AI agents are trained to find the kind of businesses that don’t show up on conventional databases. We have access to proprietary data and are designed to pull insights from every possible public source.
+
+Within two weeks of working together, we helped Conduit do what no other vendor could: identify every Guesty, HostAway, and RentManager customer on the market.
+
+Let’s break it down for just Guesty:
+
+BuiltWith results: ~728 leads (only ~400–500 qualified)
+SixtyFour results: 8,000+ Guesty customers, with over 3,000 matching Conduit’s ICP (companies with 25+ listings)
+That’s a 10x leap in lead volume—and far higher quality.
+
+The Enrichment Advantage
+The next challenge: even with account names, traditional enrichment tools couldn’t surface real contact information.
+
+Conduit tried running the list through Apollo and only got contact data for about 25% of the accounts.
+
+Using SixtyFour's enrichment API, we were able to surface verified leads for over 75% of those accounts—including many hard-to-find international businesses where the only mention of the owner might be buried in some obscure PDF or a two-year-old press article.
+
+The Outcome
+With high-quality leads flowing into their pipeline, Conduit is now on track to grow faster than ever before. They estimate:
+
+30% month-over-month revenue growth
+3x growth over the next year
+By removing the biggest friction in their sales process—finding the right customers—Conduit is now free to focus on what they do best: building intelligent agents that automate away the headaches of property management.
+
+This is exactly why we built SixtyFour—to help companies find the hard-to-find. If you’re targeting niche, fragmented, or global markets that traditional tools can’t reach, let’s talk.
+
+Because if the data exists on the internet, we’ll find it.
+
+ON THIS PAGE
+The Discovery Problem
+How SixtyFour Cracked the Code
+The Enrichment Advantage
+The Outcome
+SHARE THIS ARTICLE
+Share on LinkedIn
+Share on X
+Share on Facebook
+
+sixtyfour.ai
+Login
+AI GTM
+Enrichment API
+Inbound Qualification
+Docs
+Blog
+Pricing
+About Us

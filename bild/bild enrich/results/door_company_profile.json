@@ -1,0 +1,70 @@
+{
+  "common_products": [
+    "wood",
+    "frames",
+    "hardware",
+    "aluminum frames",
+    "impact",
+    "stainless steel",
+    "commercial wood doors",
+    "Commercial and Multi-family residential doors and frames",
+    "including hollow metal and wood doors",
+    "architectural hardware"
+  ],
+  "typical_size": "51-200 employees",
+  "top_regions": [
+    "Chicago metropolitan region, Illinois",
+    "Primarily Midwest US with nationwide reach",
+    "Kentucky and surrounding southeastern U.S. states",
+    "Primarily Utah and Western United States",
+    "Charleston and Lowcountry regions, South Carolina"
+  ],
+  "has_div8_estimator": "yes",
+  "sample_companies": [
+    {
+      "company_number": 3,
+      "company_name": "Coastal Doors Inc",
+      "description": "Wholesale building materials and commercial door supplier specializing in commercial doors including hollow metal, aluminum frames, and commercial wood doors; strictly commercial projects only.",
+      "company_size": "Approximately 11-50 employees",
+      "region": "Houston, Texas and Southern United States",
+      "door_product_types": "Commercial doors including hollow metal doors, aluminum frames, commercial wood doors, automatic doors, door hardware including handicap operators and closers",
+      "has_div8_estimator": "no"
+    },
+    {
+      "company_number": 3,
+      "company_name": "Coastal Doors Inc",
+      "description": "Wholesale building materials and commercial door supplier specializing in commercial doors including hollow metal, aluminum frames, and commercial wood doors; strictly commercial projects only.",
+      "company_size": "Approximately 11-50 employees",
+      "region": "Houston, Texas and Southern United States",
+      "door_product_types": "Commercial doors including hollow metal doors, aluminum frames, commercial wood doors, automatic doors, door hardware including handicap operators and closers",
+      "has_div8_estimator": "no"
+    },
+    {
+      "company_number": 3,
+      "company_name": "Coastal Doors Inc",
+      "description": "Wholesale building materials and commercial door supplier specializing in commercial doors including hollow metal, aluminum frames, and commercial wood doors; strictly commercial projects only.",
+      "company_size": "Approximately 11-50 employees",
+      "region": "Houston, Texas and Southern United States",
+      "door_product_types": "Commercial doors including hollow metal doors, aluminum frames, commercial wood doors, automatic doors, door hardware including handicap operators and closers",
+      "has_div8_estimator": "no"
+    },
+    {
+      "company_number": 4,
+      "company_name": "Beacon Commercial Door & Lock",
+      "description": "Supplier and installer of commercial doors, frames, hardware, and access control since 1966. Specializes in hollow metal and wood doors with in-house customization.",
+      "company_size": "51-200 employees",
+      "region": "Primarily Utah and Mountain West region",
+      "door_product_types": "Hollow metal doors, wood doors, commercial-grade doors, door hardware, access control",
+      "has_div8_estimator": "yes"
+    },
+    {
+      "company_number": 4,
+      "company_name": "Beacon Commercial Door & Lock",
+      "description": "Supplier and installer of commercial doors, frames, hardware, and access control since 1966. Specializes in hollow metal and wood doors with in-house customization.",
+      "company_size": "51-200 employees",
+      "region": "Primarily Utah and Mountain West region",
+      "door_product_types": "Hollow metal doors, wood doors, commercial-grade doors, door hardware, access control",
+      "has_div8_estimator": "yes"
+    }
+  ]
+}

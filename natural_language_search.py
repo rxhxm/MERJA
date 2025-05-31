@@ -52,6 +52,20 @@ claude_client = None
 if ANTHROPIC_API_KEY:
     claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
+def set_dynamic_config(database_url=None, anthropic_key=None):
+    """Set dynamic configuration for database and API keys"""
+    global DATABASE_URL, ANTHROPIC_API_KEY, claude_client
+    
+    if database_url:
+        DATABASE_URL = database_url
+    
+    if anthropic_key:
+        ANTHROPIC_API_KEY = anthropic_key
+        claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    elif anthropic_key == "":  # Explicitly set to empty
+        ANTHROPIC_API_KEY = None
+        claude_client = None
+
 # Import SearchFilters from the existing search API
 from search_api import SearchFilters, CompanyResponse, SearchResponse, SortField, SortOrder, SearchService
 

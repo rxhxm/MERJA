@@ -1,0 +1,135 @@
+o listen, so there's we have 50,000 HTML pages, right? Okay, each I'm not sure if each HTML page is the same or different, right, but here's what you have to do, right? You have to take those HTML pages and basically make them searchable, like you can extract the structured data out of it, keep the HTML, convert that to markdown, and store it somewhere, right. And then what you have to do is you have to, basically, you can either put this in a vector database and make it searchable, right? I think that would work too. And then on top of that, we should be able to run our investment engine right. So you have to build basically a custom, custom app for our customer here. That makes sense. Yeah, so
+HTML in and then enrichment out. No,
+no, no. So we have 50,000 documentaries, yes, yeah, 50,000 HTML pages, and they're all, they all have something of the company. Yes, yeah, information about a company. Yeah, right. What you have to do is you have to take these 50,000 HTML documents, turn it into, mark them to structured text, right? Okay, we can use them, I'm pretty sure, because they're HTML, and just generate HTML you might not, okay, okay. And then you also take all the raw data as well, so we can put them in a vector database, or vector similarity. Does that make sense? Yes, yes. And then what we do is we basically, like we can, I can get you a pint code or super base or whatever instance where you can put all this data, right now, basically all of this 50,000 rules stored somewhere, and what you have to do is make it searchable, right? So let's say companies in North Korea doing XYZ, right? I mean, these are all the financial companies in the US, but example, right? You should be able to get all the results back, right? Then you should be able to basically export that to our enrichment API and then use it from through the enrichment API so you can, like, find custom fields on it, on the data. Does that make sense? Yeah, that makes sense. So, so what you're building is the first part, first is, like, searchable and make the company searchable. The second part is, we'll talk about enrichment later, how to use our enrichment API. But you know, the first part is literally, like, how do I take all these documents, how do I convert that into, like, some sort of a structured format and text, and how do I put that into a semantic database? Superbase has a vector database. You can use that. I'll give you supervised access, okay? And then from there you can, like, make it searchable, right? But, like, basically add superbairs or make other search search engine. You click on top of it and you get results back. You see the search engine on the 64 website, something, something similar, but it's not quite there with that, okay, yeah, this is, like, the data is actually already there. You already have their
+time there, right? And then,
+and then the enrichment is going to be optional on top of it, right? But if we can do that, you know, we'll pay you, like, a decent amount for the next like, but we need it soon, like, we need in two weeks. Yeah,
+two weeks I can do. What did you I mean, this doesn't matter. What you have in mind for the payments, 500 for Okay, so, yeah, yeah, all
+right. But I need this, like, done. Like, screw like, at least the part, the hosting, the data, maybe in a week, and then the investment part will take another week. But we, because we have a very strict two week deadline for
+this, okay, that'll that can, that's possible. That's something which you can handle, something you know how to do. Yeah. This is also, like, super, like, basic LLM stuff brought back to databases and making it a queryable and HTML, just wrapping
+you up with more and more like, slightly more complicated, slightly more complicated. Yeah,
+okay, yeah. This is, this is super doable. I can 100% give you the queryable, like database by a week, and then I can make the enrichment in another week. This is super
+Yeah. And then when you come in,
+we'll add, like, a book.
+Okay, so let's do that. Um, yeah,
+I can walk you through settings and setting the contract, but I'll walk you through this in a maybe, maybe night or actually venue. Here we can do this because, yeah,
+let's do that. And also one thing,
+when you say HTML, it's, it's HTML files, right? I'll check
+it HTML files. Okay, okay, cool, cool HTML files from Drive as well. But, yeah, let me check it out.
+Cool, cool. Let me. Let me lock in. Now, let me send you the enri supplies, and let's talk about this one Saturday. Yeah, sure, I'll talk to you
+
+
+
+Let me give you the rundown of so Chris is here as well. I'll give you the rundown of everything you told me, and I just want you to build on top of it, and I'll tell you kind of like, what I need for everything. Does that sound good? Makes sense? Okay, so solid. So you told me there's 50,000 HTML files, and I need to basically be able to extract the structure of every single one, put it into Markdown and store it in a vector database to do like vector like similarity search, probably in supabase, as you mentioned, and then be able to make it searchable. So you're, you said, like companies in whatever country doing very specific thing and get results back. And basically, the next step, after, like, putting everything in a database and making it very queryable, very well, is being able to, once you do search something up, be able to run enrichment API on it, and, yeah, pretty much choose what we can run enrichment API and build this as a custom app to give to them. Yeah, that's what I got. So I think like, yeah, I just want to dive into the specifics.
+Yeah, so here's how the HTML looks
+like.
+Can you let me share? No, I
+school to share. Fuck. It's the first time I've been on zoom on this computer. So let me computer. Yeah, let me, I mean, let me join back again. I
+You're Chris. Also, my mom just got a job in Vermont, and I might visit her, like, later on, maybe after the summer. Like,
+how close is that to New York? Like, six hour drive,
+like, New York City, or, yeah,
+we're in Vermont,
+I'm not sure, to be honest.
+Okay, you guys see my screen, yeah, so this is, this is what the HTML would look like. So let me see if I can open one of these. Yeah, nice. So you see this HTML, yeah? So it's like, a lot of like, bullshit, right? I'm not sure this HTML is, so you will have to actually look into this stuff and figure out what it is and how you
+can all the licenses that they're approved for, like, they're approved for, like, a mortgage lending license, or if they're approved for unsecured, like, personal loans or something. So it's essentially telling you, like, what type of company this is and where they're, like, registered to work, yes, like, can they issue loans in Missouri, for example, or Louisiana, okay? Perfectly the list of bank charters,
+okay, that makes sense. And you're saying each HTML files for a different company, and the contents of the HTML file is basically everything that they're registered for to do.
+I think it's a different set of I don't know if each one is for one company or not. Like, I didn't actually look,
+because that would make things like shoe
+simple. We honestly don't know
+was, is I like beta CS, because they're gonna give us a CSV of all the companies, as well as a CSV, as well as the HTML zip. So what I did was, is I just, like pattern match, like, if, the, if the, because the company name will always be mentioned in the HTML if it's, like, pertains to it. So I just like, had, like a dict, essentially, and like, if it's like, in the set, if any of the words in the set I associated that HTML with that company? No, yeah,
+but Chris, let's that actually might not be the right approach. In my opinion. I think it's a workable approach. But I think what we should be doing here is, because I wouldn't be surprised. I mean, in my opinion, that the HTML is follow the same format. So we can build some sort of a parser that doesn't even use an LLM, and can, just like, extract information out of this HTML in a very structured output. Right on it? You think you can do that,
+yeah, and I use beautiful suits like, extract, simplify it, and then
+all the HTML should follow the same format, right? What you would have to do is you have to read through all these, like, a couple of these HTML so actually understand everything about it, right? Once you have all of that information, then we need to figure out how to put it into graph database, right? Like, basically, like, think of one company as an entity, sorry, not a graph vector database, right? Think of one company as an entity, and what are the other parameters that are associated with this entity? Maybe, in this case, looks like it is licenses, right? And what other companies that are associated with XYZ. So we need to basically be able to make this searchable, and then we can run some sort of an LLM query on top of it, maybe extract like sub parameters, or like, is it like a mortgage company or x, y, z, unless it already exists, right? But either ways, I think the best way to go about with this is you just, like, go through the entire data set of 50,000 companies and just clean it up and put it in a vector database, and then I think anything after that, what Chris was doing is basically just a function of what we can do in a graph database, right? Because you can, like, yeah, you can match from the CSV with, like, a deck and everything. But that's essentially what we're putting this into a graph database for, right? Because then we can query on top of it based on how and when we want, yeah, and then yeah, and then the queries, the results of the queries should be a list of companies, right? So you need to figure out, maybe you want to combine it with this graph or vector, like just use super base. So what then you could do is you can combine a standard data database, or like a standard row and, like a SQL database, with a vector, so that you can put back the companies instead of just the vectors, right? Because you don't really necessarily care too much about the vectors. It's just like the query has to be good, okay, just just
+for like, the query like, I guess the feeling is it kind of gonna be a little bit like how Apollo's platform feels somewhat like that. Okay, yeah. Because I remember, on the call, you gave example of the 64 search, yeah. But
+this is, honestly, this is, like, less of the 64 search more so of like, yeah, what our customer wants. And it's a very small, like, pilot we're doing with them. So it doesn't really matter too much with, like, in terms of 64 it just, I think it's a good starting point for us to understand how to put things into a company database and have it query and give back results the way we wanted to do, right?
+Yeah. Also, what does this company do? Exactly?
+They're quite finosu. I honestly, like, I'm still not sure what properly, to be honest, but they seem to be like some sort of a loan servicing company, so I don't know maybe they, I am actually still not sure. But
+what type of information are we looking at, like this, the website too. I mean, I'll look at everything, but I'm just like, trying to get as much as I
+can before. So yeah, so I think the type of information we're looking at, I can tell you based on the email threads. I know Chris has some. Chris, what type of information are they looking I think they're looking for what, like, know
+about the mortgages. Like, they want to know whether or not they're a mortgage lender, if they are, that means they're unqualified. They want essentially, anybody that's an unsecured personal lender, or anybody that's like, like, here, I can share your with you what we've sent them. Maybe it's in Slack, yes.
+Wait, did you send him a DocuSign?
+Yeah, he signed it. Oh, okay, or he said he was gonna sign it. I haven't seen if he signed it or not. I haven't
+seen
+anything fundraising soon, or what next week? You guys fundraising soon, or what?
+That's what I was like. I was late because I was trying to make noise and stuff. No, I
+thought we would just add you on Slack.
+I think Ronan, we should make you a
+64 Yeah, 64 email,
+and then we can do all work stuff on there. Yeah, we should make a 64
+email request for Ronan, yeah. Make
+it under roham at 60 four.ai, and then we should add it to the slack. But then anything you share with sedosu, let's run it by us before you send it to them. Oh, yeah, yeah, directly.
+Send it to them, yeah, sending it to them directly is a little crazy,
+yeah? So just do that. And I think the more I can also send you the email thread once you have 64 email but then this has to be done very tastefully, and after the search to actually enrich the data too, I can send the documentation that we're using for some of the other like already working on, like, the enrichment for our web app. So maybe you can just, like, copy a part that's basically put it
+into the it's the valley jargon. Everything's done tastefully in the valley. Yeah, okay. Like,
+what does it mean by tastefully?
+You say the right words in the valley? Okay, that's, that's all you do in life. It's really,
+basically means, like, it should look good. I should work with, Okay, does that make sense? Yeah, I need a conversation. I think the agent made team is here, so I have to go and get them from downstairs with,
+like, Yeah, I'll send you. I'm looking for the finishing notebook.
+Yeah, make a Slack channel for us. It only as well, yeah,
+I will sure.
+We need to make a newspaper. Channel. I don't want to communicate with text anymore, yeah,
+64 channel, yeah.
+Chris is like, I don't want to do slack like, Texas, so much better, all right. But I
+mean, obviously, now that we, like, had the current scale, like, obviously, I think,
+honestly, I like Slack more.
+No, I know. I like Slack more too. I think
+slagging up. Can you guys hear me?
+Yeah, yeah. I feel like text. I see it more often, and I see
+it now. You need to guess get used to seeing slack more, yeah? Because, because, yeah, sure, text so you see it more. I used to see text more too. But like when you start working at a company, whether you work with us or somebody else, in the future, you'll be using slack, right, yeah, so, yeah. How do you be attentive on Slack? How do you respond back? Because, how do you respond back within minutes of you, somebody pinging you, right? That is something which is going to be very important for just not a disaster, but for anybody, right? Yeah, no, you're right. This is a good it's something to get used to. Yeah, right. It's essential.
+I agree. Yeah, here's the Yeah, oh sure. I didn't send back with
+that's about one.
+So roham, what's the availability like this week, and how much, how long do you think it's going to take for you to get this done? And then has finosu Chris, has finosus shared the data that they are looking for. Now, let me
+ping them. Yeah, if
+I have the data.
+Also no over engineering for anything, yeah? Like, keep it simple. Keep it like, functional. Like, for example, when you were doing build, you did a lot of over engineering that really wasn't required. Don't answer
+function of white coating. Yeah, it
+is a function of white coding. And one thing, which I also told Chris, and I'm telling you too, is, when you're working we are trying to limit white coding to only things we understand, right? We don't want to White Coat shit that we don't understand. See, white coding is the future, and I completely agree with it, but if we don't understand what's going on, you will break a lot more things and cost a lot more time than just actually putting it yourself. Yeah, that's something which we've seen so far a lot of like, Chris, like, was doing something, and we had, like, really, like, figure out some of the SC bucket. Thankfully, we were caching data. But we don't want to be doing this. We don't want to be wasting time on doing this. So there's no like, it takes a bit to get used to it. But if we are building this company and we're shipping out a product like, we need to be the people who know everything about the product. Yeah,
+I think, I think that's super doable, as long as, like, every whenever the agent is running, you're able to, like, follow through its steps and afterwards, also prompt it to understand everything after each step. At that point, it's full understanding everything. But I think, like when you get lazy and you're just like, prompt, and you keep, like, building on top and you don't know, like, what's going on, that's when it gets shitty.
+You know, we have something called length use cases, where you can actually see what the agent is doing, so you can follow through. We can give you access blank views, but over the summer, you will have access to like view. So this is all the shit that agent is doing, and all the tool calls it making, and all the data it's synthesizing, all those Okay, okay, so we will give you a complete transparency into everything, but even like, how are you making API calls? You know, what is the notebook you wrote? Don't white coat it. I've already written a couple of notebooks. You can just copy and paste from there and understand what was going on. Like, you really need to understand the code that at least I have written. Okay, okay. And then, yeah, but then more so for later, for this one, for no. So it's a complete new use case, right? But then again, no white coding. You know, you need to give me complete transparencies into like, Okay, what you did, like, what you did, and how things are going and what the process looks like, and how the product is coming through. And I need to have complete, yeah, I need to know everything in and out, right, okay, okay. There's no black box. You just like, type things, and it just happens, right? Yeah, things will break a lot more, especially when we start hiring founding engineers. You know, we are, we will have a very high bar for them, and, you know, we don't want them to see that, you know, we are not we don't know what we're doing, right? Yeah, yeah, especially
+like pushing, pushing products, and like not understanding it would be
+a little crazy, and you have a good data science background, right? So you should be able to understand a lot more. And that's my expectation, right? Like, we gave a similar Jupyter notebook to Kisha and Shalin there, and they couldn't figure it out, right, right? And there are data science majors, and I don't want that happening with anybody. Wait, are you like, for real, I'm being dead as Chris had to, like, walk them through it. And Chris also doesn't have a data science background, so I would assume they would understand more than Chris. But, like, Chris had to hook them up, right? And we don't want them. I mean, we stopped working with those type of customers. Anyways, small type of customer. You're only working with enterprises. But again, like, within the team, I don't want that happening,
+yeah. How are they building, by the way, if they're like, freaking, they're not
+building, they're just selling. And then they have, like, that's their team is going to fail miserably, in my opinion, because their funding engineer just there for the CTO, so there were just two sales people, and they just don't know how to build, right? So you don't want that happening, like, like, that's a shit team, right? Like, that means the founders don't know, like, don't have the technical capability like that, and you can only white code
+so much. Yeah, honestly, I was thinking about this, and I was like, even, like, doing this work and not having like, deep understanding of the type of stuff I'm pushing is, is useless for me as well. It's just me sitting there and prompting it and, like debugging if the bugs come up. I was really thinking about this, so I'm glad we brought this up.
+And the whole premise of the internship is to learn and understand and to convince us to actually hire people. Yeah, if you don't have understanding of what you actually did, and you would have a lot of very complicated technical problems to work on, which would be very fun to do, but you only put you on it once. We know that you are capable for the other things, right? Like things before, yeah, step up process, right? Yeah, yeah. Really need to understand everything that is going on. Really need to have a good grasp of things. If it takes 10% more time, I don't expect to take more than 10% more time if you understand things, if it takes you maybe, like, a couple hours to actually understand before you start writing. Start writing code. Like, I would prefer that than to actually just, like, start working ASAP and try to do bullshit, and then, like, yeah, yeah. Six days. Please fix, please fix right on chatgpt, that's just not gonna work.
+Yeah, yeah. I'm 100% on board with this. Yeah,
+yeah, yeah. We're gonna be asked, like, what our hiring thesis is. We literally were just speaking to a VC or one of our guys who works for a VC firm, and he was like, Oh, my partner's gonna ask you what the hiring bar is, and better be very high, right? So if I am making all these claims, you have to deliver on this. Yeah,
+cool. I got that part. So you said the files haven't come through Honestly, if I have everything, if
+you want to look at the notebook I sent over so you can just start getting acquainted. I sent over the notebook. I'll create a selection later, maybe tomorrow, tbh, a bit busy.
+Chris, I think you should just make,
+like, well, I'll make you an email on Google workspace. I just need, like, upgrade her account. It's like, awesome. I'm just gonna buy slack, bro. Like, oh yeah.
+Actually, I was about to do it today. Yeah, go for it.
+Can you send whatnot to and then do it? And then
+let me share with you the files that the notes was sent over. So you already have the CoLab notebook,
+you have the output. Also send you the files they sent us. You can poke around, and then you know they're just going to send us, like a gigabyte, essentially, of similar
+files, a gigabyte of HTML files,
+a gigabyte of HTML files, yeah, okay, okay, yeah. Let me know as soon as it's sent. I'll, like, kind of gage everything, and I'll be able to give you a response, like, Day of when it's sent, of how long it'll take. Shouldn't take more than two weeks. Are they on finance?
+Like 10
+days, 1514, two weeks
+from now, you get this done before finals. Oh yeah, yeah, yeah. Let's move fast on this actually, so he can block the revenue placement. Yeah?
+Well, he said he was already gonna pay it's like, not 68 here
+next and then there's a lot of other technical things I think you can help with later, after final run, when I plan to come here, I'm
+gonna look at tickets, probably like the Monday of or
+like, are you Buying or driving?
+I'm not sure, to be honest,
+not sure, because I don't know if you have parking yet. Maybe that's
+the thing. Yeah, it's a, it's a freaking thing.
+Yeah. I also, I also found a guy that leaves my room and everything, like, yeah.
+Also, I think what we should do, Chris is, like, after Demo Day,
+we should, we should maybe look into an office. We should look into an office. I think we should also look into
+maybe running if we raise sufficient amount, like,
+yeah, housing
+elsewhere, maybe,
+I think it'd be good if there's boundaries between our lives. Yeah,
+we'll see how, worst case we can
+have him for the internship.
+And then it's just like, I have friends, like, I bro, I want people like other friends like, visit me in the summer. I'm sure you have friends that want to visit you, like, if Laney comes up or something, or one of earlier friends,
+yeah, we could, that is true. We can figure out something. Maybe you can increase his pay and then, yeah, where
+is buck? Do you know where the
+zip files are with me? I have it just zip files for the one
+that I was just looking at. Yeah, you have the zip files. Just, just share the email thread with the Chris. So you roham at 64 AI,
+you should send it to
+Ryan. Yeah, just send him. Send him a diet, right?
+But I don't see the actual like zip files in it. I see this is a file. Oh, really, it's not okay, Virginia, did you make his email? I'm
+still looking for ZIP file, but you have the file, right? Can you send it to him? I'll make an email. Once
+you have the email made. Let me know, and I'll just share the file.
+Okay, sounds good, guys, I think I have everything, at least on my end.

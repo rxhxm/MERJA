@@ -343,13 +343,14 @@ class EnrichmentService:
         return is_qualified, reasons
 
 # Streamlit integration helper
-def create_enrichment_service() -> Optional[EnrichmentService]:
-    """Create enrichment service with API key from environment or user input"""
+def create_enrichment_service(api_key: Optional[str] = None) -> Optional[EnrichmentService]:
+    """Create enrichment service with API key from parameter, environment, or default"""
     import os
     
-    api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
+    # Priority: provided parameter > environment variable > default
+    effective_key = api_key or os.getenv('SIXTYFOUR_API_KEY') or '42342922-b737-43bf-8e67-68be5108be7b'
     
-    if not api_key:
+    if not effective_key:
         return None
     
-    return EnrichmentService(api_key) 
+    return EnrichmentService(effective_key) 

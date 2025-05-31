@@ -38,6 +38,13 @@ logger = logging.getLogger(__name__)
 # Configuration - Use environment variables only
 DATABASE_URL = os.getenv('DATABASE_URL')
 
+def set_dynamic_config(database_url=None):
+    """Set dynamic configuration for database URL"""
+    global DATABASE_URL
+    
+    if database_url:
+        DATABASE_URL = database_url
+
 # Pydantic Models
 class SortOrder(str, Enum):
     asc = "asc"

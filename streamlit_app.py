@@ -115,6 +115,12 @@ if 'enriched_results' not in st.session_state:
     st.session_state.enriched_results = None
 if 'selected_companies' not in st.session_state:
     st.session_state.selected_companies = []
+if 'ui_database_url' not in st.session_state:
+    st.session_state.ui_database_url = ""
+if 'ui_anthropic_key' not in st.session_state:
+    st.session_state.ui_anthropic_key = ""
+if 'ui_sixtyfour_key' not in st.session_state:
+    st.session_state.ui_sixtyfour_key = ""
 
 # Helper functions
 def run_async(coro):
@@ -137,7 +143,7 @@ def run_async(coro):
 def get_database_pool():
     """Get a cached database connection pool"""
     async def create_pool():
-        DATABASE_URL = os.getenv('DATABASE_URL')
+        DATABASE_URL = get_effective_database_url()
         if not DATABASE_URL:
             raise ValueError("DATABASE_URL environment variable is not set")
         return await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
@@ -150,7 +156,7 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
     pool = None
     try:
         # Use a dedicated connection pool for this search
-        DATABASE_URL = os.getenv('DATABASE_URL')
+        DATABASE_URL = get_effective_database_url()
         if not DATABASE_URL:
             raise ValueError("DATABASE_URL environment variable is not set")
         pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=3)
@@ -534,10 +540,116 @@ def format_lender_type(lender_type: str) -> str:
     else:
         return f'<span>❓ UNKNOWN</span>'
 
+# Configuration sidebar
+def show_configuration_sidebar():
+    """Show configuration sidebar for API keys and database URL"""
+    with st.sidebar:
+        st.header("🔧 Configuration")
+        st.markdown("Enter your credentials below or configure them in Streamlit Cloud secrets.")
+        
+        # Database URL input
+        st.subheader("Database Connection")
+        database_url = st.text_input(
+            "Database URL",
+            value=st.session_state.ui_database_url,
+            type="password",
+            placeholder="postgresql://user:pass@host:port/db",
+            help="Your PostgreSQL database connection string"
+        )
+        
+        if database_url != st.session_state.ui_database_url:
+            st.session_state.ui_database_url = database_url
+        
+        # Anthropic API Key input
+        st.subheader("AI Features (Optional)")
+        anthropic_key = st.text_input(
+            "Anthropic API Key",
+            value=st.session_state.ui_anthropic_key,
+            type="password",
+            placeholder="sk-ant-api03-...",
+            help="For enhanced AI-powered search analysis"
+        )
+        
+        if anthropic_key != st.session_state.ui_anthropic_key:
+            st.session_state.ui_anthropic_key = anthropic_key
+        
+        # SixtyFour API Key input
+        st.subheader("SixtyFour API Key (Optional)")
+        sixtyfour_key = st.text_input(
+            "SixtyFour API Key",
+            value=st.session_state.ui_sixtyfour_key,
+            type="password",
+            placeholder="sk-sixtyfour-api03-...",
+            help="For enhanced AI-powered search analysis"
+        )
+        
+        if sixtyfour_key != st.session_state.ui_sixtyfour_key:
+            st.session_state.ui_sixtyfour_key = sixtyfour_key
+        
+        # Configuration status
+        st.markdown("---")
+        st.subheader("📊 Status")
+        
+        # Check database connection
+        db_configured = bool(get_effective_database_url())
+        st.write(f"🗄️ Database: {'✅ Configured' if db_configured else '❌ Not configured'}")
+        
+        # Check Claude API
+        claude_configured = bool(get_effective_anthropic_key())
+        st.write(f"🤖 Claude AI: {'✅ Configured' if claude_configured else '❌ Not configured'}")
+        
+        # Check SixtyFour API
+        sixtyfour_configured = bool(get_effective_sixtyfour_key())
+        st.write(f"🤖 SixtyFour API: {'✅ Configured' if sixtyfour_configured else '❌ Not configured'}")
+        
+        if not db_configured:
+            st.error("⚠️ Database URL required for core functionality")
+        
+        if not claude_configured:
+            st.info("ℹ️ Claude API key enables advanced AI features")
+        
+        if not sixtyfour_configured:
+            st.info("ℹ️ SixtyFour API key enables advanced AI features")
+        
+        # Help section
+        with st.expander("📖 Help & Setup"):
+            st.markdown("""
+            **Database Setup:**
+            - Get a free PostgreSQL database from [Supabase](https://supabase.com)
+            - Format: `postgresql://user:pass@host:port/database`
+            
+            **Claude API Setup:**
+            - Get an API key from [Anthropic](https://console.anthropic.com)
+            - Enables natural language query understanding
+            
+            **SixtyFour API Setup:**
+            - Get an API key from [SixtyFour](https://console.sixtyfour.com)
+            - Enables advanced AI-powered search analysis
+            
+            **Security Note:**
+            - Credentials entered here are only stored in your browser session
+            - For production, use Streamlit Cloud secrets management
+            """)
+
+def get_effective_database_url():
+    """Get database URL from UI input or environment variables"""
+    return st.session_state.ui_database_url or os.getenv('DATABASE_URL')
+
+def get_effective_anthropic_key():
+    """Get Anthropic API key from UI input or environment variables"""
+    return st.session_state.ui_anthropic_key or os.getenv('ANTHROPIC_API_KEY')
+
+def get_effective_sixtyfour_key():
+    """Get SixtyFour API key from UI input or environment variables"""
+    return st.session_state.ui_sixtyfour_key or os.getenv('SIXTYFOUR_API_KEY')
+
 # Main app
 def main():
     # Header
     st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
+    
+    # Show configuration sidebar
+    show_configuration_sidebar()
     
     # Show only natural language search page
     show_natural_search_page()
@@ -573,6 +685,25 @@ def show_natural_search_page():
     # Perform search
     if search_clicked and query:
         st.session_state.last_query = query
+        
+        # Configure modules with effective credentials
+        effective_db_url = get_effective_database_url()
+        effective_anthropic_key = get_effective_anthropic_key()
+        
+        if not effective_db_url:
+            st.error("❌ Database URL is required. Please configure it in the sidebar.")
+            return
+        
+        # Update module configurations
+        try:
+            from natural_language_search import set_dynamic_config as set_nl_config
+            from search_api import set_dynamic_config as set_api_config
+            
+            set_nl_config(database_url=effective_db_url, anthropic_key=effective_anthropic_key)
+            set_api_config(database_url=effective_db_url)
+        except ImportError:
+            pass  # Modules may not be available in some environments
+        
         with st.spinner("🤖 Analyzing query and searching database..."):
             try:
                 result = run_async(run_natural_search(query, apply_business_filters, 1, page_size))
@@ -588,24 +719,13 @@ def show_natural_search_page():
                 if "DATABASE_URL environment variable is not set" in str(e):
                     st.error("🔧 **Database Configuration Required**")
                     st.markdown("""
-                    **To use this application, you need to configure your database connection:**
+                    **Please configure your database connection in the sidebar:**
                     
-                    **For Streamlit Cloud:**
-                    1. Go to your app settings
-                    2. Click on "Secrets" 
-                    3. Add your database URL:
-                    ```
-                    DATABASE_URL = "postgresql://username:password@host:port/database"
-                    ```
+                    1. **Get a free database** from [Supabase](https://supabase.com)
+                    2. **Enter the connection string** in the sidebar
+                    3. **Format**: `postgresql://user:password@host:port/database`
                     
-                    **For Local Development:**
-                    1. Create a `.env` file in your project root
-                    2. Add: `DATABASE_URL=your_database_connection_string`
-                    3. Or set the environment variable in your shell
-                    
-                    **Need a Database?**
-                    - Use [Supabase](https://supabase.com) for a free PostgreSQL database
-                    - See `README.md` for detailed setup instructions
+                    **Alternative:** Set up Streamlit Cloud secrets for production use.
                     """)
                 else:
                     logger.error(f"Search error in UI: {e}")
@@ -756,7 +876,7 @@ def show_natural_search_page():
                     st.info(f"🚀 Enriching all {len(companies_to_enrich)} companies...")
                 
                 # Perform enrichment
-                enrichment_service = create_enrichment_service()
+                enrichment_service = create_enrichment_service(get_effective_sixtyfour_key())
                 if enrichment_service:
                     with st.spinner("🔍 Enriching companies with SixtyFour API..."):
                         progress_bar = st.progress(0)

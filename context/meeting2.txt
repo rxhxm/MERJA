@@ -1,0 +1,48 @@
+Hello, You.
+Sorry, how's
+it going? Guys, going, well, it's going well, good, good. Chris, you're looking different. My guy,
+wow, I look like a skinhead, I think, with with hair,
+oh, man, like, little bit Tarzan, a little bit
+Tarzan, yeah, you know, I've gone wild out here. Ape shit, bro. Like,
+you know, how are things going over there? It's
+going well, I think we should close the renowned fast going really smoothly. We just closed whatnot in a paid pilot, um, and then we have calls with Braxton zoom later this week and a couple other series B startups. So things are getting you said, zoom, yeah, had a product at zoom. I'm chatting with him. Cool,
+cool. Man, that's super exciting. So, yeah, let me give you kind of the rundown. I guess the entire thing was given the drive that you told me all those HTMLs you want it to be kind of put in a structured markdown as well as be put into a database that we can search, right? I mean, fundamentally,
+just needs to be searchable. I think, I don't think the structured Markdown is important, but if it's a it's a useful step to make it searchable.
+I think, yeah, I was, I was actually initially just putting it directly, and I I wasn't super clear on whether you guys wanted the markdown as well. So I just, I just made every single one of them has a markdown too, but, but yeah, let me know if you guys want me to get into the scripts everything. But I just want to kind of show you the basic search feature I currently have. So actually,
+yeah, can you share your screen? Yeah, sir is watching from for sure. Yes,
+you said you're coming up there on the 15th or 16th.
+Yeah, pretty much, like, I'll be there 16th. I can come a little later if that's like, fine. Okay, okay, cool. So, so this is pretty much the data over here, right? And initially, what I did was I read a couple, but it was super, like, lengthy, and I came down to the conclusion, like, after basically what I would do is I'd have the LLM try to find the exact pattern, and then extract it, and then cross reference it to like, another set of random HTMLs, until it got it down right, until there was no, no fields that were like, not included from the extraction. And it took around, like, 200 HTML files, and after 200 HTML files, every single files, every single file that I would do afterwards, every every single data was extracted once, like you, I'd have the I'd have the agent, like, manually review it, and then pretty much, just process every single one. And then I have, like, let me show you
+the super base, actually, what's up? Did you have
+a front end for it? Um, no, no, I didn't make one. Yeah, sure.
+Yeah, just something simple. I
+can't hear sarth Very well. Sarth, can you maybe, like he said, like a streamline UI, oh, yeah, for sure. For sure. For sure. Complicated. It just needs to be functionally usable by our customer. Because, because I have a I have a what's it called? Thing? Not
+I just put the entire thing in our database and stuff
+doing it on 7k on here and doing, but, yeah, the search question, I can just put it in a streamlet and then add the the what, what rows? Sorry, what
+columns do we have for this table?
+For this table, well,
+there's, there's different tables. I mean, for this one, it's just like, mainly the companies and the URLs and the time spent. And then it's like the main three like, information that's getting extracted is the licenses and addresses and the companies, and then everything else is just information about that. In each of those three tables, those were the like, the main three things. But like, mainly, like, out of the 14,000 out of the 14,000 companies that we got, there's like, 69,000 licenses for each so, like, the majority of the HTML is actually just pretty much, like, license and registration data,
+but then we have all that information correctly, right? Like, we're not, like, removing any information, like we didn't pick up. Like, there's nothing that we didn't pick up, right?
+Pretty much, yeah. I mean, that's what I did for the extractor from the age, huh? Would you say, saying we,
+we did not pick up any information, right? Like, they're like, like, we did not miss out on any information. We picked up everything we wanted. Yeah?
+Yeah. So, I mean, after, like, I did so much testing for the extractor itself to see if it was extracting all the information. And obviously, once I'm done, I'm going to do, like, more thorough, a little bit more thorough, but I tested it pretty thoroughly, like, innovation should be there. I after I ran it on a couple 1000, it only missed out on like I was, I believe this was like 6000 6000 rows in, and it only missed like 36 points, and it actually gives an error of when it actually misses certain areas. But it's like, we shouldn't really be missing any information with the script.
+Yeah, sure. Maybe.
+Let me get started. Yeah, yeah, so, so there's like different searches we can do. Let me, let me go to usage examples, like, for example, it's just like search for banks, specifically companies that are in Texas, large companies that have more than 50 licenses. You know, there's like different formats we can do it. And then there's, like, more, a lot more advanced searches like this looks
+using for search. Did you make open source or something, or are you just, like, made your own functions? Mid mile, mid mile. Yeah.
+And yeah, pretty much I can just, like, over here, you search for banks in California, and it'll just give you,
+I think one thing which would be a good next point maybe possible, would be like, like, free form searches that convert to, like, your format, just using an LM layer on top, you know, you have anthropic key,
+yeah, yeah. That's precisely what I wanted to say. Is that, like, you know, you can just put in a natural language and it will, like, turn that into the queryable format and search for things specifically I
+don't, and that's fairly easy, right? You just pass on whatever functions you made as your as the contacts, and be like, Hey, this is natural query. Use the function we've made to, like, transform this into natural query. And these are all the formats you can use. And then I think we will figure out 100% Yeah.
+And I can just give it like a, you know, like a 200 line, like txt as this context. And it should basically be able to do like with every possible search example. And it should be able to turn everything into that. And then I can actually include,
+did you also vectorize things? No, no, not also vectorize the license information from the other columns. So you can also do vector queries in vector search, okay,
+okay, so we don't have to, it doesn't need to be as, like, specific and strict on each search, right?
+Yeah. I mean, think of it from a human's experience, like, whatever elevates a you person's experiences would be looking for, right? Okay,
+yeah. So here's another thing. I know you told me, like you want to turn this into a web app and deliver for them. Do you think like stream lit is like the way to go?
+Maybe not, maybe making a next js app or like a React app direction, but we can start off with streamlin, and once you're here, and we can give them like a proper web app. Yeah, that
+works, I guess, for next week. What I can do is, once we have the super base setup, put all 77k in there, and then obviously, add the, add the LLM layer on top of it that can make it queryable with the vector embeddings. And also, yeah, just put it all in streamlet. Just simple UI to Yeah. And then
+yeah, the search should be just like, just like, make sure it's working. Yeah, probably. And then yeah, I think we should be fine.
+I think, I think we're not missing any data, but also do more testing on that to make sure, like, nothing like, even like, the 36 that we're missing after a couple 1000 missing out anything, yeah, yeah, I'll make sure that that's not there either. And then, yeah, that's pretty much
+no, like, no subtree, you should be missing, and no length, like, the entire data point just cannot be missing. Obviously, with some information, like, if there's anything that exists on the HTML, it should exist in a search
+space. The good thing is, like, all of these HTML actually, like, follow very similar format. So the kind of the we reach, the local, like, minima of, like, basically the things we can search for very quick after, like, a few, a few queries. So I don't think there should be
+anything. Third about is, like, let's say there's a license. There's a license in the HTML, like, a one license for a particular company that's, like, not searchable because, like, we, like, have the extra we just like, lost on, like, the New York like tab for the license, or something like that. Could be really bad for Fido. So because they care deeply about, like, everywhere, every state the company is like licensing, yeah, make us maintain it so we
+have actually suboptimal, yeah, so actually that, yeah, I completely agree. So licenses, I guess, are the main like information here. But the thing that it actually slips up on usually is the emails and phone numbers actually follow a very strict format, pretty much it never actually closing.
+Phone numbers are also very important, because that's how they'll do the outreach. And then what's also important is the type of lender that it is, because we do not want mortgage lenders. We only want unsecured like personal lenders. And like the type of lender it is is very important. Okay, yeah, okay, so like, but like those three things are important, Like phone number, emails are really important. And then
