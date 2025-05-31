@@ -47,9 +47,6 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv('DATABASE_URL')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is not set")
-
 # Anthropic client (optional)
 claude_client = None
 if ANTHROPIC_API_KEY:
@@ -294,8 +291,14 @@ class VectorSearchService:
         self.pool = None
     
     async def connect(self):
-        """Initialize database connection"""
-        self.pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+        """Initialize database connection for vector search"""
+        if not DATABASE_URL:
+            raise ValueError("DATABASE_URL environment variable is not set")
+        try:
+            self.pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+        except Exception as e:
+            logger.error(f"Vector search database connection failed: {e}")
+            raise
     
     async def semantic_search(self, query: str, limit: int = 50) -> List[str]:
         """Perform semantic search on company names and trade names"""
