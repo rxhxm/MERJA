@@ -583,9 +583,35 @@ def show_natural_search_page():
                     st.error("❌ Search returned no results. Please try a different query.")
             except Exception as e:
                 st.error(f"❌ Search failed: {str(e)}")
-                logger.error(f"Search error in UI: {e}")
-                import traceback
-                st.code(traceback.format_exc())
+                
+                # Special handling for database configuration errors
+                if "DATABASE_URL environment variable is not set" in str(e):
+                    st.error("🔧 **Database Configuration Required**")
+                    st.markdown("""
+                    **To use this application, you need to configure your database connection:**
+                    
+                    **For Streamlit Cloud:**
+                    1. Go to your app settings
+                    2. Click on "Secrets" 
+                    3. Add your database URL:
+                    ```
+                    DATABASE_URL = "postgresql://username:password@host:port/database"
+                    ```
+                    
+                    **For Local Development:**
+                    1. Create a `.env` file in your project root
+                    2. Add: `DATABASE_URL=your_database_connection_string`
+                    3. Or set the environment variable in your shell
+                    
+                    **Need a Database?**
+                    - Use [Supabase](https://supabase.com) for a free PostgreSQL database
+                    - See `README.md` for detailed setup instructions
+                    """)
+                else:
+                    logger.error(f"Search error in UI: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+                
                 st.info("💡 Try refreshing the page or using a simpler query.")
     
     # Display results
