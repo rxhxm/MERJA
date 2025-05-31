@@ -1,62 +1,42 @@
 #!/bin/bash
 
-# NMLS Search Platform - Deployment Setup Script
-# This script helps prepare your repository for deployment to Streamlit Cloud
-
-echo "🚀 Setting up NMLS Search Platform for deployment..."
+# NMLS Streamlit App Deployment Script
+echo "🚀 NMLS Streamlit App Deployment"
+echo "================================"
 
 # Check if git is initialized
 if [ ! -d ".git" ]; then
-    echo "📦 Initializing Git repository..."
+    echo "Initializing git repository..."
     git init
-    echo "✅ Git repository initialized"
-else
-    echo "✅ Git repository already exists"
+    git add .
+    git commit -m "Initial commit: NMLS Streamlit app"
 fi
 
-# Create .env file if it doesn't exist
-if [ ! -f ".env" ]; then
-    echo "📝 Creating .env file from template..."
-    cp env.example .env
-    echo "⚠️  Please edit .env file with your actual credentials"
-    echo "✅ .env file created"
+# Check if remote exists
+if ! git remote get-url origin > /dev/null 2>&1; then
+    echo ""
+    echo "📝 Next steps:"
+    echo "1. Create a new repository on GitHub"
+    echo "2. Run: git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git"
+    echo "3. Run: git push -u origin main"
+    echo ""
+    echo "🌐 Then deploy to Streamlit Cloud:"
+    echo "1. Go to https://streamlit.io/cloud"
+    echo "2. Connect your GitHub account"
+    echo "3. Deploy from your repository"
+    echo "4. Configure credentials in the app sidebar"
 else
-    echo "✅ .env file already exists"
-fi
-
-# Add all files to git (except those in .gitignore)
-echo "📁 Adding files to Git..."
-git add .
-
-# Check if there are changes to commit
-if git diff --staged --quiet; then
-    echo "✅ No changes to commit"
-else
-    echo "💾 Committing changes..."
-    git commit -m "Initial commit: NMLS Search Platform ready for deployment"
-    echo "✅ Changes committed"
+    echo "Pushing to GitHub..."
+    git push origin main
+    echo ""
+    echo "✅ Code pushed to GitHub!"
+    echo "🌐 Deploy to Streamlit Cloud: https://streamlit.io/cloud"
 fi
 
 echo ""
-echo "🎉 Setup complete! Next steps:"
+echo "📋 Required for deployment:"
+echo "- PostgreSQL database with NMLS data"
+echo "- Anthropic API key (Claude AI)"
+echo "- Optional: SixtyFour API key"
 echo ""
-echo "1. 📝 Edit your .env file with actual credentials:"
-echo "   - DATABASE_URL (required)"
-echo "   - SIXTYFOUR_API_KEY (optional)"
-echo "   - ANTHROPIC_API_KEY (optional)"
-echo ""
-echo "2. 🌐 Create a GitHub repository and push your code:"
-echo "   git remote add origin https://github.com/your-username/your-repo-name.git"
-echo "   git branch -M main"
-echo "   git push -u origin main"
-echo ""
-echo "3. 🚀 Deploy to Streamlit Cloud:"
-echo "   - Go to https://share.streamlit.io"
-echo "   - Click 'Deploy an app'"
-echo "   - Select your GitHub repository"
-echo "   - Set main file: streamlit_app.py"
-echo "   - Add your secrets using the template in secrets.toml.example"
-echo ""
-echo "4. ✅ Your app will be live at: https://your-app-name.streamlit.app"
-echo ""
-echo "📚 For detailed instructions, see README.md" 
+echo "💡 Use the app's sidebar to configure these credentials!" 

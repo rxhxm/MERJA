@@ -85,12 +85,6 @@ tmp/
 temp/
 *.tmp
 
-# Data files (uncomment if you don't want to commit data)
-# data/
-# *.csv
-# *.json
-# *.xlsx
-
 # Large files and model files
 *.pkl
 *.joblib

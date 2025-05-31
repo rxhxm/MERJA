@@ -1,194 +1,174 @@
-# NMLS Search & Intelligence Platform
+# NMLS Streamlit Search Application
 
-A comprehensive Streamlit application for searching and analyzing the NMLS database with AI-powered natural language processing and company enrichment capabilities.
+A powerful Streamlit application for searching and analyzing NMLS (Nationwide Multistate Licensing System) data with AI-powered natural language search capabilities.
 
-## Features
+## 🚀 Quick Deploy
 
-- 🔍 **Natural Language Search**: Query the NMLS database using plain English
-- 🤖 **AI-Powered Analysis**: Claude AI understands search intent and provides business intelligence
-- 📊 **Company Classification**: Automatic classification of lenders (unsecured personal, mortgage, mixed)
-- 🎯 **Business Scoring**: Relevance scoring for business needs
-- 📈 **Data Enrichment**: Integration with SixtyFour API for additional company intelligence
-- 👥 **Contact Discovery**: Find key decision makers and contacts
-- 📱 **Responsive UI**: Clean, modern interface optimized for business use
+[![Deploy to Streamlit Cloud](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://streamlit.io/cloud)
 
-## Live Demo
+1. **Fork this repository**
+2. **Connect to Streamlit Cloud**
+3. **Configure credentials in the app sidebar**
+4. **Start searching!**
 
-🚀 **Deploy your own instance using the instructions below**
+## ✨ Features
 
-## Quick Start
+- **🔍 Natural Language Search**: Search using plain English queries
+- **🤖 AI-Powered Analysis**: Leverage Claude AI for intelligent data analysis
+- **🏢 Company Classification**: Automatic categorization of financial services companies
+- **📊 Business Intelligence Scoring**: Comprehensive company evaluation metrics
+- **🔗 Data Enrichment**: Enhanced company information and contact discovery
+- **⚙️ Flexible Configuration**: Support for both UI-based and environment variable configuration
 
-1. **Search Companies**: Enter natural language queries like "Find personal loan companies in California"
-2. **Apply Filters**: Use business filters to prioritize target companies
-3. **Analyze Results**: Review business intelligence and company classifications
-4. **Enrich Data**: Select companies for enrichment with additional business data
-5. **Export Data**: Download enriched company and contact data
+## 🛠️ Quick Start
 
-## Architecture
+### Option 1: UI Configuration (Recommended)
 
-- **Frontend**: Streamlit web application
-- **Database**: PostgreSQL (Supabase recommended)
-- **AI Services**: Claude AI, SixtyFour API
-- **Data Processing**: Async Python with comprehensive error handling
+1. **Deploy to Streamlit Cloud**:
+   - Fork this repository
+   - Connect your GitHub account to [Streamlit Cloud](https://streamlit.io/cloud)
+   - Deploy the app directly from your fork
 
-## Environment Variables
+2. **Configure via UI**:
+   - Open the deployed app
+   - Use the sidebar configuration panel to enter your credentials:
+     - Database URL (PostgreSQL connection string)
+     - Anthropic API Key (for Claude AI)
+     - SixtyFour API Key (optional, for enhanced features)
 
-The following environment variables are required:
+3. **Start Searching**:
+   - Use natural language queries like "Find credit unions in Texas"
+   - Explore AI-powered company analysis and insights
 
-- `DATABASE_URL`: PostgreSQL connection string
-- `SIXTYFOUR_API_KEY`: API key for company enrichment (optional)
-- `ANTHROPIC_API_KEY`: Claude AI API key (optional, enables natural language search)
+### Option 2: Environment Variables (Production)
 
-## Local Development
+1. **Set up your environment**:
+   ```bash
+   cp env.example .env
+   # Edit .env with your actual credentials
+   ```
 
+2. **For Streamlit Cloud**:
+   ```bash
+   cp secrets.toml.example .streamlit/secrets.toml
+   # Edit secrets.toml with your credentials
+   ```
+
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Run locally**:
+   ```bash
+   streamlit run streamlit_app.py
+   ```
+
+## 🔧 Required Services
+
+### Database (Required)
+You need a PostgreSQL database with NMLS data. Options:
+- **Supabase** (Recommended for free tier): [https://supabase.com](https://supabase.com)
+- **Neon**: [https://neon.tech](https://neon.tech)
+- **Railway**: [https://railway.app](https://railway.app)
+- **Your own PostgreSQL instance**
+
+### AI Services (Required)
+- **Anthropic Claude API**: Get your API key at [https://console.anthropic.com](https://console.anthropic.com)
+
+### Optional Services
+- **SixtyFour API**: For enhanced data enrichment features
+
+## ⚙️ Configuration
+
+### Environment Variables
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/nmls-search.git
-cd nmls-search
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up environment variables
-cp env.example .env
-# Edit .env with your actual values
-
-# Run the application
-python run_streamlit.py
-# OR directly with streamlit
-streamlit run streamlit_app.py
+DATABASE_URL=postgresql://username:password@host:port/database
+ANTHROPIC_API_KEY=sk-ant-api03-...
+SIXTYFOUR_API_KEY=your_sixtyfour_key  # Optional
 ```
 
-## Deployment on Streamlit Cloud
-
-### Step 1: Prepare Your Repository
-
-1. Fork or clone this repository to your GitHub account
-2. Ensure all files are committed to your Git repository
-3. Make sure your `.env` file is NOT committed (it should be in `.gitignore`)
-
-### Step 2: Deploy to Streamlit Cloud
-
-1. Go to [share.streamlit.io](https://share.streamlit.io)
-2. Click "Deploy an app"
-3. Select your repository
-4. Set main file path: `streamlit_app.py`
-5. Configure environment variables (see below)
-
-### Step 3: Environment Variables Setup
-
-In Streamlit Cloud, add these secrets in the app settings:
-
+### Streamlit Cloud Secrets
 ```toml
-# Database configuration (REQUIRED)
-DATABASE_URL = "postgresql://username:password@host:port/database"
+[connections.postgresql]
+url = "postgresql://username:password@host:port/database"
 
-# API keys (OPTIONAL - features will be disabled if not provided)
-SIXTYFOUR_API_KEY = "your-sixtyfour-api-key"
-ANTHROPIC_API_KEY = "your-anthropic-api-key"
+[api_keys]
+anthropic = "sk-ant-api03-..."
+sixtyfour = "your_sixtyfour_key"  # Optional
 ```
 
-### Step 4: Database Setup
+## 🏗️ Application Architecture
 
-You'll need a PostgreSQL database with NMLS data. Options include:
+```
+streamlit_app.py              # Main Streamlit application
+├── natural_language_search.py   # AI-powered search logic
+├── search_api.py             # Database query interface
+└── enrichment_service.py     # Data enrichment features
+```
 
-1. **Supabase** (Recommended for ease of use):
-   - Create a free account at [supabase.com](https://supabase.com)
-   - Create a new project
-   - Use the provided connection string as your `DATABASE_URL`
+## 🎯 Key Features
 
-2. **Other PostgreSQL providers**:
-   - AWS RDS, Google Cloud SQL, Azure Database, etc.
-   - Any PostgreSQL instance with public access
+### Natural Language Search
+Query examples:
+- "Find all mortgage companies in California"
+- "Show me credit unions with assets over $100M"  
+- "List collection agencies licensed in Texas"
+- "What are the top personal loan companies?"
 
-The database should contain tables for NMLS companies and licenses. See the database schema section below for details.
+### AI Analysis
+- Company business model analysis
+- Risk assessment
+- Market positioning insights
+- Regulatory compliance overview
 
-## Database Schema
+### Data Export
+- CSV export of search results
+- Detailed company reports
+- Analysis summaries
 
-The application expects a PostgreSQL database with the following main tables:
+## 🚀 Deployment Options
 
-- `companies`: Company information and metadata
-- `licenses`: License details and relationships
-- Additional tables for contacts, business structures, etc.
+### Streamlit Cloud (Recommended)
+1. Fork this repository
+2. Connect to Streamlit Cloud
+3. Configure secrets in the app settings
+4. Deploy automatically
 
-Key fields used by the application:
-- `companies.name`, `companies.phone`, `companies.email`, `companies.website`
-- `licenses.license_type`, `licenses.state`, `licenses.status`
+### Other Platforms
+- **Heroku**: Add `Procfile` with `web: streamlit run streamlit_app.py --server.port=$PORT`
+- **Railway**: Configure build and start commands
+- **Render**: Use Python environment with Streamlit
 
-## API Integration
+## 📁 Files Included
 
-### SixtyFour API (Optional)
-- Company enrichment and intelligence
-- Contact discovery
-- Business classification
-- Get API key from SixtyFour to enable these features
+- `streamlit_app.py` - Main application with UI and configuration
+- `natural_language_search.py` - AI-powered search functionality
+- `search_api.py` - Database interface and query logic
+- `enrichment_service.py` - Data enrichment and company intelligence
+- `requirements.txt` - Python dependencies
+- `packages.txt` - System packages for Streamlit Cloud
+- `env.example` - Environment variable template
+- `secrets.toml.example` - Streamlit secrets template
 
-### Claude AI (Optional)
-- Natural language query processing
-- Intent analysis
-- Business recommendations
-- Get API key from Anthropic to enable natural language search
+## 🆘 Support
 
-## Performance Considerations
+- Check the configuration sidebar for setup help
+- Verify your database connection and API keys
+- Ensure your database has the required NMLS tables
+- For issues, check the error messages in the app
 
-- **Async Processing**: All database and API calls are asynchronous
-- **Connection Pooling**: Efficient database connection management
-- **Rate Limiting**: Respects API rate limits
-- **Pagination**: Handles large result sets efficiently
-- **Caching**: Streamlit caching for improved performance
+## 🤝 Contributing
 
-## Security
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-- Environment variables for sensitive data
-- Input validation and sanitization
-- Secure database connections
-- API key protection
+## 📄 License
 
-## Features That Work Without API Keys
-
-Even without optional API keys, the application provides:
-- Full database search and filtering
-- Company and license information display
-- Data export capabilities
-- Basic business intelligence
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Database Connection Failed**
-   - Verify your `DATABASE_URL` is correct
-   - Ensure your database allows connections from Streamlit Cloud IPs
-   - Check if your database is running and accessible
-
-2. **Module Import Errors**
-   - Ensure all dependencies are in `requirements.txt`
-   - Check Python version compatibility
-
-3. **Natural Language Search Not Working**
-   - Verify `ANTHROPIC_API_KEY` is set correctly
-   - Check API key permissions and credits
-
-4. **Enrichment Features Disabled**
-   - Verify `SIXTYFOUR_API_KEY` is set correctly
-   - Check API key permissions
-
-### Getting Help
-
-For issues or questions:
-1. Check the error messages in the application
-2. Review the logs in Streamlit Cloud
-3. Ensure all environment variables are set correctly
-4. Verify database connectivity
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-MIT License - feel free to use this project for your own purposes.
+This project is licensed under the MIT License.
 
 ---
 
-Built with ❤️ using Streamlit, Python, and modern web technologies. 
+**Ready to deploy?** Click the "Deploy to Streamlit Cloud" button above and start searching NMLS data with AI! 🎉 
