@@ -94,4 +94,9 @@ temp/
 # Large files and model files
 *.pkl
 *.joblib
-*.model 
+*.model
+
+# Large data directories - should not be in repository
+drive/
+processed_markdown/
+bild/ 
