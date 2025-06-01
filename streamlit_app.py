@@ -22,8 +22,6 @@ from typing import Dict, List, Any, Optional
 import time
 import logging
 import nest_asyncio
-import os
-import asyncpg
 
 # Configure Streamlit page
 st.set_page_config(
@@ -37,6 +35,8 @@ try:
     from natural_language_search import enhanced_search_api, LenderClassifier, ContactValidator, LenderType
     from search_api import SearchFilters, db_manager, SearchService, SortField, SortOrder
     from enrichment_service import create_enrichment_service, EnrichmentService
+    import asyncpg
+    import os
 except ImportError as e:
     st.error(f"Failed to import required modules: {e}")
     st.stop()
@@ -115,51 +115,51 @@ if 'enriched_results' not in st.session_state:
     st.session_state.enriched_results = None
 if 'selected_companies' not in st.session_state:
     st.session_state.selected_companies = []
-if 'ui_database_url' not in st.session_state:
-    st.session_state.ui_database_url = ""
-if 'ui_anthropic_key' not in st.session_state:
-    st.session_state.ui_anthropic_key = ""
-if 'ui_sixtyfour_key' not in st.session_state:
-    st.session_state.ui_sixtyfour_key = ""
 
 # Helper functions
 def run_async(coro):
     """Run async function in Streamlit with proper event loop handling"""
     try:
-        # Try to get the current event loop
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If we're in an async context, we need to use a different approach
-            nest_asyncio.apply()
-            return loop.run_until_complete(coro)
-        else:
-            return loop.run_until_complete(coro)
-    except RuntimeError:
-        # No event loop exists, create a new one
-        return asyncio.run(coro)
+        # For Streamlit, we need to create a fresh event loop
+        import asyncio
+        import sys
+        
+        if sys.platform == 'win32':
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            result = loop.run_until_complete(coro)
+            return result
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        logger.error(f"Async execution error: {e}")
+        # Fallback: try with asyncio.run
+        try:
+            return asyncio.run(coro)
+        except Exception as e2:
+            logger.error(f"Fallback async execution error: {e2}")
+            raise e2
 
 # Database connection helper with better lifecycle management
 @st.cache_resource
 def get_database_pool():
     """Get a cached database connection pool"""
-    async def create_pool():
-        DATABASE_URL = get_effective_database_url()
-        if not DATABASE_URL:
-            raise ValueError("DATABASE_URL environment variable is not set")
-        return await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
-    
-    return run_async(create_pool())
+    # Don't use cached pools in Streamlit - create fresh connections
+    return None
 
-# Async helper functions
+# Simplified search function that creates its own connection
 async def run_natural_search(query: str, apply_filters: bool = True, page: int = 1, page_size: int = 20):
     """Run natural language search with proper error handling"""
-    pool = None
     try:
-        # Use a dedicated connection pool for this search
-        DATABASE_URL = get_effective_database_url()
-        if not DATABASE_URL:
-            raise ValueError("DATABASE_URL environment variable is not set")
-        pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=3)
+        # Import search API
+        from search_api import SearchService, SearchFilters, SortField, SortOrder
+        from natural_language_search import LenderClassifier, ContactValidator, LenderType
         
         # Parse the query for business intelligence
         query_lower = query.lower()
@@ -167,18 +167,23 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
         # Create search filters based on query analysis
         filters = SearchFilters()
         
-        # Extract location information
-        if "california" in query_lower or "ca" in query_lower:
+        # Extract location information (fix typos in common state names)
+        query_clean = query_lower.replace("califprnia", "california").replace("califronia", "california")
+        
+        if "california" in query_clean or " ca " in query_clean or query_clean.endswith(" ca"):
             filters.states = ["CA"]
-        elif "texas" in query_lower or "tx" in query_lower:
+        elif "texas" in query_clean or " tx " in query_clean or query_clean.endswith(" tx"):
             filters.states = ["TX"]
-        elif "florida" in query_lower or "fl" in query_lower:
+        elif "florida" in query_clean or " fl " in query_clean or query_clean.endswith(" fl"):
             filters.states = ["FL"]
-        elif "new york" in query_lower or "ny" in query_lower:
+        elif "new york" in query_clean or " ny " in query_clean or query_clean.endswith(" ny"):
             filters.states = ["NY"]
         
-        # Map personal loan related terms to appropriate license types
-        if any(term in query_lower for term in ["personal loan", "consumer credit", "consumer loan", "installment loan", "finance company", "small loan"]):
+        # For basic company searches, just search by company name
+        if any(term in query_clean for term in ["companies", "company", "companie"]):
+            # Don't set specific license filters for basic company searches
+            pass
+        elif any(term in query_lower for term in ["personal loan", "consumer credit", "consumer loan", "installment loan", "finance company", "small loan"]):
             # Focus on unsecured personal lending license types (using actual DB license types)
             filters.license_types = [
                 "Consumer Loan Company License",
@@ -226,23 +231,18 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
                 filters.query = "lend"
             elif "loan" in query_lower:
                 filters.query = "loan"
-            else:
-                # Fall back to the original query for broader searches
-                filters.query = query
+            # For broad searches like "companies in california", don't set a specific query filter
         
-        # Add business filters if requested
-        if apply_filters and "personal loan" in query_lower:
-            # For personal loan searches, prioritize companies with contact info
-            filters.has_email = True
+        # Create a fresh database connection for this search
+        DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
         
-        # Use the existing search API directly
-        from search_api import SearchService
+        # Use a simple connection instead of a pool for Streamlit
+        conn = await asyncpg.connect(DATABASE_URL)
         
-        async with pool.acquire() as conn:
-            # Get total count first to debug
+        try:
+            # Get total count first
             count_query, count_params = SearchService.build_count_query(filters)
             
-            # Debug: log the query
             logger.info(f"Count query: {count_query}")
             logger.info(f"Count params: {count_params}")
             
@@ -258,6 +258,17 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
                 total_count = await conn.fetchval(count_query, *count_params)
                 filters = fallback_filters
                 logger.info(f"Fallback search count: {total_count}")
+            
+            # If still no results, try even broader search
+            if total_count == 0:
+                logger.info("Still no results, trying very broad search...")
+                broad_filters = SearchFilters()
+                if filters.states:
+                    broad_filters.states = filters.states
+                count_query, count_params = SearchService.build_count_query(broad_filters)
+                total_count = await conn.fetchval(count_query, *count_params)
+                filters = broad_filters
+                logger.info(f"Broad search count: {total_count}")
             
             # Get results
             search_query, search_params = SearchService.build_search_query(
@@ -298,54 +309,21 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
                 
                 enhanced_companies.append(enhanced_company)
             
-            # Calculate statistics on ALL results (not just the displayed page)
-            # Get all results for statistics calculation
-            all_search_query, all_search_params = SearchService.build_search_query(
-                filters, 1, total_count,  # Get ALL results for stats
-                SortField.company_name, SortOrder.asc
-            )
-            
-            all_rows = await conn.fetch(all_search_query, *all_search_params)
-            all_enhanced_companies = []
-            
-            for row in all_rows:
-                company_data = dict(row)
-                lender_classification = LenderClassifier.classify_company(
-                    company_data.get('license_types', [])
-                )
-                has_valid_contact, contact_issues = ContactValidator.has_valid_contact_info(company_data)
-                business_score = calculate_business_score(lender_classification, has_valid_contact, company_data)
-                
-                all_enhanced_companies.append({
-                    **company_data,
-                    "lender_type": lender_classification.value,
-                    "has_valid_contact": has_valid_contact,
-                    "business_score": business_score
-                })
-            
             # Sort by business score if applying business filters
             if apply_filters:
                 enhanced_companies.sort(key=lambda x: x['business_score'], reverse=True)
-                all_enhanced_companies.sort(key=lambda x: x['business_score'], reverse=True)
             
-            # Filter to show personal loan companies first if that's what was requested
-            if "personal loan" in query_lower:
-                # Prioritize unsecured personal lenders
-                personal_lenders = [c for c in enhanced_companies if c['lender_type'] == 'unsecured_personal']
-                other_lenders = [c for c in enhanced_companies if c['lender_type'] != 'unsecured_personal']
-                enhanced_companies = personal_lenders + other_lenders
-            
-            # Calculate statistics on ALL results for accuracy
-            stats = calculate_result_stats(all_enhanced_companies, query)
+            # Calculate statistics (simplified for performance)
+            stats = calculate_result_stats(enhanced_companies, query)
             
             # Determine intent and explanation
             intent = "find_companies"
-            explanation = f"Basic text search for: {query}"
+            explanation = f"Searching for companies matching: {query}"
             business_flags = ["claude_api_unavailable"]
             
             if "personal loan" in query_lower:
                 intent = "find_personal_lenders"
-                explanation = f"Searching for personal loan companies with focus on unsecured lending licenses"
+                explanation = f"Searching for personal loan companies"
                 if not any(c['lender_type'] == 'unsecured_personal' for c in enhanced_companies):
                     business_flags.append("no_target_lenders_found")
             elif "mortgage" in query_lower:
@@ -371,16 +349,16 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
                 },
                 "business_intelligence": stats
             }
+        
+        finally:
+            # Always close the connection
+            await conn.close()
                 
     except Exception as e:
         logger.error(f"Search error: {e}")
         import traceback
         traceback.print_exc()
-        raise e  # Re-raise the exception instead of returning None
-    finally:
-        # Clean up the connection pool
-        if pool:
-            await pool.close()
+        raise e
 
 def calculate_business_score(lender_type: LenderType, has_valid_contact: bool, company_data: Dict) -> float:
     """Calculate business relevance score for Fido"""
@@ -540,116 +518,10 @@ def format_lender_type(lender_type: str) -> str:
     else:
         return f'<span>❓ UNKNOWN</span>'
 
-# Configuration sidebar
-def show_configuration_sidebar():
-    """Show configuration sidebar for API keys and database URL"""
-    with st.sidebar:
-        st.header("🔧 Configuration")
-        st.markdown("Enter your credentials below or configure them in Streamlit Cloud secrets.")
-        
-        # Database URL input
-        st.subheader("Database Connection")
-        database_url = st.text_input(
-            "Database URL",
-            value=st.session_state.ui_database_url,
-            type="password",
-            placeholder="postgresql://user:pass@host:port/db",
-            help="Your PostgreSQL database connection string"
-        )
-        
-        if database_url != st.session_state.ui_database_url:
-            st.session_state.ui_database_url = database_url
-        
-        # Anthropic API Key input
-        st.subheader("AI Features (Optional)")
-        anthropic_key = st.text_input(
-            "Anthropic API Key",
-            value=st.session_state.ui_anthropic_key,
-            type="password",
-            placeholder="sk-ant-api03-...",
-            help="For enhanced AI-powered search analysis"
-        )
-        
-        if anthropic_key != st.session_state.ui_anthropic_key:
-            st.session_state.ui_anthropic_key = anthropic_key
-        
-        # SixtyFour API Key input
-        st.subheader("SixtyFour API Key (Optional)")
-        sixtyfour_key = st.text_input(
-            "SixtyFour API Key",
-            value=st.session_state.ui_sixtyfour_key,
-            type="password",
-            placeholder="sk-sixtyfour-api03-...",
-            help="For enhanced AI-powered search analysis"
-        )
-        
-        if sixtyfour_key != st.session_state.ui_sixtyfour_key:
-            st.session_state.ui_sixtyfour_key = sixtyfour_key
-        
-        # Configuration status
-        st.markdown("---")
-        st.subheader("📊 Status")
-        
-        # Check database connection
-        db_configured = bool(get_effective_database_url())
-        st.write(f"🗄️ Database: {'✅ Configured' if db_configured else '❌ Not configured'}")
-        
-        # Check Claude API
-        claude_configured = bool(get_effective_anthropic_key())
-        st.write(f"🤖 Claude AI: {'✅ Configured' if claude_configured else '❌ Not configured'}")
-        
-        # Check SixtyFour API
-        sixtyfour_configured = bool(get_effective_sixtyfour_key())
-        st.write(f"🤖 SixtyFour API: {'✅ Configured' if sixtyfour_configured else '❌ Not configured'}")
-        
-        if not db_configured:
-            st.error("⚠️ Database URL required for core functionality")
-        
-        if not claude_configured:
-            st.info("ℹ️ Claude API key enables advanced AI features")
-        
-        if not sixtyfour_configured:
-            st.info("ℹ️ SixtyFour API key enables advanced AI features")
-        
-        # Help section
-        with st.expander("📖 Help & Setup"):
-            st.markdown("""
-            **Database Setup:**
-            - Get a free PostgreSQL database from [Supabase](https://supabase.com)
-            - Format: `postgresql://user:pass@host:port/database`
-            
-            **Claude API Setup:**
-            - Get an API key from [Anthropic](https://console.anthropic.com)
-            - Enables natural language query understanding
-            
-            **SixtyFour API Setup:**
-            - Get an API key from [SixtyFour](https://console.sixtyfour.com)
-            - Enables advanced AI-powered search analysis
-            
-            **Security Note:**
-            - Credentials entered here are only stored in your browser session
-            - For production, use Streamlit Cloud secrets management
-            """)
-
-def get_effective_database_url():
-    """Get database URL from UI input or environment variables"""
-    return st.session_state.ui_database_url or os.getenv('DATABASE_URL')
-
-def get_effective_anthropic_key():
-    """Get Anthropic API key from UI input or environment variables"""
-    return st.session_state.ui_anthropic_key or os.getenv('ANTHROPIC_API_KEY')
-
-def get_effective_sixtyfour_key():
-    """Get SixtyFour API key from UI input or environment variables"""
-    return st.session_state.ui_sixtyfour_key or os.getenv('SIXTYFOUR_API_KEY')
-
 # Main app
 def main():
     # Header
     st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
-    
-    # Show configuration sidebar
-    show_configuration_sidebar()
     
     # Show only natural language search page
     show_natural_search_page()
@@ -685,25 +557,6 @@ def show_natural_search_page():
     # Perform search
     if search_clicked and query:
         st.session_state.last_query = query
-        
-        # Configure modules with effective credentials
-        effective_db_url = get_effective_database_url()
-        effective_anthropic_key = get_effective_anthropic_key()
-        
-        if not effective_db_url:
-            st.error("❌ Database URL is required. Please configure it in the sidebar.")
-            return
-        
-        # Update module configurations
-        try:
-            from natural_language_search import set_dynamic_config as set_nl_config
-            from search_api import set_dynamic_config as set_api_config
-            
-            set_nl_config(database_url=effective_db_url, anthropic_key=effective_anthropic_key)
-            set_api_config(database_url=effective_db_url)
-        except ImportError:
-            pass  # Modules may not be available in some environments
-        
         with st.spinner("🤖 Analyzing query and searching database..."):
             try:
                 result = run_async(run_natural_search(query, apply_business_filters, 1, page_size))
@@ -714,24 +567,9 @@ def show_natural_search_page():
                     st.error("❌ Search returned no results. Please try a different query.")
             except Exception as e:
                 st.error(f"❌ Search failed: {str(e)}")
-                
-                # Special handling for database configuration errors
-                if "DATABASE_URL environment variable is not set" in str(e):
-                    st.error("🔧 **Database Configuration Required**")
-                    st.markdown("""
-                    **Please configure your database connection in the sidebar:**
-                    
-                    1. **Get a free database** from [Supabase](https://supabase.com)
-                    2. **Enter the connection string** in the sidebar
-                    3. **Format**: `postgresql://user:password@host:port/database`
-                    
-                    **Alternative:** Set up Streamlit Cloud secrets for production use.
-                    """)
-                else:
-                    logger.error(f"Search error in UI: {e}")
-                    import traceback
-                    st.code(traceback.format_exc())
-                
+                logger.error(f"Search error in UI: {e}")
+                import traceback
+                st.code(traceback.format_exc())
                 st.info("💡 Try refreshing the page or using a simpler query.")
     
     # Display results
@@ -876,7 +714,7 @@ def show_natural_search_page():
                     st.info(f"🚀 Enriching all {len(companies_to_enrich)} companies...")
                 
                 # Perform enrichment
-                enrichment_service = create_enrichment_service(get_effective_sixtyfour_key())
+                enrichment_service = create_enrichment_service()
                 if enrichment_service:
                     with st.spinner("🔍 Enriching companies with SixtyFour API..."):
                         progress_bar = st.progress(0)

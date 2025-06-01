@@ -35,15 +35,8 @@ from contextlib import asynccontextmanager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration - Use environment variables only
-DATABASE_URL = os.getenv('DATABASE_URL')
-
-def set_dynamic_config(database_url=None):
-    """Set dynamic configuration for database URL"""
-    global DATABASE_URL
-    
-    if database_url:
-        DATABASE_URL = database_url
+# Database connection
+DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
 
 # Pydantic Models
 class SortOrder(str, Enum):
@@ -134,8 +127,6 @@ class DatabaseManager:
     
     async def connect(self):
         """Initialize database connection pool"""
-        if not DATABASE_URL:
-            raise ValueError("DATABASE_URL environment variable is not set")
         try:
             self.pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
             logger.info("✅ Database connection pool created")

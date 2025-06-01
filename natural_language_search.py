@@ -18,12 +18,12 @@ import json
 import logging
 from typing import Optional, List, Dict, Any, Union, Tuple
 from datetime import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 import asyncio
 import httpx
-from anthropic import AsyncAnthropic, Anthropic
+from anthropic import AsyncAnthropic
 from pydantic import BaseModel, Field
 import numpy as np
 
@@ -43,31 +43,15 @@ from contextlib import asynccontextmanager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration - Use environment variables only
-DATABASE_URL = os.getenv('DATABASE_URL')
-ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+# Initialize Claude client
+ANTHROPIC_API_KEY = "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"
+claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
-# Anthropic client (optional)
-claude_client = None
-if ANTHROPIC_API_KEY:
-    claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-
-def set_dynamic_config(database_url=None, anthropic_key=None):
-    """Set dynamic configuration for database and API keys"""
-    global DATABASE_URL, ANTHROPIC_API_KEY, claude_client
-    
-    if database_url:
-        DATABASE_URL = database_url
-    
-    if anthropic_key:
-        ANTHROPIC_API_KEY = anthropic_key
-        claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    elif anthropic_key == "":  # Explicitly set to empty
-        ANTHROPIC_API_KEY = None
-        claude_client = None
+# Database connection
+DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
 
 # Import SearchFilters from the existing search API
-from search_api import SearchFilters, CompanyResponse, SearchResponse, SortField, SortOrder, SearchService
+from search_api import SearchFilters, CompanyResponse, SearchResponse
 
 class QueryIntent(str, Enum):
     """Types of search intents"""
@@ -305,14 +289,8 @@ class VectorSearchService:
         self.pool = None
     
     async def connect(self):
-        """Initialize database connection for vector search"""
-        if not DATABASE_URL:
-            raise ValueError("DATABASE_URL environment variable is not set")
-        try:
-            self.pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
-        except Exception as e:
-            logger.error(f"Vector search database connection failed: {e}")
-            raise
+        """Initialize database connection"""
+        self.pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
     
     async def semantic_search(self, query: str, limit: int = 50) -> List[str]:
         """Perform semantic search on company names and trade names"""
