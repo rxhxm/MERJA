@@ -534,7 +534,7 @@ def show_natural_search_page():
     st.subheader("🎯 Search & Filter")
     
     # Main search and filters in a clean layout
-    col1, col2 = st.columns([2, 1])
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         query = st.text_input(
@@ -567,62 +567,6 @@ def show_natural_search_page():
             ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
             help="Filter by the type of lending business"
         )
-    
-    # Add explanation of lender types
-    with st.expander("ℹ️ What do these lender types mean?", expanded=False):
-        st.markdown("### 🎯 Lender Type Classifications")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**🎯 TARGET (Unsecured Personal)**")
-            st.success("✅ These are what Fido wants - personal loan lenders")
-            st.markdown("**Example License Types:**")
-            st.markdown("""
-            • Consumer Credit License
-            • Consumer Loan Company License
-            • Personal Loan License
-            • Installment Loan License
-            • Small Loan License
-            • Payday Lender License
-            • Sales Finance License
-            • Money Lender License
-            • Title Pledge Lender License
-            """)
-            
-            st.markdown("**❌ EXCLUDE (Mortgage)**")
-            st.error("❌ These focus on mortgages - not what Fido needs")
-            st.markdown("**Example License Types:**")
-            st.markdown("""
-            • Mortgage Loan Company License
-            • Mortgage Broker License
-            • Residential Mortgage Lender License
-            • Mortgage Servicer License
-            • 1st Mortgage Broker License
-            • 2nd Mortgage Broker License
-            """)
-        
-        with col2:
-            st.markdown("**⚠️ MIXED**")
-            st.warning("⚠️ These do BOTH personal loans AND mortgages")
-            st.markdown("Companies that have licenses for both unsecured personal lending and mortgage lending. These need individual review to determine if they're a good fit.")
-            
-            st.markdown("**❓ UNKNOWN**")
-            st.info("❓ Unclear what type of lending they focus on")
-            st.markdown("""
-            Companies with licenses that don't clearly indicate personal loan OR mortgage focus. Examples:
-            • General business licenses
-            • Bank charters  
-            • Credit union licenses
-            • Other financial services
-            """)
-            
-        st.markdown("---")
-        st.markdown("**💡 Quick Guide:**")
-        st.markdown("• **TARGET** = Personal loan companies (what you want)")
-        st.markdown("• **EXCLUDE** = Mortgage companies (avoid these)")  
-        st.markdown("• **MIXED** = Does both (review case-by-case)")
-        st.markdown("• **UNKNOWN** = Need more research")
     
     with col3:
         st.markdown("**⚙️ Options:**")
@@ -848,30 +792,6 @@ def show_natural_search_page():
         
         else:
             st.info("🔍 No companies match your current filters. Try adjusting the state or lender type filters above.")
-    
-    else:
-        # Show helpful examples when no search has been performed
-        st.markdown("---")
-        st.markdown("### 💡 Example Searches")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**🎯 For Target Lenders:**")
-            if st.button("Personal loan companies"):
-                st.session_state.last_query = "personal loan companies"
-                st.experimental_rerun()
-            if st.button("Consumer credit lenders"):
-                st.session_state.last_query = "consumer credit lenders"
-                st.experimental_rerun()
-        
-        with col2:
-            st.markdown("**🗺️ Geographic Searches:**")
-            if st.button("Lenders in California"):
-                st.session_state.last_query = "lenders in California"
-                st.experimental_rerun()
-            if st.button("Texas financial companies"):
-                st.session_state.last_query = "Texas financial companies"
-                st.experimental_rerun()
 
 if __name__ == "__main__":
     main() 
