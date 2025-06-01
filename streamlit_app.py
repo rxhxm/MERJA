@@ -33,13 +33,28 @@ st.set_page_config(
 # Import your modules
 try:
     from natural_language_search import enhanced_search_api, LenderClassifier, ContactValidator, LenderType
-    from search_api import SearchFilters, db_manager, SearchService, SortField, SortOrder
-    from enrichment_service import create_enrichment_service, EnrichmentService
-    import asyncpg
-    import os
-except ImportError as e:
-    st.error(f"Failed to import required modules: {e}")
+except ImportError:
+    st.error("natural_language_search module not found. Please ensure all required modules are available.")
     st.stop()
+
+try:
+    from search_api import SearchFilters, db_manager, SearchService, SortField, SortOrder
+except ImportError:
+    st.error("search_api module not found. Please ensure all required modules are available.")
+    st.stop()
+
+try:
+    from enrichment_service import create_enrichment_service, EnrichmentService
+except ImportError:
+    st.warning("enrichment_service module not found. Enrichment features will be disabled.")
+    
+try:
+    import asyncpg
+except ImportError:
+    st.error("asyncpg not installed. Please install with: pip install asyncpg")
+    st.stop()
+    
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -234,7 +249,9 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
             # For broad searches like "companies in california", don't set a specific query filter
         
         # Create a fresh database connection for this search
-        DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        if not DATABASE_URL:
+            raise Exception("DATABASE_URL environment variable not set")
         
         # Use a simple connection instead of a pool for Streamlit
         conn = await asyncpg.connect(DATABASE_URL)
@@ -517,6 +534,191 @@ def format_lender_type(lender_type: str) -> str:
         return f'<span class="lender-type-mixed">⚠️ MIXED</span>'
     else:
         return f'<span>❓ UNKNOWN</span>'
+
+async def fetch_company_licenses_with_states(nmls_id: str) -> Dict[str, List[str]]:
+    """Fetch detailed license information for a company and group by license type and state"""
+    try:
+        # Use the same connection approach as the search function
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        if not DATABASE_URL:
+            raise Exception("DATABASE_URL environment variable not set")
+        conn = await asyncpg.connect(DATABASE_URL)
+        
+        try:
+            rows = await conn.fetch("""
+                SELECT l.license_type, l.regulator, l.active, l.status
+                FROM licenses l
+                JOIN companies c ON l.company_id = c.id
+                WHERE c.nmls_id = $1 AND l.active = true
+                ORDER BY l.license_type, l.regulator
+            """, nmls_id)
+            
+            logger.info(f"Found {len(rows)} licenses for NMLS ID {nmls_id}")
+            
+            # Group licenses by type and extract states from regulator names
+            license_states = {}
+            for row in rows:
+                license_type = row["license_type"]
+                regulator = row["regulator"] or ""
+                
+                if license_type not in license_states:
+                    license_states[license_type] = set()
+                
+                # Extract state from regulator name
+                state = extract_state_from_regulator(regulator)
+                if state:
+                    license_states[license_type].add(state)
+                    logger.info(f"Extracted state {state} from regulator '{regulator}' for license type '{license_type}'")
+                else:
+                    logger.warning(f"Could not extract state from regulator '{regulator}' for license type '{license_type}'")
+            
+            # Convert sets to sorted lists
+            result = {license_type: sorted(list(states)) for license_type, states in license_states.items()}
+            logger.info(f"Final license-state mapping: {result}")
+            return result
+            
+        finally:
+            await conn.close()
+            
+    except Exception as e:
+        logger.error(f"Error fetching company licenses for NMLS ID {nmls_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {}
+
+def extract_state_from_regulator(regulator: str) -> str:
+    """Extract state abbreviation from regulator name"""
+    if not regulator:
+        return ""
+    
+    # Mapping of state names to abbreviations
+    state_mapping = {
+        'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR', 'california': 'CA',
+        'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE', 'florida': 'FL', 'georgia': 'GA',
+        'hawaii': 'HI', 'idaho': 'ID', 'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA',
+        'kansas': 'KS', 'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+        'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS', 'missouri': 'MO',
+        'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ',
+        'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH',
+        'oklahoma': 'OK', 'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+        'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT', 'vermont': 'VT',
+        'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV', 'wisconsin': 'WI', 'Wyoming': 'WY'
+    }
+    
+    regulator_lower = regulator.lower()
+    
+    # Check for state names in the regulator name
+    for state_name, state_abbr in state_mapping.items():
+        if state_name in regulator_lower:
+            return state_abbr
+    
+    # If no full state name found, try to extract common patterns
+    # Pattern like "CA Department of..." or "TX Finance Commission"
+    import re
+    state_pattern = r'\b([A-Z]{2})\b'
+    match = re.search(state_pattern, regulator)
+    if match and match.group(1) in state_mapping.values():
+        return match.group(1)
+    
+    return ""
+
+def format_license_summary_with_states(company: Dict) -> str:
+    """Format license summary with state information for each license type"""
+    try:
+        nmls_id = company.get('nmls_id', '')
+        if not nmls_id:
+            return "License details unavailable"
+        
+        # First try to fetch detailed license information
+        license_states = run_async(fetch_company_licenses_with_states(nmls_id))
+        
+        # If that fails or returns empty, use fallback approach with existing data
+        if not license_states:
+            st.write(f"Debug: Database fetch failed for {nmls_id}, using fallback approach")
+            # Use existing data as fallback
+            license_types = company.get('license_types', []) or []
+            states_licensed = company.get('states_licensed', []) or []
+            
+            if not license_types:
+                return "License details unavailable"
+            
+            # Since we don't have per-license state mapping, distribute states across license types
+            # This is a simplified approach for demonstration
+            from natural_language_search import LenderClassifier
+            
+            target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+            exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
+            other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
+            
+            summary_parts = []
+            states_str = ", ".join(sorted(states_licensed)) if states_licensed else "Unknown"
+            
+            if target_licenses:
+                summary_parts.append(f"🎯 {len(target_licenses)} personal ({states_str})")
+            
+            if exclude_licenses:
+                summary_parts.append(f"❌ {len(exclude_licenses)} mortgage ({states_str})")
+            
+            if other_licenses:
+                summary_parts.append(f"❓ {len(other_licenses)} other ({states_str})")
+            
+            result = " | ".join(summary_parts) if summary_parts else "License details unavailable"
+            st.write(f"Debug: Fallback result for {company.get('company_name', 'Unknown')}: {result}")
+            return result
+        
+        # Import classification for license categorization
+        from natural_language_search import LenderClassifier
+        
+        # Categorize licenses
+        target_licenses = {}
+        exclude_licenses = {}
+        other_licenses = {}
+        
+        for license_type, states in license_states.items():
+            if license_type in LenderClassifier.UNSECURED_PERSONAL_LICENSES:
+                target_licenses[license_type] = states
+            elif license_type in LenderClassifier.MORTGAGE_LICENSES:
+                exclude_licenses[license_type] = states
+            else:
+                other_licenses[license_type] = states
+        
+        # Build summary text
+        summary_parts = []
+        
+        if target_licenses:
+            target_count = len(target_licenses)
+            target_states = set()
+            for states in target_licenses.values():
+                target_states.update(states)
+            target_states_str = ", ".join(sorted(target_states))
+            summary_parts.append(f"🎯 {target_count} personal ({target_states_str})")
+        
+        if exclude_licenses:
+            exclude_count = len(exclude_licenses)
+            exclude_states = set()
+            for states in exclude_licenses.values():
+                exclude_states.update(states)
+            exclude_states_str = ", ".join(sorted(exclude_states))
+            summary_parts.append(f"❌ {exclude_count} mortgage ({exclude_states_str})")
+        
+        if other_licenses:
+            other_count = len(other_licenses)
+            other_states = set()
+            for states in other_licenses.values():
+                other_states.update(states)
+            other_states_str = ", ".join(sorted(other_states))
+            summary_parts.append(f"❓ {other_count} other ({other_states_str})")
+        
+        result = " | ".join(summary_parts) if summary_parts else "License details unavailable"
+        st.write(f"Debug: Database result for {company.get('company_name', 'Unknown')}: {result}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error formatting license summary: {e}")
+        import traceback
+        traceback.print_exc()
+        st.write(f"Debug: Exception in format_license_summary_with_states: {e}")
+        return "License details unavailable"
 
 # Main app
 def main():
