@@ -654,16 +654,12 @@ def show_natural_search_page():
                 lender_type = company.get('lender_type', 'unknown')
                 if lender_type == 'unsecured_personal':
                     lender_display = '🎯 TARGET'
-                    lender_color = '#d1ecf1'
                 elif lender_type == 'mortgage':
                     lender_display = '❌ EXCLUDE'
-                    lender_color = '#f8d7da'
                 elif lender_type == 'mixed':
                     lender_display = '⚠️ MIXED'
-                    lender_color = '#fff3cd'
                 else:
                     lender_display = '❓ UNKNOWN'
-                    lender_color = '#f8f9fa'
                 
                 display_data.append({
                     'NMLS ID': company['nmls_id'],
@@ -677,20 +673,7 @@ def show_natural_search_page():
             # Display as a clean table
             df = pd.DataFrame(display_data)
             
-            # Color code the table by lender type
-            def highlight_lender_type(row):
-                lender_type = row['Lender Type']
-                if '🎯 TARGET' in lender_type:
-                    return ['background-color: #d1ecf1'] * len(row)
-                elif '❌ EXCLUDE' in lender_type:
-                    return ['background-color: #f8d7da'] * len(row)
-                elif '⚠️ MIXED' in lender_type:
-                    return ['background-color: #fff3cd'] * len(row)
-                else:
-                    return [''] * len(row)
-            
-            styled_df = df.style.apply(highlight_lender_type, axis=1)
-            st.dataframe(styled_df, use_container_width=True)
+            st.dataframe(df, use_container_width=True)
             
             # Show license details for selected companies
             st.markdown("### 🔍 License Details")
