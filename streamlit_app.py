@@ -783,6 +783,10 @@ def show_natural_search_page():
                 if selected_company:
                     st.markdown(f"#### {selected_company['company_name']} - Complete License Analysis")
                     
+                    # Get detailed license state breakdown
+                    with st.spinner("Loading detailed license breakdown..."):
+                        license_state_breakdown = run_async(get_license_state_breakdown(nmls_id))
+                    
                     license_types = selected_company.get('license_types', [])
                     if license_types is None:
                         license_types = []
@@ -796,53 +800,91 @@ def show_natural_search_page():
                     exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
                     other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
                     
+                    # Get state breakdown by category
+                    category_states = get_license_category_state_breakdown(license_state_breakdown)
+                    
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
                         st.markdown("**🎯 TARGET Licenses Found:**")
                         if target_licenses:
+                            st.success(f"✅ {len(target_licenses)} Personal Loan Licenses")
+                            if category_states['target']:
+                                st.info(f"📍 States: {', '.join(category_states['target'])}")
                             for license_type in target_licenses:
-                                st.success(f"✅ {license_type}")
+                                states_for_license = license_state_breakdown.get(license_type, [])
+                                if states_for_license:
+                                    st.write(f"• **{license_type}** ({', '.join(states_for_license)})")
+                                else:
+                                    st.write(f"• **{license_type}** (states unknown)")
                         else:
                             st.info("None found")
                     
                     with col2:
                         st.markdown("**❌ EXCLUDE Licenses Found:**")
                         if exclude_licenses:
+                            st.error(f"❌ {len(exclude_licenses)} Mortgage Licenses")
+                            if category_states['exclude']:
+                                st.info(f"📍 States: {', '.join(category_states['exclude'])}")
                             for license_type in exclude_licenses:
-                                st.error(f"❌ {license_type}")
+                                states_for_license = license_state_breakdown.get(license_type, [])
+                                if states_for_license:
+                                    st.write(f"• **{license_type}** ({', '.join(states_for_license)})")
+                                else:
+                                    st.write(f"• **{license_type}** (states unknown)")
                         else:
                             st.info("None found")
                     
                     with col3:
                         st.markdown("**❓ Other Licenses:**")
                         if other_licenses:
+                            st.warning(f"❓ {len(other_licenses)} Other Licenses")
+                            if category_states['other']:
+                                st.info(f"📍 States: {', '.join(category_states['other'])}")
                             for license_type in other_licenses:
-                                st.info(f"• {license_type}")
+                                states_for_license = license_state_breakdown.get(license_type, [])
+                                if states_for_license:
+                                    st.write(f"• **{license_type}** ({', '.join(states_for_license)})")
+                                else:
+                                    st.write(f"• **{license_type}** (states unknown)")
                         else:
                             st.info("None found")
                     
-                    # Explain the classification
+                    # Enhanced classification reasoning with state information
                     st.markdown("**🧠 Classification Reasoning:**")
                     if lender_type == 'unsecured_personal':
-                        st.success(f"✅ **TARGET**: Has {len(target_licenses)} personal loan licenses and only {len(exclude_licenses)} mortgage licenses. This company focuses on unsecured personal lending.")
+                        if category_states['target']:
+                            st.success(f"✅ **TARGET**: Has {len(target_licenses)} personal loan licenses across {len(category_states['target'])} states ({', '.join(category_states['target'])}) and only {len(exclude_licenses)} mortgage licenses. This company focuses on unsecured personal lending.")
+                        else:
+                            st.success(f"✅ **TARGET**: Has {len(target_licenses)} personal loan licenses and only {len(exclude_licenses)} mortgage licenses. This company focuses on unsecured personal lending.")
                     elif lender_type == 'mortgage':
-                        st.error(f"❌ **EXCLUDE**: Has {len(exclude_licenses)} mortgage licenses and only {len(target_licenses)} personal loan licenses. This company focuses on mortgage lending.")
+                        if category_states['exclude']:
+                            st.error(f"❌ **EXCLUDE**: Has {len(exclude_licenses)} mortgage licenses across {len(category_states['exclude'])} states ({', '.join(category_states['exclude'])}) and only {len(target_licenses)} personal loan licenses. This company focuses on mortgage lending.")
+                        else:
+                            st.error(f"❌ **EXCLUDE**: Has {len(exclude_licenses)} mortgage licenses and only {len(target_licenses)} personal loan licenses. This company focuses on mortgage lending.")
                     elif lender_type == 'mixed':
-                        st.warning(f"⚠️ **MIXED**: Has both {len(target_licenses)} personal loan licenses AND {len(exclude_licenses)} mortgage licenses. This company does both types of lending.")
+                        target_states_str = f" across {len(category_states['target'])} states ({', '.join(category_states['target'])})" if category_states['target'] else ""
+                        exclude_states_str = f" across {len(category_states['exclude'])} states ({', '.join(category_states['exclude'])})" if category_states['exclude'] else ""
+                        st.warning(f"⚠️ **MIXED**: Has both {len(target_licenses)} personal loan licenses{target_states_str} AND {len(exclude_licenses)} mortgage licenses{exclude_states_str}. This company does both types of lending.")
                     else:
-                        st.info(f"❓ **UNKNOWN**: Has {len(other_licenses)} licenses that don't clearly indicate personal loan or mortgage focus. These may be bank charters, credit union licenses, or other financial services licenses.")
+                        if category_states['other']:
+                            st.info(f"❓ **UNKNOWN**: Has {len(other_licenses)} licenses across {len(category_states['other'])} states ({', '.join(category_states['other'])}) that don't clearly indicate personal loan or mortgage focus. These may be bank charters, credit union licenses, or other financial services licenses.")
+                        else:
+                            st.info(f"❓ **UNKNOWN**: Has {len(other_licenses)} licenses that don't clearly indicate personal loan or mortgage focus. These may be bank charters, credit union licenses, or other financial services licenses.")
                     
-                    # Show all licenses in one list for easy reference
+                    # Show all licenses in one list for easy reference with state information
                     if license_types:
-                        st.markdown("**📋 Complete License List:**")
+                        st.markdown("**📋 Complete License List with States:**")
                         for i, license_type in enumerate(license_types, 1):
+                            states_for_license = license_state_breakdown.get(license_type, [])
+                            state_info = f" ({', '.join(states_for_license)})" if states_for_license else " (states unknown)"
+                            
                             if license_type in LenderClassifier.UNSECURED_PERSONAL_LICENSES:
-                                st.write(f"{i}. 🎯 **{license_type}** (Personal Loan)")
+                                st.write(f"{i}. 🎯 **{license_type}**{state_info} - Personal Loan")
                             elif license_type in LenderClassifier.MORTGAGE_LICENSES:
-                                st.write(f"{i}. ❌ **{license_type}** (Mortgage)")
+                                st.write(f"{i}. ❌ **{license_type}**{state_info} - Mortgage")
                             else:
-                                st.write(f"{i}. ❓ **{license_type}** (Other)")
+                                st.write(f"{i}. ❓ **{license_type}**{state_info} - Other")
             
             # Quick actions
             st.markdown("### 🚀 Quick Actions")
@@ -1131,6 +1173,113 @@ def show_natural_search_page():
         
         else:
             st.info("🔍 No companies match your current filters. Try adjusting the state or lender type filters above.")
+
+async def get_license_state_breakdown(nmls_id: str) -> Dict[str, List[str]]:
+    """Get detailed breakdown of which states each license type is in for a company"""
+    try:
+        DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
+        conn = await asyncpg.connect(DATABASE_URL)
+        
+        try:
+            # Get individual licenses with their state information
+            rows = await conn.fetch("""
+                SELECT 
+                    l.license_type,
+                    SUBSTRING(a.state FROM 1 FOR 2) as state
+                FROM licenses l
+                JOIN companies c ON l.company_id = c.id
+                LEFT JOIN addresses a ON c.id = a.company_id
+                WHERE c.nmls_id = $1 
+                AND l.active = true 
+                AND a.state IS NOT NULL
+                ORDER BY l.license_type, a.state
+            """, nmls_id)
+            
+            # Group licenses by type and collect states
+            license_state_map = {}
+            for row in rows:
+                license_type = row['license_type']
+                state = row['state']
+                
+                if license_type and state:
+                    if license_type not in license_state_map:
+                        license_state_map[license_type] = set()
+                    license_state_map[license_type].add(state)
+            
+            # Convert sets to sorted lists
+            return {lt: sorted(list(states)) for lt, states in license_state_map.items()}
+            
+        finally:
+            await conn.close()
+            
+    except Exception as e:
+        logger.error(f"Error getting license state breakdown for {nmls_id}: {e}")
+        return {}
+
+def get_license_category_state_breakdown(license_types_dict: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """Categorize licenses by TARGET/EXCLUDE/OTHER and aggregate their states"""
+    from natural_language_search import LenderClassifier
+    
+    target_states = set()
+    exclude_states = set() 
+    other_states = set()
+    
+    for license_type, states in license_types_dict.items():
+        if license_type in LenderClassifier.UNSECURED_PERSONAL_LICENSES:
+            target_states.update(states)
+        elif license_type in LenderClassifier.MORTGAGE_LICENSES:
+            exclude_states.update(states)
+        else:
+            other_states.update(states)
+    
+    return {
+        'target': sorted(list(target_states)),
+        'exclude': sorted(list(exclude_states)),
+        'other': sorted(list(other_states))
+    }
+
+def format_license_with_states(lender_type: str, target_licenses: List[str], exclude_licenses: List[str], 
+                              other_licenses: List[str], license_state_breakdown: Dict[str, List[str]]) -> str:
+    """Format lender type with state information"""
+    
+    # Get state breakdown by category
+    category_states = get_license_category_state_breakdown(license_state_breakdown)
+    
+    if lender_type == 'unsecured_personal':
+        target_states_str = ', '.join(category_states['target'][:3])
+        if len(category_states['target']) > 3:
+            target_states_str += f", +{len(category_states['target'])-3} more"
+        return f"🎯 TARGET ({len(target_licenses)} personal in {target_states_str})" if category_states['target'] else f"🎯 TARGET ({len(target_licenses)} personal licenses)"
+    
+    elif lender_type == 'mortgage':
+        exclude_states_str = ', '.join(category_states['exclude'][:3])
+        if len(category_states['exclude']) > 3:
+            exclude_states_str += f", +{len(category_states['exclude'])-3} more"
+        return f"❌ EXCLUDE ({len(exclude_licenses)} mortgage in {exclude_states_str})" if category_states['exclude'] else f"❌ EXCLUDE ({len(exclude_licenses)} mortgage licenses)"
+    
+    elif lender_type == 'mixed':
+        personal_str = f"{len(target_licenses)} personal"
+        mortgage_str = f"{len(exclude_licenses)} mortgage"
+        
+        if category_states['target']:
+            target_states_str = ', '.join(category_states['target'][:2])
+            if len(category_states['target']) > 2:
+                target_states_str += f", +{len(category_states['target'])-2} more"
+            personal_str += f" ({target_states_str})"
+        
+        if category_states['exclude']:
+            exclude_states_str = ', '.join(category_states['exclude'][:2]) 
+            if len(category_states['exclude']) > 2:
+                exclude_states_str += f", +{len(category_states['exclude'])-2} more"
+            mortgage_str += f" ({exclude_states_str})"
+            
+        return f"⚠️ MIXED ({personal_str} + {mortgage_str})"
+    
+    else:
+        other_states_str = ', '.join(category_states['other'][:3])
+        if len(category_states['other']) > 3:
+            other_states_str += f", +{len(category_states['other'])-3} more"
+        return f"❓ UNKNOWN ({len(other_licenses)} other in {other_states_str})" if category_states['other'] else f"❓ UNKNOWN ({len(other_licenses)} other licenses)"
 
 if __name__ == "__main__":
     main() 
