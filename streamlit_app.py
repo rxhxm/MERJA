@@ -650,21 +650,43 @@ def show_natural_search_page():
                 if len(states_str) > 50:  # Truncate if too long
                     states_str = states_str[:47] + '...'
                 
-                # Format lender type with color coding
+                # Format lender type with detailed explanation
                 lender_type = company.get('lender_type', 'unknown')
+                license_types = company.get('license_types', [])
+                
+                # Handle None license_types
+                if license_types is None:
+                    license_types = []
+                
+                # Import the license sets for analysis
+                from natural_language_search import LenderClassifier
+                
+                # Categorize this company's licenses
+                target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+                exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
+                other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
+                
+                # Create detailed lender type description
                 if lender_type == 'unsecured_personal':
-                    lender_display = '🎯 TARGET'
+                    lender_display = f'🎯 TARGET ({len(target_licenses)} personal loan licenses)'
+                    license_detail = f"Personal loan licenses: {', '.join(target_licenses[:2])}{'...' if len(target_licenses) > 2 else ''}" if target_licenses else "Personal loan licenses: (details unavailable)"
                 elif lender_type == 'mortgage':
-                    lender_display = '❌ EXCLUDE'
+                    lender_display = f'❌ EXCLUDE ({len(exclude_licenses)} mortgage licenses)'
+                    license_detail = f"Mortgage licenses: {', '.join(exclude_licenses[:2])}{'...' if len(exclude_licenses) > 2 else ''}" if exclude_licenses else "Mortgage licenses: (details unavailable)"
                 elif lender_type == 'mixed':
-                    lender_display = '⚠️ MIXED'
+                    lender_display = f'⚠️ MIXED ({len(target_licenses)} personal + {len(exclude_licenses)} mortgage)'
+                    personal_part = f"Personal: {', '.join(target_licenses[:1])}{'...' if len(target_licenses) > 1 else ''}" if target_licenses else "Personal: (none)"
+                    mortgage_part = f"Mortgage: {', '.join(exclude_licenses[:1])}{'...' if len(exclude_licenses) > 1 else ''}" if exclude_licenses else "Mortgage: (none)"
+                    license_detail = f"{personal_part} | {mortgage_part}"
                 else:
-                    lender_display = '❓ UNKNOWN'
+                    lender_display = f'❓ UNKNOWN ({len(other_licenses)} other licenses)'
+                    license_detail = f"Other licenses: {', '.join(other_licenses[:2])}{'...' if len(other_licenses) > 2 else ''}" if other_licenses else "Other licenses: (details unavailable)"
                 
                 display_data.append({
                     'NMLS ID': company['nmls_id'],
                     'Company Name': company['company_name'],
                     'Lender Type': lender_display,
+                    'License Details': license_detail,
                     'States Licensed': states_str,
                     'Total States': len(states_licensed),
                     'Contact Info': '✅' if (company.get('phone') and company.get('email')) else '📧' if company.get('email') else '📞' if company.get('phone') else '❌'
@@ -675,12 +697,82 @@ def show_natural_search_page():
             
             st.dataframe(df, use_container_width=True)
             
+            # Enhanced license breakdown summary
+            st.markdown("### 📊 License Type Breakdown")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**🎯 TARGET Companies:**")
+                target_companies = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                for company in target_companies[:3]:  # Show first 3
+                    license_types = company.get('license_types', [])
+                    if license_types is None:
+                        license_types = []
+                    target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+                    st.write(f"**{company['company_name']}**")
+                    if target_licenses:
+                        for license_type in target_licenses[:2]:  # Show first 2 licenses
+                            st.write(f"  • {license_type}")
+                        if len(target_licenses) > 2:
+                            st.write(f"  • ... and {len(target_licenses) - 2} more")
+                    else:
+                        st.write(f"  • (license details unavailable)")
+                    st.write("")
+                if len(target_companies) > 3:
+                    st.write(f"... and {len(target_companies) - 3} more TARGET companies")
+            
+            with col2:
+                st.markdown("**⚠️ MIXED Companies:**")
+                mixed_companies = [c for c in companies if c.get('lender_type') == 'mixed']
+                for company in mixed_companies[:3]:  # Show first 3
+                    license_types = company.get('license_types', [])
+                    if license_types is None:
+                        license_types = []
+                    target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+                    exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
+                    st.write(f"**{company['company_name']}**")
+                    if target_licenses:
+                        st.write(f"  🎯 Personal: {target_licenses[0]}")
+                    else:
+                        st.write(f"  🎯 Personal: (none)")
+                    if exclude_licenses:
+                        st.write(f"  ❌ Mortgage: {exclude_licenses[0]}")
+                    else:
+                        st.write(f"  ❌ Mortgage: (none)")
+                    st.write("")
+                if len(mixed_companies) > 3:
+                    st.write(f"... and {len(mixed_companies) - 3} more MIXED companies")
+                elif len(mixed_companies) == 0:
+                    st.info("No mixed companies found")
+            
+            with col3:
+                st.markdown("**❓ UNKNOWN Companies:**")
+                unknown_companies = [c for c in companies if c.get('lender_type') == 'unknown']
+                for company in unknown_companies[:3]:  # Show first 3
+                    license_types = company.get('license_types', [])
+                    if license_types is None:
+                        license_types = []
+                    other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
+                    st.write(f"**{company['company_name']}**")
+                    if other_licenses:
+                        for license_type in other_licenses[:2]:  # Show first 2 licenses
+                            st.write(f"  • {license_type}")
+                        if len(other_licenses) > 2:
+                            st.write(f"  • ... and {len(other_licenses) - 2} more")
+                    else:
+                        st.write(f"  • (license details unavailable)")
+                    st.write("")
+                if len(unknown_companies) > 3:
+                    st.write(f"... and {len(unknown_companies) - 3} more UNKNOWN companies")
+                elif len(unknown_companies) == 0:
+                    st.info("No unknown companies found")
+            
             # Show license details for selected companies
-            st.markdown("### 🔍 License Details")
+            st.markdown("### 🔍 Detailed License Analysis")
             selected_company_id = st.selectbox(
-                "Select a company to see its specific license types:",
+                "Select a company to see its complete license breakdown:",
                 options=["None"] + [f"{c['company_name']} ({c['nmls_id']})" for c in companies],
-                help="See what specific licenses determine the lender type classification"
+                help="See complete license details and classification reasoning"
             )
             
             if selected_company_id != "None":
@@ -689,9 +781,11 @@ def show_natural_search_page():
                 selected_company = next((c for c in companies if str(c['nmls_id']) == nmls_id), None)
                 
                 if selected_company:
-                    st.markdown(f"#### {selected_company['company_name']} - License Analysis")
+                    st.markdown(f"#### {selected_company['company_name']} - Complete License Analysis")
                     
                     license_types = selected_company.get('license_types', [])
+                    if license_types is None:
+                        license_types = []
                     lender_type = selected_company.get('lender_type', 'unknown')
                     
                     # Import the license sets for comparison
@@ -729,15 +823,26 @@ def show_natural_search_page():
                             st.info("None found")
                     
                     # Explain the classification
-                    st.markdown("**🧠 Why this classification?**")
+                    st.markdown("**🧠 Classification Reasoning:**")
                     if lender_type == 'unsecured_personal':
-                        st.success(f"✅ **TARGET**: Has {len(target_licenses)} personal loan licenses and {len(exclude_licenses)} mortgage licenses")
+                        st.success(f"✅ **TARGET**: Has {len(target_licenses)} personal loan licenses and only {len(exclude_licenses)} mortgage licenses. This company focuses on unsecured personal lending.")
                     elif lender_type == 'mortgage':
-                        st.error(f"❌ **EXCLUDE**: Has {len(exclude_licenses)} mortgage licenses and {len(target_licenses)} personal loan licenses")
+                        st.error(f"❌ **EXCLUDE**: Has {len(exclude_licenses)} mortgage licenses and only {len(target_licenses)} personal loan licenses. This company focuses on mortgage lending.")
                     elif lender_type == 'mixed':
-                        st.warning(f"⚠️ **MIXED**: Has both {len(target_licenses)} personal loan licenses AND {len(exclude_licenses)} mortgage licenses")
+                        st.warning(f"⚠️ **MIXED**: Has both {len(target_licenses)} personal loan licenses AND {len(exclude_licenses)} mortgage licenses. This company does both types of lending.")
                     else:
-                        st.info(f"❓ **UNKNOWN**: Has {len(other_licenses)} licenses that don't clearly indicate personal loan or mortgage focus")
+                        st.info(f"❓ **UNKNOWN**: Has {len(other_licenses)} licenses that don't clearly indicate personal loan or mortgage focus. These may be bank charters, credit union licenses, or other financial services licenses.")
+                    
+                    # Show all licenses in one list for easy reference
+                    if license_types:
+                        st.markdown("**📋 Complete License List:**")
+                        for i, license_type in enumerate(license_types, 1):
+                            if license_type in LenderClassifier.UNSECURED_PERSONAL_LICENSES:
+                                st.write(f"{i}. 🎯 **{license_type}** (Personal Loan)")
+                            elif license_type in LenderClassifier.MORTGAGE_LICENSES:
+                                st.write(f"{i}. ❌ **{license_type}** (Mortgage)")
+                            else:
+                                st.write(f"{i}. ❓ **{license_type}** (Other)")
             
             # Quick actions
             st.markdown("### 🚀 Quick Actions")
@@ -772,6 +877,257 @@ def show_natural_search_page():
                     
                     if len(state_counts) > 10:
                         st.write(f"... and {len(state_counts) - 10} more states")
+            
+            # Company Enrichment Section
+            st.markdown("---")
+            st.markdown("### 🧠 SixtyFour AI Enrichment")
+            st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
+            
+            # Enrichment controls
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**🎯 Select Companies to Enrich:**")
+                enrichment_filter = st.selectbox(
+                    "Which companies to enrich?",
+                    ["Top 5 Target Lenders", "Top 10 by Business Score", "All TARGET Lenders", "All Results", "Custom Selection"],
+                    help="Choose which companies to enrich with SixtyFour API"
+                )
+            
+            with col2:
+                st.markdown("**⚙️ Enrichment Options:**")
+                include_contacts = st.checkbox("Find key contacts", value=True, help="Find decision makers and key contacts")
+                icp_analysis = st.checkbox("ICP matching", value=True, help="Analyze fit with ideal customer profile")
+            
+            with col3:
+                st.markdown("**🚀 Start Enrichment:**")
+                if st.button("🧠 Enrich Companies", type="secondary"):
+                    # Determine which companies to enrich
+                    companies_to_enrich = []
+                    
+                    if enrichment_filter == "Top 5 Target Lenders":
+                        target_companies = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                        companies_to_enrich = sorted(target_companies, key=lambda x: x.get('business_score', 0), reverse=True)[:5]
+                    elif enrichment_filter == "Top 10 by Business Score":
+                        companies_to_enrich = sorted(companies, key=lambda x: x.get('business_score', 0), reverse=True)[:10]
+                    elif enrichment_filter == "All TARGET Lenders":
+                        companies_to_enrich = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                    elif enrichment_filter == "All Results":
+                        companies_to_enrich = companies
+                    
+                    if companies_to_enrich:
+                        # Run enrichment
+                        enrichment_service = create_enrichment_service()
+                        if enrichment_service:
+                            st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies...")
+                            
+                            # Progress tracking
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            def progress_callback(completed, total):
+                                progress = completed / total
+                                progress_bar.progress(progress)
+                                status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%})")
+                            
+                            try:
+                                # Run enrichment
+                                enriched_df, contacts_df = run_async(
+                                    enrichment_service.enrich_companies_batch(
+                                        companies_to_enrich, 
+                                        progress_callback
+                                    )
+                                )
+                                
+                                # Store results in session state
+                                st.session_state.enriched_results = {
+                                    'companies': enriched_df,
+                                    'contacts': contacts_df,
+                                    'timestamp': datetime.now()
+                                }
+                                
+                                progress_bar.progress(1.0)
+                                status_text.text("✅ Enrichment completed!")
+                                st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
+                                
+                            except Exception as e:
+                                st.error(f"❌ Enrichment failed: {str(e)}")
+                                logger.error(f"Enrichment error: {e}")
+                        else:
+                            st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
+                    else:
+                        st.warning("⚠️ No companies selected for enrichment.")
+            
+            # Display enrichment results if available
+            if st.session_state.enriched_results:
+                enriched_data = st.session_state.enriched_results
+                enriched_df = enriched_data['companies']
+                contacts_df = enriched_data['contacts']
+                timestamp = enriched_data['timestamp']
+                
+                st.markdown("---")
+                st.markdown(f"### 📊 Enrichment Results")
+                st.markdown(f"*Last updated: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}*")
+                
+                if not enriched_df.empty:
+                    # Enrichment summary
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        successful_enrichments = len(enriched_df[enriched_df['enrichment_status'] == 'Success'])
+                        st.metric("✅ Successfully Enriched", successful_enrichments)
+                    
+                    with col2:
+                        qualified_leads = len(enriched_df[enriched_df.get('is_qualified_lead', False) == True])
+                        st.metric("🎯 Qualified Leads", qualified_leads)
+                    
+                    with col3:
+                        total_contacts = len(contacts_df) if not contacts_df.empty else 0
+                        st.metric("👥 Contacts Found", total_contacts)
+                    
+                    with col4:
+                        avg_quality = enriched_df['enrichment_quality_score'].mean() if 'enrichment_quality_score' in enriched_df.columns else 0
+                        st.metric("📈 Avg Quality Score", f"{avg_quality:.1f}")
+                    
+                    # Detailed enriched company results
+                    st.markdown("#### 🏢 Enriched Company Data")
+                    
+                    # Filter for successful enrichments
+                    successful_companies = enriched_df[enriched_df['enrichment_status'] == 'Success'].copy()
+                    
+                    if not successful_companies.empty:
+                        # Create display dataframe
+                        display_columns = ['company_name', 'nmls_id', 'lender_type']
+                        
+                        # Add enriched fields if they exist
+                        enriched_fields = {
+                            'enriched_website': 'Website',
+                            'enriched_num_employees': 'Employees',
+                            'enriched_specializes_in_personal_loans': 'Personal Loans?',
+                            'enriched_icp_match': 'ICP Match?',
+                            'enrichment_quality_score': 'Quality Score',
+                            'is_qualified_lead': 'Qualified?'
+                        }
+                        
+                        for col, display_name in enriched_fields.items():
+                            if col in successful_companies.columns:
+                                display_columns.append(col)
+                        
+                        # Show the enriched data table
+                        st.dataframe(
+                            successful_companies[display_columns].rename(columns=enriched_fields),
+                            use_container_width=True
+                        )
+                        
+                        # Company deep dive
+                        st.markdown("#### 🔍 Company Deep Dive")
+                        selected_enriched_company = st.selectbox(
+                            "Select a company for detailed enrichment data:",
+                            options=["None"] + [f"{row['company_name']} ({row['nmls_id']})" for _, row in successful_companies.iterrows()],
+                            key="enriched_company_selector"
+                        )
+                        
+                        if selected_enriched_company != "None":
+                            # Extract NMLS ID
+                            nmls_id = selected_enriched_company.split("(")[-1].split(")")[0]
+                            selected_row = successful_companies[successful_companies['nmls_id'].astype(str) == nmls_id].iloc[0]
+                            
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.markdown("**🏢 Company Intelligence:**")
+                                if 'enriched_website' in selected_row and selected_row['enriched_website']:
+                                    st.write(f"🌐 **Website:** {selected_row['enriched_website']}")
+                                if 'enriched_company_linkedin' in selected_row and selected_row['enriched_company_linkedin']:
+                                    st.write(f"💼 **LinkedIn:** {selected_row['enriched_company_linkedin']}")
+                                if 'enriched_num_employees' in selected_row and selected_row['enriched_num_employees']:
+                                    st.write(f"👥 **Employees:** {selected_row['enriched_num_employees']}")
+                                if 'enriched_industry' in selected_row and selected_row['enriched_industry']:
+                                    st.write(f"🏭 **Industry:** {selected_row['enriched_industry']}")
+                                
+                                st.markdown("**🎯 Business Assessment:**")
+                                if 'enriched_specializes_in_personal_loans' in selected_row:
+                                    st.write(f"💰 **Personal Loans:** {selected_row['enriched_specializes_in_personal_loans']}")
+                                if 'enriched_target_customer_segment' in selected_row:
+                                    st.write(f"🎯 **Target Segment:** {selected_row['enriched_target_customer_segment']}")
+                                if 'enriched_technology_focus' in selected_row:
+                                    st.write(f"💻 **Tech Focus:** {selected_row['enriched_technology_focus']}")
+                            
+                            with col2:
+                                st.markdown("**🤝 Partnership Assessment:**")
+                                if 'enriched_icp_match' in selected_row:
+                                    icp_match = selected_row['enriched_icp_match']
+                                    if 'yes' in str(icp_match).lower():
+                                        st.success(f"✅ **ICP Match:** {icp_match}")
+                                    else:
+                                        st.warning(f"⚠️ **ICP Match:** {icp_match}")
+                                
+                                if 'qualification_reasons' in selected_row and selected_row['qualification_reasons']:
+                                    st.write(f"📋 **Qualification:** {selected_row['qualification_reasons']}")
+                                
+                                if 'enriched_competitive_positioning' in selected_row:
+                                    st.write(f"⚔️ **Positioning:** {selected_row['enriched_competitive_positioning']}")
+                                
+                                if 'enriched_notes' in selected_row and selected_row['enriched_notes']:
+                                    st.markdown("**📝 Key Insights:**")
+                                    st.write(selected_row['enriched_notes'])
+                    
+                    # Contact information
+                    if not contacts_df.empty:
+                        st.markdown("#### 👥 Key Contacts Found")
+                        
+                        # Filter for decision makers
+                        decision_makers = contacts_df[contacts_df['is_decision_maker'].str.contains('yes', case=False, na=False)]
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("**🎯 Decision Makers:**")
+                            if not decision_makers.empty:
+                                for _, contact in decision_makers.iterrows():
+                                    st.write(f"**{contact['contact_name']}** - {contact['contact_title']}")
+                                    st.write(f"🏢 {contact['company_name']}")
+                                    if contact['contact_email']:
+                                        st.write(f"📧 {contact['contact_email']}")
+                                    if contact['contact_linkedin']:
+                                        st.write(f"💼 [LinkedIn]({contact['contact_linkedin']})")
+                                    st.write("---")
+                            else:
+                                st.info("No decision makers identified.")
+                        
+                        with col2:
+                            st.markdown("**📊 All Contacts:**")
+                            contact_display = contacts_df[['company_name', 'contact_name', 'contact_title', 'contact_email', 'is_decision_maker']].copy()
+                            contact_display['is_decision_maker'] = contact_display['is_decision_maker'].apply(
+                                lambda x: '🎯' if 'yes' in str(x).lower() else '👤'
+                            )
+                            st.dataframe(contact_display, use_container_width=True)
+                    
+                    # Export enriched data
+                    st.markdown("#### 📤 Export Enriched Data")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if st.button("📊 Export Enriched Companies"):
+                            csv = enriched_df.to_csv(index=False)
+                            st.download_button(
+                                "📥 Download Enriched Companies CSV",
+                                csv,
+                                f"enriched_companies_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                "text/csv"
+                            )
+                    
+                    with col2:
+                        if not contacts_df.empty and st.button("👥 Export Contacts"):
+                            csv = contacts_df.to_csv(index=False)
+                            st.download_button(
+                                "📥 Download Contacts CSV",
+                                csv,
+                                f"contacts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                "text/csv"
+                            )
+                else:
+                    st.info("No enriched data available yet. Use the enrichment feature above to get started.")
         
         else:
             st.info("🔍 No companies match your current filters. Try adjusting the state or lender type filters above.")

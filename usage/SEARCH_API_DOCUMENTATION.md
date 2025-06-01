@@ -6,22 +6,15 @@ A comprehensive FastAPI-based search and filtering system for the NMLS Consumer 
 
 ## 🚀 Quick Start
 
-### 1. Set up Environment
+### 1. Start the API Server
 ```bash
-# Copy environment template
-cp env.example .env
-# Edit .env with your database credentials
+DATABASE_URL="postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres" python search_api.py
 ```
 
-### 2. Start the API Server
-```bash
-python search_api.py
-```
-
-### 3. Open the Frontend
+### 2. Open the Frontend
 Open `search_frontend.html` in your browser to access the web interface.
 
-### 4. API Documentation
+### 3. API Documentation
 Visit `http://localhost:8000/docs` for interactive API documentation.
 
 ## 📊 Database Statistics
