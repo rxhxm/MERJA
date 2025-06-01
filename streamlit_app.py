@@ -570,7 +570,6 @@ def show_natural_search_page():
     
     with col3:
         st.markdown("**⚙️ Options:**")
-        page_size = st.selectbox("Results per page", [20, 50, 100], index=0)
         show_details = st.checkbox("Show detailed analysis", value=False, help="Show query processing details")
     
     # Perform search
@@ -578,7 +577,8 @@ def show_natural_search_page():
         st.session_state.last_query = query
         with st.spinner("🔍 Searching database..."):
             try:
-                result = run_async(run_natural_search(query, True, 1, page_size))
+                # Use high page_size to get all results
+                result = run_async(run_natural_search(query, True, 1, 10000))
                 if result:
                     st.session_state.search_results = result
                     st.session_state.selected_companies = []
