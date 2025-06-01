@@ -568,6 +568,62 @@ def show_natural_search_page():
             help="Filter by the type of lending business"
         )
     
+    # Add explanation of lender types
+    with st.expander("ℹ️ What do these lender types mean?", expanded=False):
+        st.markdown("### 🎯 Lender Type Classifications")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**🎯 TARGET (Unsecured Personal)**")
+            st.success("✅ These are what Fido wants - personal loan lenders")
+            st.markdown("**Example License Types:**")
+            st.markdown("""
+            • Consumer Credit License
+            • Consumer Loan Company License
+            • Personal Loan License
+            • Installment Loan License
+            • Small Loan License
+            • Payday Lender License
+            • Sales Finance License
+            • Money Lender License
+            • Title Pledge Lender License
+            """)
+            
+            st.markdown("**❌ EXCLUDE (Mortgage)**")
+            st.error("❌ These focus on mortgages - not what Fido needs")
+            st.markdown("**Example License Types:**")
+            st.markdown("""
+            • Mortgage Loan Company License
+            • Mortgage Broker License
+            • Residential Mortgage Lender License
+            • Mortgage Servicer License
+            • 1st Mortgage Broker License
+            • 2nd Mortgage Broker License
+            """)
+        
+        with col2:
+            st.markdown("**⚠️ MIXED**")
+            st.warning("⚠️ These do BOTH personal loans AND mortgages")
+            st.markdown("Companies that have licenses for both unsecured personal lending and mortgage lending. These need individual review to determine if they're a good fit.")
+            
+            st.markdown("**❓ UNKNOWN**")
+            st.info("❓ Unclear what type of lending they focus on")
+            st.markdown("""
+            Companies with licenses that don't clearly indicate personal loan OR mortgage focus. Examples:
+            • General business licenses
+            • Bank charters  
+            • Credit union licenses
+            • Other financial services
+            """)
+            
+        st.markdown("---")
+        st.markdown("**💡 Quick Guide:**")
+        st.markdown("• **TARGET** = Personal loan companies (what you want)")
+        st.markdown("• **EXCLUDE** = Mortgage companies (avoid these)")  
+        st.markdown("• **MIXED** = Does both (review case-by-case)")
+        st.markdown("• **UNKNOWN** = Need more research")
+    
     with col3:
         st.markdown("**⚙️ Options:**")
         page_size = st.selectbox("Results per page", [20, 50, 100], index=0)
@@ -691,6 +747,70 @@ def show_natural_search_page():
             
             styled_df = df.style.apply(highlight_lender_type, axis=1)
             st.dataframe(styled_df, use_container_width=True)
+            
+            # Show license details for selected companies
+            st.markdown("### 🔍 License Details")
+            selected_company_id = st.selectbox(
+                "Select a company to see its specific license types:",
+                options=["None"] + [f"{c['company_name']} ({c['nmls_id']})" for c in companies],
+                help="See what specific licenses determine the lender type classification"
+            )
+            
+            if selected_company_id != "None":
+                # Extract NMLS ID from selection
+                nmls_id = selected_company_id.split("(")[-1].split(")")[0]
+                selected_company = next((c for c in companies if str(c['nmls_id']) == nmls_id), None)
+                
+                if selected_company:
+                    st.markdown(f"#### {selected_company['company_name']} - License Analysis")
+                    
+                    license_types = selected_company.get('license_types', [])
+                    lender_type = selected_company.get('lender_type', 'unknown')
+                    
+                    # Import the license sets for comparison
+                    from natural_language_search import LenderClassifier
+                    
+                    # Categorize this company's licenses
+                    target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+                    exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
+                    other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("**🎯 TARGET Licenses Found:**")
+                        if target_licenses:
+                            for license_type in target_licenses:
+                                st.success(f"✅ {license_type}")
+                        else:
+                            st.info("None found")
+                    
+                    with col2:
+                        st.markdown("**❌ EXCLUDE Licenses Found:**")
+                        if exclude_licenses:
+                            for license_type in exclude_licenses:
+                                st.error(f"❌ {license_type}")
+                        else:
+                            st.info("None found")
+                    
+                    with col3:
+                        st.markdown("**❓ Other Licenses:**")
+                        if other_licenses:
+                            for license_type in other_licenses:
+                                st.info(f"• {license_type}")
+                        else:
+                            st.info("None found")
+                    
+                    # Explain the classification
+                    st.markdown("**🧠 Why this classification?**")
+                    if lender_type == 'unsecured_personal':
+                        st.success(f"✅ **TARGET**: Has {len(target_licenses)} personal loan licenses and {len(exclude_licenses)} mortgage licenses")
+                    elif lender_type == 'mortgage':
+                        st.error(f"❌ **EXCLUDE**: Has {len(exclude_licenses)} mortgage licenses and {len(target_licenses)} personal loan licenses")
+                    elif lender_type == 'mixed':
+                        st.warning(f"⚠️ **MIXED**: Has both {len(target_licenses)} personal loan licenses AND {len(exclude_licenses)} mortgage licenses")
+                    else:
+                        st.info(f"❓ **UNKNOWN**: Has {len(other_licenses)} licenses that don't clearly indicate personal loan or mortgage focus")
             
             # Quick actions
             st.markdown("### 🚀 Quick Actions")
