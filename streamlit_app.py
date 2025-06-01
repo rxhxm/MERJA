@@ -528,324 +528,230 @@ def main():
 
 def show_natural_search_page():
     """Natural language search interface"""
-    st.header("Natural Language Search")
+    st.header("NMLS Lender Search")
     
-    # Search interface
-    col1, col2 = st.columns([3, 1])
+    # Prominent filtering section
+    st.subheader("🎯 Search & Filter")
+    
+    # Main search and filters in a clean layout
+    col1, col2 = st.columns([2, 1])
     
     with col1:
         query = st.text_input(
-            "Enter your search query in natural language:",
+            "Search for lenders:",
             value=st.session_state.last_query,
-            placeholder="e.g., Find personal loan companies in California with phone numbers",
+            placeholder="e.g., personal loan companies, banks in California, etc.",
             key="nl_search_input"
         )
     
     with col2:
-        st.markdown("<br>", unsafe_allow_html=True)  # Spacing
+        st.markdown("<br>", unsafe_allow_html=True)
         search_clicked = st.button("🔍 Search", type="primary", use_container_width=True)
     
-    # Search options
+    # Primary filters (the two most important things)
+    st.markdown("### 🔧 Primary Filters")
     col1, col2, col3 = st.columns(3)
+    
     with col1:
-        apply_business_filters = st.checkbox("Apply Fido's Business Filters", value=True, help="Prioritize unsecured personal lenders with contact info")
+        st.markdown("**📍 States Licensed In:**")
+        selected_states = st.multiselect(
+            "Filter by states",
+            ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
+            help="Select states to filter lenders"
+        )
+    
     with col2:
-        page_size = st.selectbox("Results per page", [10, 20, 50, 100], index=1)
+        st.markdown("**🏦 Lender Type:**")
+        lender_type_filter = st.selectbox(
+            "Filter by lender type",
+            ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
+            help="Filter by the type of lending business"
+        )
+    
     with col3:
-        show_analysis = st.checkbox("Show Query Analysis", value=True, help="Display AI's understanding of your query")
+        st.markdown("**⚙️ Options:**")
+        page_size = st.selectbox("Results per page", [20, 50, 100], index=0)
+        show_details = st.checkbox("Show detailed analysis", value=False, help="Show query processing details")
     
     # Perform search
     if search_clicked and query:
         st.session_state.last_query = query
-        with st.spinner("🤖 Analyzing query and searching database..."):
+        with st.spinner("🔍 Searching database..."):
             try:
-                result = run_async(run_natural_search(query, apply_business_filters, 1, page_size))
+                result = run_async(run_natural_search(query, True, 1, page_size))
                 if result:
                     st.session_state.search_results = result
-                    st.session_state.selected_companies = []  # Reset selections
+                    st.session_state.selected_companies = []
                 else:
-                    st.error("❌ Search returned no results. Please try a different query.")
+                    st.error("❌ No results found. Try a different search.")
             except Exception as e:
                 st.error(f"❌ Search failed: {str(e)}")
-                logger.error(f"Search error in UI: {e}")
-                import traceback
-                st.code(traceback.format_exc())
-                st.info("💡 Try refreshing the page or using a simpler query.")
+                logger.error(f"Search error: {e}")
     
-    # Display results
+    # Display results with focus on states and lender type
     if st.session_state.search_results:
         result = st.session_state.search_results
         
-        # Query analysis
-        if show_analysis:
-            with st.expander("🧠 AI Query Analysis", expanded=True):
+        # Apply post-search filters
+        companies = result['companies']
+        
+        # Filter by states if selected
+        if selected_states:
+            companies = [c for c in companies if any(state in c.get('states_licensed', []) for state in selected_states)]
+        
+        # Filter by lender type if selected
+        if lender_type_filter != "All Types":
+            lender_map = {
+                "Unsecured Personal (TARGET)": "unsecured_personal",
+                "Mortgage (EXCLUDE)": "mortgage", 
+                "Mixed": "mixed",
+                "Unknown": "unknown"
+            }
+            target_type = lender_map.get(lender_type_filter)
+            if target_type:
+                companies = [c for c in companies if c.get('lender_type') == target_type]
+        
+        # Summary metrics
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Found", len(companies))
+        with col2:
+            target_count = sum(1 for c in companies if c.get('lender_type') == 'unsecured_personal')
+            st.metric("🎯 Target Lenders", target_count)
+        with col3:
+            exclude_count = sum(1 for c in companies if c.get('lender_type') == 'mortgage')
+            st.metric("❌ Mortgage Lenders", exclude_count)
+        with col4:
+            states_covered = len(set([state for c in companies for state in c.get('states_licensed', [])]))
+            st.metric("States Covered", states_covered)
+        
+        # Detailed analysis (collapsible)
+        if show_details:
+            with st.expander("🔍 Query Processing Details", expanded=False):
                 analysis = result['query_analysis']
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Intent", analysis['intent'].replace('_', ' ').title())
-                with col2:
-                    st.metric("Confidence", f"{analysis['confidence']:.1%}")
-                with col3:
-                    st.metric("Total Results", result['pagination']['total_count'])
-                with col4:
-                    bi_data = result.get('business_intelligence', {})
-                    high_value_targets = bi_data.get('high_value_targets', 0)
-                    st.metric("High-Value Targets", high_value_targets)
-                
+                st.markdown(f"**Search Intent:** {analysis['intent'].replace('_', ' ').title()}")
+                st.markdown(f"**Confidence:** {analysis['confidence']:.1%}")
                 st.markdown(f"**Explanation:** {analysis['explanation']}")
                 
                 if analysis['business_critical_flags']:
-                    st.warning(f"⚠️ Business Flags: {', '.join(analysis['business_critical_flags'])}")
+                    st.warning(f"⚠️ Flags: {', '.join(analysis['business_critical_flags'])}")
         
-        # Business intelligence summary
-        with st.expander("📊 Search Results Intelligence", expanded=True):
-            bi = result.get('business_intelligence', {})
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.markdown("**Lender Type Distribution**")
-                lender_types = bi.get('lender_type_distribution', {})
-                total = bi.get('total', 0)
-                if lender_types and total > 0:
-                    for lender_type, count in lender_types.items():
-                        percentage = (count / total) * 100
-                        if lender_type == 'unsecured_personal':
-                            st.write(f"✅ **Target**: {count} ({percentage:.1f}%)")
-                        elif lender_type == 'mixed':
-                            st.write(f"⚠️ **Mixed**: {count} ({percentage:.1f}%)")
-                        elif lender_type == 'mortgage':
-                            st.write(f"❌ **Exclude**: {count} ({percentage:.1f}%)")
-                        else:
-                            st.write(f"❓ **Unknown**: {count} ({percentage:.1f}%)")
+        # Main results table - focused on the two key things
+        st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+        
+        if companies:
+            # Create focused display data
+            display_data = []
+            for company in companies:
+                # Get states as a readable string
+                states_licensed = company.get('states_licensed', [])
+                states_str = ', '.join(sorted(states_licensed)) if states_licensed else 'Unknown'
+                if len(states_str) > 50:  # Truncate if too long
+                    states_str = states_str[:47] + '...'
+                
+                # Format lender type with color coding
+                lender_type = company.get('lender_type', 'unknown')
+                if lender_type == 'unsecured_personal':
+                    lender_display = '🎯 TARGET'
+                    lender_color = '#d1ecf1'
+                elif lender_type == 'mortgage':
+                    lender_display = '❌ EXCLUDE'
+                    lender_color = '#f8d7da'
+                elif lender_type == 'mixed':
+                    lender_display = '⚠️ MIXED'
+                    lender_color = '#fff3cd'
                 else:
-                    st.write("No lender type data available")
-            
-            with col2:
-                st.markdown("**Contact Coverage**")
-                contact_stats = bi.get('contact_statistics', {})
-                total_contact = sum(contact_stats.values()) if contact_stats else 0
-                if contact_stats and total_contact > 0:
-                    for stat, count in contact_stats.items():
-                        percentage = (count / total_contact) * 100
-                        if stat == 'valid_contact':
-                            st.write(f"✅ **Both**: {count} ({percentage:.1f}%)")
-                        elif stat == 'email_only':
-                            st.write(f"📧 **Email Only**: {count} ({percentage:.1f}%)")
-                        elif stat == 'phone_only':
-                            st.write(f"📞 **Phone Only**: {count} ({percentage:.1f}%)")
-                        else:
-                            st.write(f"❌ **No Contact**: {count} ({percentage:.1f}%)")
-                else:
-                    st.write("No contact data available")
-            
-            with col3:
-                st.markdown("**Quality Indicators**")
-                high_score_count = sum(1 for c in result.get('companies', []) if c.get('business_score', 0) >= 80)
-                medium_score_count = sum(1 for c in result.get('companies', []) if 50 <= c.get('business_score', 0) < 80)
-                low_score_count = sum(1 for c in result.get('companies', []) if c.get('business_score', 0) < 50)
+                    lender_display = '❓ UNKNOWN'
+                    lender_color = '#f8f9fa'
                 
-                displayed_total = len(result.get('companies', []))
-                if displayed_total > 0:
-                    st.write(f"🔥 **High Score (80+)**: {high_score_count}")
-                    st.write(f"⚡ **Medium Score (50-79)**: {medium_score_count}")  
-                    st.write(f"⚠️ **Low Score (<50)**: {low_score_count}")
-                    st.write(f"📊 **Showing**: {displayed_total} of {total}")
-                
-                recommendations = bi.get('business_recommendations', [])
-                if recommendations:
-                    st.markdown("**Key Recommendations**")
-                    for rec in recommendations[:2]:  # Show top 2
-                        st.write(f"• {rec}")
-        
-        # Results table with enrichment options
-        st.subheader(f"📋 Search Results ({result['pagination']['total_count']} total)")
-        
-        if result['companies']:
-            # Enrichment controls
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                st.markdown("**🚀 Enrichment Options**")
-            with col2:
-                enrich_selected = st.button("🔍 Enrich Selected Companies", disabled=len(st.session_state.selected_companies) == 0)
-            with col3:
-                enrich_all = st.button("📊 Enrich All Results", disabled=len(result['companies']) == 0)
-            
-            # Company selection and display
-            companies_data = []
-            for i, company in enumerate(result['companies']):
-                # Add checkbox for selection
-                is_selected = st.checkbox(
-                    f"Select {company['company_name'][:30]}...",
-                    key=f"company_select_{company['nmls_id']}",
-                    value=company['nmls_id'] in st.session_state.selected_companies
-                )
-                
-                if is_selected and company['nmls_id'] not in st.session_state.selected_companies:
-                    st.session_state.selected_companies.append(company['nmls_id'])
-                elif not is_selected and company['nmls_id'] in st.session_state.selected_companies:
-                    st.session_state.selected_companies.remove(company['nmls_id'])
-                
-                companies_data.append({
+                display_data.append({
                     'NMLS ID': company['nmls_id'],
                     'Company Name': company['company_name'],
-                    'Lender Type': format_lender_type(company.get('lender_type', 'unknown')),
-                    'Business Score': format_business_score(company.get('business_score', 0)),
-                    'Phone': '✅' if company.get('phone') else '❌',
-                    'Email': '✅' if company.get('email') else '❌',
-                    'Website': '✅' if company.get('website') else '❌',
-                    'Total Licenses': company.get('total_licenses', 0),
-                    'States': len(company.get('states_licensed', [])),
-                    'Business Structure': company.get('business_structure', 'N/A')
+                    'Lender Type': lender_display,
+                    'States Licensed': states_str,
+                    'Total States': len(states_licensed),
+                    'Contact Info': '✅' if (company.get('phone') and company.get('email')) else '📧' if company.get('email') else '📞' if company.get('phone') else '❌'
                 })
             
-            df = pd.DataFrame(companies_data)
-            st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+            # Display as a clean table
+            df = pd.DataFrame(display_data)
             
-            # Handle enrichment
-            if enrich_selected or enrich_all:
-                companies_to_enrich = []
-                
-                if enrich_selected:
-                    companies_to_enrich = [c for c in result['companies'] if c['nmls_id'] in st.session_state.selected_companies]
-                    st.info(f"🚀 Enriching {len(companies_to_enrich)} selected companies...")
-                elif enrich_all:
-                    companies_to_enrich = result['companies']
-                    st.info(f"🚀 Enriching all {len(companies_to_enrich)} companies...")
-                
-                # Perform enrichment
-                enrichment_service = create_enrichment_service()
-                if enrichment_service:
-                    with st.spinner("🔍 Enriching companies with SixtyFour API..."):
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        
-                        def update_progress(completed, total):
-                            progress = completed / total
-                            progress_bar.progress(progress)
-                            status_text.text(f"Processed {completed}/{total} companies...")
-                        
-                        try:
-                            enriched_df, contacts_df = run_async(
-                                enrichment_service.enrich_companies_batch(
-                                    companies_to_enrich, 
-                                    update_progress
-                                )
-                            )
-                            
-                            st.session_state.enriched_results = {
-                                'companies': enriched_df,
-                                'contacts': contacts_df,
-                                'timestamp': datetime.now().isoformat()
-                            }
-                            
-                            progress_bar.progress(1.0)
-                            status_text.text("✅ Enrichment complete!")
-                            st.success(f"🎉 Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
-                            
-                        except Exception as e:
-                            st.error(f"❌ Enrichment failed: {str(e)}")
-                            logger.error(f"Enrichment error: {e}")
+            # Color code the table by lender type
+            def highlight_lender_type(row):
+                lender_type = row['Lender Type']
+                if '🎯 TARGET' in lender_type:
+                    return ['background-color: #d1ecf1'] * len(row)
+                elif '❌ EXCLUDE' in lender_type:
+                    return ['background-color: #f8d7da'] * len(row)
+                elif '⚠️ MIXED' in lender_type:
+                    return ['background-color: #fff3cd'] * len(row)
                 else:
-                    st.error("❌ Enrichment service not available. Please check your SixtyFour API key.")
+                    return [''] * len(row)
             
-            # Pagination
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                current_page = result['pagination']['page']
-                total_pages = result['pagination']['total_pages']
-                st.write(f"Page {current_page} of {total_pages}")
-        else:
-            st.info("No companies found matching your search criteria.")
-    
-    # Display enrichment results
-    if st.session_state.enriched_results:
-        st.markdown("---")
-        st.header("🔍 Enrichment Results")
-        
-        enriched_data = st.session_state.enriched_results
-        enriched_companies = enriched_data['companies']
-        contacts = enriched_data['contacts']
-        
-        # Enrichment summary
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Companies Enriched", len(enriched_companies))
-        with col2:
-            successful_enrichments = len(enriched_companies[enriched_companies['enrichment_status'] == 'Success'])
-            st.metric("Successful", successful_enrichments)
-        with col3:
-            qualified_leads = len(enriched_companies[enriched_companies.get('is_qualified_lead', False) == True])
-            st.metric("Qualified Leads", qualified_leads)
-        with col4:
-            st.metric("Contacts Found", len(contacts))
-        
-        # Enriched companies table
-        st.subheader("📊 Enriched Companies")
-        if not enriched_companies.empty:
-            # Create display dataframe
-            display_cols = [
-                'company_name', 'enrichment_status', 'enrichment_confidence', 
-                'enriched_specializes_in_personal_loans', 'enriched_icp_match',
-                'enrichment_quality_score', 'is_qualified_lead'
-            ]
+            styled_df = df.style.apply(highlight_lender_type, axis=1)
+            st.dataframe(styled_df, use_container_width=True)
             
-            display_df = enriched_companies[display_cols].copy()
-            display_df.columns = [
-                'Company Name', 'Status', 'Confidence', 'Personal Loan Focus', 
-                'ICP Match', 'Quality Score', 'Qualified Lead'
-            ]
+            # Quick actions
+            st.markdown("### 🚀 Quick Actions")
+            col1, col2, col3 = st.columns(3)
             
-            st.dataframe(display_df, use_container_width=True)
-            
-            # Download enriched data
-            col1, col2 = st.columns(2)
             with col1:
-                csv_companies = enriched_companies.to_csv(index=False)
-                st.download_button(
-                    "📥 Download Enriched Companies",
-                    csv_companies,
-                    f"enriched_companies_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    "text/csv"
-                )
-            with col2:
-                if not contacts.empty:
-                    csv_contacts = contacts.to_csv(index=False)
+                if st.button("📊 Export Results"):
+                    csv = df.to_csv(index=False)
                     st.download_button(
-                        "📥 Download Contacts",
-                        csv_contacts,
-                        f"enriched_contacts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        "📥 Download CSV",
+                        csv,
+                        f"lenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                         "text/csv"
                     )
+            
+            with col2:
+                target_lenders = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                if st.button(f"🎯 Show Only Targets ({len(target_lenders)})"):
+                    # Filter to show only target lenders
+                    st.session_state.lender_type_filter = "unsecured_personal"
+                    st.experimental_rerun()
+            
+            with col3:
+                if st.button("🗺️ Show State Breakdown"):
+                    # Show state breakdown
+                    all_states = [state for c in companies for state in c.get('states_licensed', [])]
+                    state_counts = pd.Series(all_states).value_counts()
+                    
+                    st.markdown("**📊 Companies by State:**")
+                    for state, count in state_counts.head(10).items():
+                        st.write(f"**{state}**: {count} companies")
+                    
+                    if len(state_counts) > 10:
+                        st.write(f"... and {len(state_counts) - 10} more states")
         
-        # Contacts table
-        if not contacts.empty:
-            st.subheader("👥 Decision Makers & Contacts")
-            
-            # Filter for decision makers
-            decision_makers = contacts[contacts['is_decision_maker'].str.contains('yes', case=False, na=False)]
-            
-            if not decision_makers.empty:
-                st.markdown("**🎯 Key Decision Makers**")
-                dm_display = decision_makers[[
-                    'company_name', 'contact_name', 'contact_title', 
-                    'contact_email', 'contact_phone', 'contact_linkedin'
-                ]].copy()
-                dm_display.columns = [
-                    'Company', 'Name', 'Title', 'Email', 'Phone', 'LinkedIn'
-                ]
-                st.dataframe(dm_display, use_container_width=True)
-            
-            # All contacts
-            with st.expander("👥 All Contacts", expanded=False):
-                contacts_display = contacts[[
-                    'company_name', 'contact_name', 'contact_title',
-                    'contact_email', 'contact_phone', 'is_decision_maker'
-                ]].copy()
-                contacts_display.columns = [
-                    'Company', 'Name', 'Title', 'Email', 'Phone', 'Decision Maker'
-                ]
-                st.dataframe(contacts_display, use_container_width=True)
+        else:
+            st.info("🔍 No companies match your current filters. Try adjusting the state or lender type filters above.")
+    
+    else:
+        # Show helpful examples when no search has been performed
+        st.markdown("---")
+        st.markdown("### 💡 Example Searches")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**🎯 For Target Lenders:**")
+            if st.button("Personal loan companies"):
+                st.session_state.last_query = "personal loan companies"
+                st.experimental_rerun()
+            if st.button("Consumer credit lenders"):
+                st.session_state.last_query = "consumer credit lenders"
+                st.experimental_rerun()
+        
+        with col2:
+            st.markdown("**🗺️ Geographic Searches:**")
+            if st.button("Lenders in California"):
+                st.session_state.last_query = "lenders in California"
+                st.experimental_rerun()
+            if st.button("Texas financial companies"):
+                st.session_state.last_query = "Texas financial companies"
+                st.experimental_rerun()
 
 if __name__ == "__main__":
     main() 
