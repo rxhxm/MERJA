@@ -12,26 +12,6 @@ Features:
 - Real-time search suggestions
 """
 
-# Fix import path issues - ensure current directory is in Python path
-import sys
-import os
-from pathlib import Path
-
-# Get the directory where this script is located
-current_dir = Path(__file__).parent.absolute()
-str_current_dir = str(current_dir)
-
-# Add current directory to Python path if not already present
-if str_current_dir not in sys.path:
-    sys.path.insert(0, str_current_dir)
-
-# Also ensure we're in the right working directory
-if os.getcwd() != str_current_dir:
-    try:
-        os.chdir(str_current_dir)
-    except Exception:
-        pass  # If we can't change directory, that's okay
-
 import streamlit as st
 import asyncio
 import pandas as pd
@@ -50,38 +30,32 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Import your modules with better error handling
+# Import your modules
 try:
     from natural_language_search import enhanced_search_api, LenderClassifier, ContactValidator, LenderType
-except ImportError as e:
-    st.error(f"❌ natural_language_search module import failed: {e}")
-    st.error(f"Current working directory: {os.getcwd()}")
-    st.error(f"Python path: {sys.path[:3]}...")  # Show first 3 paths
-    st.stop()
-except Exception as e:
-    st.error(f"❌ Unexpected error importing natural_language_search: {e}")
+except ImportError:
+    st.error("natural_language_search module not found. Please ensure all required modules are available.")
     st.stop()
 
 try:
     from search_api import SearchFilters, db_manager, SearchService, SortField, SortOrder
-except ImportError as e:
-    st.error(f"❌ search_api module import failed: {e}")
-    st.stop()
-except Exception as e:
-    st.error(f"❌ Unexpected error importing search_api: {e}")
+except ImportError:
+    st.error("search_api module not found. Please ensure all required modules are available.")
     st.stop()
 
 try:
     from enrichment_service import create_enrichment_service, EnrichmentService
 except ImportError:
-    st.warning("⚠️ enrichment_service module not found. Enrichment features will be disabled.")
+    st.warning("enrichment_service module not found. Enrichment features will be disabled.")
     
 try:
     import asyncpg
 except ImportError:
-    st.error("❌ asyncpg not installed. Please install with: pip install asyncpg")
+    st.error("asyncpg not installed. Please install with: pip install asyncpg")
     st.stop()
     
+import os
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
