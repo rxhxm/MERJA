@@ -151,15 +151,18 @@ def run_async(coro):
             return result
         finally:
             loop.close()
+            # It's good practice to reset the event loop for the current context
+            # if it was explicitly set.
+            try:
+                if asyncio.get_event_loop_policy().get_event_loop() is loop:
+                    asyncio.set_event_loop(None)
+            except RuntimeError: # Handles case where no current event loop was set by this thread
+                pass
             
     except Exception as e:
-        logger.error(f"Async execution error: {e}")
-        # Fallback: try with asyncio.run
-        try:
-            return asyncio.run(coro)
-        except Exception as e2:
-            logger.error(f"Fallback async execution error: {e2}")
-            raise e2
+        logger.error(f"Async execution error. Original error: {e}")
+        # Re-raise the original exception rather than attempting a problematic fallback
+        raise e
 
 # Database connection helper with better lifecycle management
 @st.cache_resource
