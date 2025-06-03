@@ -23,6 +23,8 @@ import time
 import logging
 import nest_asyncio
 
+nest_asyncio.apply() # Allow nesting of asyncio event loops
+
 # Configure Streamlit page
 st.set_page_config(
     page_title="NMLS Search",
@@ -59,6 +61,41 @@ import os
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Global variable to hold the asyncpg connection pool
+_db_pool = None
+
+async def deallocate_all_on_connection(conn):
+    """Setup function for asyncpg pool: runs DEALLOCATE ALL on new connections."""
+    await conn.execute("DEALLOCATE ALL;")
+    logger.info(f"Executed DEALLOCATE ALL on new connection {conn}.")
+
+async def get_or_create_pool():
+    """Creates and returns the asyncpg connection pool, ensuring it's a singleton."""
+    global _db_pool
+    if _db_pool is None:
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        if not DATABASE_URL:
+            logger.error("DATABASE_URL environment variable not set. Cannot create pool.")
+            # This is a critical error; the app likely can't function without DB access.
+            # Consider raising an exception or using st.error() if in main Streamlit thread.
+            return None 
+        try:
+            logger.info(f"Attempting to create database pool with DSN: {DATABASE_URL[:DATABASE_URL.find('@') if '@' in DATABASE_URL else len(DATABASE_URL)]}...")
+            _db_pool = await asyncpg.create_pool(
+                dsn=DATABASE_URL, 
+                min_size=2,       # Minimum number of connection slots
+                max_size=5,       # Maximum number of connection slots
+                statement_cache_size=0, # Disable client-side prepared statement cache
+                setup=deallocate_all_on_connection # Run DEALLOCATE ALL on new connections
+            )
+            logger.info("Database connection pool created successfully.")
+        except Exception as e:
+            logger.error(f"Failed to create database pool: {e}", exc_info=True)
+            _db_pool = None # Ensure pool is None if creation fails
+            # Re-raise the exception so Streamlit can catch and display it, or handle appropriately.
+            raise
+    return _db_pool
 
 # Custom CSS for better styling
 st.markdown("""
@@ -164,103 +201,67 @@ def run_async(coro):
         # Re-raise the original exception rather than attempting a problematic fallback
         raise e
 
-# Database connection helper with better lifecycle management
-@st.cache_resource
-def get_database_pool():
-    """Get a cached database connection pool"""
-    # Don't use cached pools in Streamlit - create fresh connections
-    return None
-
 # Simplified search function that creates its own connection
 async def run_natural_search(query: str, apply_filters: bool = True, page: int = 1, page_size: int = 20):
     """Run natural language search with proper error handling"""
+    pool = await get_or_create_pool()
+    if not pool:
+        st.error("Database connection pool is not available. Please check application logs.")
+        # Raising an exception here will stop execution and show the error to the user.
+        raise Exception("Database connection pool is not available.")
+
     try:
-        # Import search API
-        from search_api import SearchService, SearchFilters, SortField, SortOrder
-        from natural_language_search import LenderClassifier, ContactValidator, LenderType
-        
-        # Parse the query for business intelligence
-        query_lower = query.lower()
-        
-        # Create search filters based on query analysis
-        filters = SearchFilters()
-        
-        # Extract location information (fix typos in common state names)
-        query_clean = query_lower.replace("califprnia", "california").replace("califronia", "california")
-        
-        if "california" in query_clean or " ca " in query_clean or query_clean.endswith(" ca"):
-            filters.states = ["CA"]
-        elif "texas" in query_clean or " tx " in query_clean or query_clean.endswith(" tx"):
-            filters.states = ["TX"]
-        elif "florida" in query_clean or " fl " in query_clean or query_clean.endswith(" fl"):
-            filters.states = ["FL"]
-        elif "new york" in query_clean or " ny " in query_clean or query_clean.endswith(" ny"):
-            filters.states = ["NY"]
-        
-        # For basic company searches, just search by company name
-        if any(term in query_clean for term in ["companies", "company", "companie"]):
-            # Don't set specific license filters for basic company searches
-            pass
-        elif any(term in query_lower for term in ["personal loan", "consumer credit", "consumer loan", "installment loan", "finance company", "small loan"]):
-            # Focus on unsecured personal lending license types (using actual DB license types)
-            filters.license_types = [
-                "Consumer Loan Company License",
-                "Consumer Credit License", 
-                "Consumer Lender License",
-                "Consumer Loan License",
-                "Consumer Finance License",
-                "Sales Finance License",
-                "Sales Finance Company License",
-                "Small Loan Lender License",
-                "Small Loan License",
-                "Small Loan Company License",
-                "Installment Lender License",
-                "Installment Loan License",
-                "Installment Loan Company License",
-                "Consumer Installment Loan License",
-                "Supervised Lender License",
-                "Money Lender License",
-                "Payday Lender License",
-                "Short-Term Lender License",
-                "Title Pledge Lender License",
-                "Consumer Financial Services Class I License",
-                "Consumer Financial Services Class II License"
-            ]
-        elif any(term in query_lower for term in ["mortgage", "home loan", "real estate"]):
-            # User is asking for mortgage companies (should be flagged as not target for Fido)
-            filters.license_types = [
-                "Mortgage Loan Company License",
-                "Mortgage Loan Originator License", 
-                "Mortgage Broker License",
-                "Mortgage Lender License",
-                "Mortgage Company License",
-                "Residential Mortgage Lender License"
-            ]
-        else:
-            # Extract key search terms from the query instead of using the full phrase
-            # Look for specific entity types
-            if "bank" in query_lower:
-                filters.query = "bank"
-            elif "credit union" in query_lower:
-                filters.query = "credit union"
-            elif "finance" in query_lower:
-                filters.query = "finance"
-            elif "lending" in query_lower or "lender" in query_lower:
-                filters.query = "lend"
-            elif "loan" in query_lower:
-                filters.query = "loan"
-            # For broad searches like "companies in california", don't set a specific query filter
-        
-        # Create a fresh database connection for this search
-        DATABASE_URL = os.getenv('DATABASE_URL')
-        if not DATABASE_URL:
-            raise Exception("DATABASE_URL environment variable not set")
-        
-        # Use a simple connection instead of a pool for Streamlit
-        conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
-        await conn.execute("DEALLOCATE ALL;") # Clear any lingering prepared statements
-        
-        try:
+        async with pool.acquire() as conn:
+            # Import search API - moved inside as it's used with conn
+            from search_api import SearchService, SearchFilters, SortField, SortOrder
+            from natural_language_search import LenderClassifier, ContactValidator, LenderType
+            
+            # Parse the query for business intelligence
+            query_lower = query.lower()
+            
+            # Create search filters based on query analysis
+            filters = SearchFilters()
+            
+            # Extract location information (fix typos in common state names)
+            query_clean = query_lower.replace("califprnia", "california").replace("califronia", "california")
+            
+            if "california" in query_clean or " ca " in query_clean or query_clean.endswith(" ca"):
+                filters.states = ["CA"]
+            elif "texas" in query_clean or " tx " in query_clean or query_clean.endswith(" tx"):
+                filters.states = ["TX"]
+            elif "florida" in query_clean or " fl " in query_clean or query_clean.endswith(" fl"):
+                filters.states = ["FL"]
+            elif "new york" in query_clean or " ny " in query_clean or query_clean.endswith(" ny"):
+                filters.states = ["NY"]
+            
+            # For basic company searches, just search by company name
+            if any(term in query_clean for term in ["companies", "company", "companie"]):
+                # Don't set specific license filters for basic company searches
+                pass
+            elif any(term in query_lower for term in ["personal loan", "consumer credit", "consumer loan", "installment loan", "finance company", "small loan"]):
+                filters.license_types = [
+                    "Consumer Loan Company License", "Consumer Credit License", "Consumer Lender License",
+                    "Consumer Loan License", "Consumer Finance License", "Sales Finance License",
+                    "Sales Finance Company License", "Small Loan Lender License", "Small Loan License",
+                    "Small Loan Company License", "Installment Lender License", "Installment Loan License",
+                    "Installment Loan Company License", "Consumer Installment Loan License",
+                    "Supervised Lender License", "Money Lender License", "Payday Lender License",
+                    "Short-Term Lender License", "Title Pledge Lender License",
+                    "Consumer Financial Services Class I License", "Consumer Financial Services Class II License"
+                ]
+            elif any(term in query_lower for term in ["mortgage", "home loan", "real estate"]):
+                filters.license_types = [
+                    "Mortgage Loan Company License", "Mortgage Loan Originator License", "Mortgage Broker License",
+                    "Mortgage Lender License", "Mortgage Company License", "Residential Mortgage Lender License"
+                ]
+            else:
+                # Extract key search terms from the query instead of using the full phrase
+                if "bank" in query_lower: filters.query = "bank"
+                elif "credit union" in query_lower: filters.query = "credit union"
+                elif "finance" in query_lower: filters.query = "finance"
+                elif "lending" in query_lower or "lender" in query_lower: filters.query = "lend"
+                elif "loan" in query_lower: filters.query = "loan"
+            
             # Get total count first
             count_query, count_params = SearchService.build_count_query(filters)
             
@@ -273,7 +274,6 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
             # If no results with license type filter, fall back to broader search
             if total_count == 0 and filters.license_types:
                 logger.info("No results with license filter, trying broader search...")
-                # Try with just state filter
                 fallback_filters = SearchFilters(states=filters.states) if filters.states else SearchFilters()
                 count_query, count_params = SearchService.build_count_query(fallback_filters)
                 total_count = await conn.fetchval(count_query, *count_params)
@@ -307,19 +307,11 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
             enhanced_companies = []
             for row in rows:
                 company_data = dict(row)
-                
-                # Classify lender type
                 lender_classification = LenderClassifier.classify_company(
                     company_data.get('license_types', [])
                 )
-                
-                # Validate contact info
                 has_valid_contact, contact_issues = ContactValidator.has_valid_contact_info(company_data)
-                
-                # Calculate business score
                 business_score = calculate_business_score(lender_classification, has_valid_contact, company_data)
-                
-                # Create enhanced company response
                 enhanced_company = {
                     **company_data,
                     "lender_type": lender_classification.value,
@@ -327,17 +319,12 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
                     "contact_issues": contact_issues,
                     "business_score": business_score
                 }
-                
                 enhanced_companies.append(enhanced_company)
             
-            # Sort by business score if applying business filters
             if apply_filters:
                 enhanced_companies.sort(key=lambda x: x['business_score'], reverse=True)
             
-            # Calculate statistics (simplified for performance)
             stats = calculate_result_stats(enhanced_companies, query)
-            
-            # Determine intent and explanation
             intent = "find_companies"
             explanation = f"Searching for companies matching: {query}"
             business_flags = ["claude_api_unavailable"]
@@ -354,31 +341,22 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
             
             return {
                 "query_analysis": {
-                    "original_query": query,
-                    "intent": intent,
-                    "confidence": 0.8,
-                    "explanation": explanation,
-                    "business_critical_flags": business_flags
+                    "original_query": query, "intent": intent, "confidence": 0.8,
+                    "explanation": explanation, "business_critical_flags": business_flags
                 },
                 "filters_applied": filters.model_dump(exclude_unset=True),
                 "companies": enhanced_companies,
                 "pagination": {
-                    "total_count": total_count,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": (total_count + page_size - 1) // page_size
+                    "total_count": total_count, "page": page, "page_size": page_size,
+                    "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 0
                 },
                 "business_intelligence": stats
             }
-        
-        finally:
-            # Always close the connection
-            await conn.close()
                 
     except Exception as e:
-        logger.error(f"Search error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Search error in run_natural_search: {e}", exc_info=True)
+        # traceback.print_exc() # logger with exc_info=True does this
+        # Re-raise the exception so Streamlit can display it appropriately
         raise e
 
 def calculate_business_score(lender_type: LenderType, has_valid_contact: bool, company_data: Dict) -> float:
@@ -541,15 +519,13 @@ def format_lender_type(lender_type: str) -> str:
 
 async def fetch_company_licenses_with_states(nmls_id: str) -> Dict[str, List[str]]:
     """Fetch detailed license information for a company and group by license type and state"""
+    pool = await get_or_create_pool()
+    if not pool:
+        st.error("Database connection pool is not available. Cannot fetch company licenses.")
+        return {} # Return empty dict as per original error handling
+
     try:
-        # Use the same connection approach as the search function
-        DATABASE_URL = os.getenv('DATABASE_URL')
-        if not DATABASE_URL:
-            raise Exception("DATABASE_URL environment variable not set")
-        conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
-        await conn.execute("DEALLOCATE ALL;") # Clear any lingering prepared statements
-        
-        try:
+        async with pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT l.license_type, l.regulator, l.active, l.status
                 FROM licenses l
@@ -582,13 +558,10 @@ async def fetch_company_licenses_with_states(nmls_id: str) -> Dict[str, List[str
             logger.info(f"Final license-state mapping: {result}")
             return result
             
-        finally:
-            await conn.close()
-            
     except Exception as e:
-        logger.error(f"Error fetching company licenses for NMLS ID {nmls_id}: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error fetching company licenses for NMLS ID {nmls_id}: {e}", exc_info=True)
+        # import traceback # Not needed if exc_info=True
+        # traceback.print_exc()
         return {}
 
 def extract_state_from_regulator(regulator: str) -> str:
@@ -775,10 +748,6 @@ def show_natural_search_page():
             help="Filter by the type of lending business"
         )
     
-    with col3:
-        st.markdown("**⚙️ Options:**")
-        show_details = st.checkbox("Show detailed analysis", value=False, help="Show query processing details")
-    
     # Perform search
     if search_clicked and query:
         st.session_state.last_query = query
@@ -832,17 +801,6 @@ def show_natural_search_page():
         with col4:
             states_covered = len(set([state for c in companies for state in c.get('states_licensed', [])]))
             st.metric("States Covered", states_covered)
-        
-        # Detailed analysis (collapsible)
-        if show_details:
-            with st.expander("🔍 Query Processing Details", expanded=False):
-                analysis = result['query_analysis']
-                st.markdown(f"**Search Intent:** {analysis['intent'].replace('_', ' ').title()}")
-                st.markdown(f"**Confidence:** {analysis['confidence']:.1%}")
-                st.markdown(f"**Explanation:** {analysis['explanation']}")
-                
-                if analysis['business_critical_flags']:
-                    st.warning(f"⚠️ Flags: {', '.join(analysis['business_critical_flags'])}")
         
         # Main results table - focused on the two key things
         st.subheader(f"📋 Lenders Found ({len(companies)} results)")
@@ -903,76 +861,6 @@ def show_natural_search_page():
             df = pd.DataFrame(display_data)
             
             st.dataframe(df, use_container_width=True)
-            
-            # Enhanced license breakdown summary
-            st.markdown("### 📊 License Type Breakdown")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown("**🎯 TARGET Companies:**")
-                target_companies = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
-                for company in target_companies[:3]:  # Show first 3
-                    license_types = company.get('license_types', [])
-                    if license_types is None:
-                        license_types = []
-                    target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
-                    st.write(f"**{company['company_name']}**")
-                    if target_licenses:
-                        for license_type in target_licenses[:2]:  # Show first 2 licenses
-                            st.write(f"  • {license_type}")
-                        if len(target_licenses) > 2:
-                            st.write(f"  • ... and {len(target_licenses) - 2} more")
-                    else:
-                        st.write(f"  • (license details unavailable)")
-                    st.write("")
-                if len(target_companies) > 3:
-                    st.write(f"... and {len(target_companies) - 3} more TARGET companies")
-            
-            with col2:
-                st.markdown("**⚠️ MIXED Companies:**")
-                mixed_companies = [c for c in companies if c.get('lender_type') == 'mixed']
-                for company in mixed_companies[:3]:  # Show first 3
-                    license_types = company.get('license_types', [])
-                    if license_types is None:
-                        license_types = []
-                    target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
-                    exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
-                    st.write(f"**{company['company_name']}**")
-                    if target_licenses:
-                        st.write(f"  🎯 Personal: {target_licenses[0]}")
-                    else:
-                        st.write(f"  🎯 Personal: (none)")
-                    if exclude_licenses:
-                        st.write(f"  ❌ Mortgage: {exclude_licenses[0]}")
-                    else:
-                        st.write(f"  ❌ Mortgage: (none)")
-                    st.write("")
-                if len(mixed_companies) > 3:
-                    st.write(f"... and {len(mixed_companies) - 3} more MIXED companies")
-                elif len(mixed_companies) == 0:
-                    st.info("No mixed companies found")
-            
-            with col3:
-                st.markdown("**❓ UNKNOWN Companies:**")
-                unknown_companies = [c for c in companies if c.get('lender_type') == 'unknown']
-                for company in unknown_companies[:3]:  # Show first 3
-                    license_types = company.get('license_types', [])
-                    if license_types is None:
-                        license_types = []
-                    other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
-                    st.write(f"**{company['company_name']}**")
-                    if other_licenses:
-                        for license_type in other_licenses[:2]:  # Show first 2 licenses
-                            st.write(f"  • {license_type}")
-                        if len(other_licenses) > 2:
-                            st.write(f"  • ... and {len(other_licenses) - 2} more")
-                    else:
-                        st.write(f"  • (license details unavailable)")
-                    st.write("")
-                if len(unknown_companies) > 3:
-                    st.write(f"... and {len(unknown_companies) - 3} more UNKNOWN companies")
-                elif len(unknown_companies) == 0:
-                    st.info("No unknown companies found")
             
             # Show license details for selected companies
             st.markdown("### 🔍 Detailed License Analysis")
@@ -1383,14 +1271,13 @@ def show_natural_search_page():
 
 async def get_license_state_breakdown(nmls_id: str) -> Dict[str, List[str]]:
     """Get detailed breakdown of which states each license type is in for a company"""
+    pool = await get_or_create_pool()
+    if not pool:
+        st.error("Database connection pool is not available. Cannot get license state breakdown.")
+        return {} # Return empty dict as per original error handling
+
     try:
-        DATABASE_URL = os.getenv('DATABASE_URL')
-        if not DATABASE_URL:
-            raise Exception("DATABASE_URL environment variable not set for get_license_state_breakdown")
-        conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
-        await conn.execute("DEALLOCATE ALL;") # Clear any lingering prepared statements
-        
-        try:
+        async with pool.acquire() as conn:
             # Get individual licenses with their state information
             rows = await conn.fetch("""
                 SELECT 
@@ -1419,11 +1306,8 @@ async def get_license_state_breakdown(nmls_id: str) -> Dict[str, List[str]]:
             # Convert sets to sorted lists
             return {lt: sorted(list(states)) for lt, states in license_state_map.items()}
             
-        finally:
-            await conn.close()
-            
     except Exception as e:
-        logger.error(f"Error getting license state breakdown for {nmls_id}: {e}")
+        logger.error(f"Error getting license state breakdown for {nmls_id}: {e}", exc_info=True)
         return {}
 
 def get_license_category_state_breakdown(license_types_dict: Dict[str, List[str]]) -> Dict[str, List[str]]:
