@@ -97,6 +97,25 @@ async def get_or_create_pool():
             raise
     return _db_pool
 
+def _format_state_list_for_display(states: Optional[List[Any]], limit: int) -> str:
+    """Safely formats a list of states for display, handling None values and limiting count."""
+    if not states: # Handles None or empty list from category_states.get() or an empty list
+        return ""
+    
+    # Filter for non-None values and convert to string, then take the limit
+    # This ensures all elements for join are strings.
+    valid_states = [str(s) for s in states if s is not None]
+    
+    if not valid_states:
+        return ""
+
+    displayed_states = valid_states[:limit]
+    display_str = ', '.join(displayed_states)
+    
+    if len(valid_states) > limit:
+        display_str += f", +{len(valid_states) - limit} more"
+    return display_str
+
 # Custom CSS for better styling
 st.markdown("""
 <style>
@@ -879,12 +898,19 @@ def show_natural_search_page():
                 exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
                 other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
                 
+                # Get state breakdown by category
+                category_states = get_license_category_state_breakdown(license_state_breakdown)
+                
+                target_states_str = _format_state_list_for_display(category_states.get('target'), 3)
+                exclude_states_str = _format_state_list_for_display(category_states.get('exclude'), 3)
+                other_states_str = _format_state_list_for_display(category_states.get('other'), 3)
+                
                 # Create detailed lender type description
                 if lender_type == 'unsecured_personal':
-                    lender_display = f'🎯 TARGET ({len(target_licenses)} personal loan licenses)'
+                    lender_display = f'🎯 TARGET ({len(target_licenses)} personal in {target_states_str})'
                     license_detail = f"Personal loan licenses: {', '.join(target_licenses[:2])}{'...' if len(target_licenses) > 2 else ''}" if target_licenses else "Personal loan licenses: (details unavailable)"
                 elif lender_type == 'mortgage':
-                    lender_display = f'❌ EXCLUDE ({len(exclude_licenses)} mortgage licenses)'
+                    lender_display = f'❌ EXCLUDE ({len(exclude_licenses)} mortgage in {exclude_states_str})'
                     license_detail = f"Mortgage licenses: {', '.join(exclude_licenses[:2])}{'...' if len(exclude_licenses) > 2 else ''}" if exclude_licenses else "Mortgage licenses: (details unavailable)"
                 elif lender_type == 'mixed':
                     lender_display = f'⚠️ MIXED ({len(target_licenses)} personal + {len(exclude_licenses)} mortgage)'
@@ -892,7 +918,7 @@ def show_natural_search_page():
                     mortgage_part = f"Mortgage: {', '.join(exclude_licenses[:1])}{'...' if len(exclude_licenses) > 1 else ''}" if exclude_licenses else "Mortgage: (none)"
                     license_detail = f"{personal_part} | {mortgage_part}"
                 else:
-                    lender_display = f'❓ UNKNOWN ({len(other_licenses)} other licenses)'
+                    lender_display = f'❓ UNKNOWN ({len(other_licenses)} other in {other_states_str})'
                     license_detail = f"Other licenses: {', '.join(other_licenses[:2])}{'...' if len(other_licenses) > 2 else ''}" if other_licenses else "Other licenses: (details unavailable)"
                 
                 display_data.append({
@@ -1333,12 +1359,14 @@ def get_license_category_state_breakdown(license_types_dict: Dict[str, List[str]
     other_states = set()
     
     for license_type, states in license_types_dict.items():
+        # Ensure states are strings and filter out None values if any sneak through
+        valid_states = {s for s in states if isinstance(s, str)}
         if license_type in LenderClassifier.UNSECURED_PERSONAL_LICENSES:
-            target_states.update(states)
+            target_states.update(valid_states)
         elif license_type in LenderClassifier.MORTGAGE_LICENSES:
-            exclude_states.update(states)
+            exclude_states.update(valid_states)
         else:
-            other_states.update(states)
+            other_states.update(valid_states)
     
     return {
         'target': sorted(list(target_states)),
@@ -1353,41 +1381,33 @@ def format_license_with_states(lender_type: str, target_licenses: List[str], exc
     # Get state breakdown by category
     category_states = get_license_category_state_breakdown(license_state_breakdown)
     
+    target_states_str = _format_state_list_for_display(category_states.get('target'), 3)
+    exclude_states_str = _format_state_list_for_display(category_states.get('exclude'), 3)
+    other_states_str = _format_state_list_for_display(category_states.get('other'), 3)
+    
     if lender_type == 'unsecured_personal':
-        target_states_str = ', '.join(category_states['target'][:3])
-        if len(category_states['target']) > 3:
-            target_states_str += f", +{len(category_states['target'])-3} more"
-        return f"🎯 TARGET ({len(target_licenses)} personal in {target_states_str})" if category_states['target'] else f"🎯 TARGET ({len(target_licenses)} personal licenses)"
+        return f"🎯 TARGET ({len(target_licenses)} personal in {target_states_str})" if target_states_str else f"🎯 TARGET ({len(target_licenses)} personal licenses)"
     
     elif lender_type == 'mortgage':
-        exclude_states_str = ', '.join(category_states['exclude'][:3])
-        if len(category_states['exclude']) > 3:
-            exclude_states_str += f", +{len(category_states['exclude'])-3} more"
-        return f"❌ EXCLUDE ({len(exclude_licenses)} mortgage in {exclude_states_str})" if category_states['exclude'] else f"❌ EXCLUDE ({len(exclude_licenses)} mortgage licenses)"
+        return f"❌ EXCLUDE ({len(exclude_licenses)} mortgage in {exclude_states_str})" if exclude_states_str else f"❌ EXCLUDE ({len(exclude_licenses)} mortgage licenses)"
     
     elif lender_type == 'mixed':
         personal_str = f"{len(target_licenses)} personal"
         mortgage_str = f"{len(exclude_licenses)} mortgage"
         
-        if category_states['target']:
-            target_states_str = ', '.join(category_states['target'][:2])
-            if len(category_states['target']) > 2:
-                target_states_str += f", +{len(category_states['target'])-2} more"
-            personal_str += f" ({target_states_str})"
+        target_mixed_states_str = _format_state_list_for_display(category_states.get('target'), 2)
+        exclude_mixed_states_str = _format_state_list_for_display(category_states.get('exclude'), 2)
         
-        if category_states['exclude']:
-            exclude_states_str = ', '.join(category_states['exclude'][:2]) 
-            if len(category_states['exclude']) > 2:
-                exclude_states_str += f", +{len(category_states['exclude'])-2} more"
-            mortgage_str += f" ({exclude_states_str})"
+        if target_mixed_states_str:
+            personal_str += f" ({target_mixed_states_str})"
+        
+        if exclude_mixed_states_str:
+            mortgage_str += f" ({exclude_mixed_states_str})"
             
         return f"⚠️ MIXED ({personal_str} + {mortgage_str})"
     
     else:
-        other_states_str = ', '.join(category_states['other'][:3])
-        if len(category_states['other']) > 3:
-            other_states_str += f", +{len(category_states['other'])-3} more"
-        return f"❓ UNKNOWN ({len(other_licenses)} other in {other_states_str})" if category_states['other'] else f"❓ UNKNOWN ({len(other_licenses)} other licenses)"
+        return f"❓ UNKNOWN ({len(other_licenses)} other in {other_states_str})" if other_states_str else f"❓ UNKNOWN ({len(other_licenses)} other licenses)"
 
 if __name__ == "__main__":
     main() 
