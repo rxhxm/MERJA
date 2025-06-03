@@ -774,8 +774,12 @@ def show_natural_search_page():
         st.session_state.last_query = query
         with st.spinner("🔍 Searching database..."):
             try:
-                # Use high page_size to get all results
-                result = run_async(run_natural_search(query, True, 1, 10000))
+                # Use the AI-powered enhanced search API
+                async def run_enhanced_search():
+                    await enhanced_search_api.initialize()
+                    return await enhanced_search_api.natural_language_search(query, True, 1, 10000)
+                
+                result = run_async(run_enhanced_search())
                 if result:
                     st.session_state.search_results = result
                     st.session_state.selected_companies = []
