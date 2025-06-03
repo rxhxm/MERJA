@@ -898,19 +898,12 @@ def show_natural_search_page():
                 exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
                 other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
                 
-                # Get state breakdown by category
-                category_states = get_license_category_state_breakdown(license_state_breakdown)
-                
-                target_states_str = _format_state_list_for_display(category_states.get('target'), 3)
-                exclude_states_str = _format_state_list_for_display(category_states.get('exclude'), 3)
-                other_states_str = _format_state_list_for_display(category_states.get('other'), 3)
-                
                 # Create detailed lender type description
                 if lender_type == 'unsecured_personal':
-                    lender_display = f'🎯 TARGET ({len(target_licenses)} personal in {target_states_str})'
+                    lender_display = f'🎯 TARGET ({len(target_licenses)} personal)'
                     license_detail = f"Personal loan licenses: {', '.join(target_licenses[:2])}{'...' if len(target_licenses) > 2 else ''}" if target_licenses else "Personal loan licenses: (details unavailable)"
                 elif lender_type == 'mortgage':
-                    lender_display = f'❌ EXCLUDE ({len(exclude_licenses)} mortgage in {exclude_states_str})'
+                    lender_display = f'❌ EXCLUDE ({len(exclude_licenses)} mortgage)'
                     license_detail = f"Mortgage licenses: {', '.join(exclude_licenses[:2])}{'...' if len(exclude_licenses) > 2 else ''}" if exclude_licenses else "Mortgage licenses: (details unavailable)"
                 elif lender_type == 'mixed':
                     lender_display = f'⚠️ MIXED ({len(target_licenses)} personal + {len(exclude_licenses)} mortgage)'
@@ -918,7 +911,7 @@ def show_natural_search_page():
                     mortgage_part = f"Mortgage: {', '.join(exclude_licenses[:1])}{'...' if len(exclude_licenses) > 1 else ''}" if exclude_licenses else "Mortgage: (none)"
                     license_detail = f"{personal_part} | {mortgage_part}"
                 else:
-                    lender_display = f'❓ UNKNOWN ({len(other_licenses)} other in {other_states_str})'
+                    lender_display = f'❓ UNKNOWN ({len(other_licenses)} other)'
                     license_detail = f"Other licenses: {', '.join(other_licenses[:2])}{'...' if len(other_licenses) > 2 else ''}" if other_licenses else "Other licenses: (details unavailable)"
                 
                 display_data.append({
