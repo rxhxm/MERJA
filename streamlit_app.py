@@ -220,8 +220,8 @@ def run_async(coro):
         # Re-raise the original exception rather than attempting a problematic fallback
         raise e
 
-# Simplified search function that creates its own connection
-async def run_natural_search(query: str, apply_filters: bool = True, page: int = 1, page_size: int = 20):
+# Custom search function that uses our existing database pool
+async def run_enhanced_search(query: str, apply_filters: bool = True, page: int = 1, page_size: int = 20):
     """Run natural language search with proper error handling"""
     pool = await get_or_create_pool()
     if not pool:
@@ -235,146 +235,79 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
             from search_api import SearchService, SearchFilters, SortField, SortOrder
             from natural_language_search import LenderClassifier, ContactValidator, LenderType
             
-            # Parse the query for business intelligence
-            query_lower = query.lower()
+            # Analyze the query using Claude AI
+            await enhanced_search_api.initialize()
+            analysis = await enhanced_search_api.nlp.analyze_query(query)
             
-            # Create search filters based on query analysis
-            filters = SearchFilters()
+            # Apply business filters
+            analysis.filters = await enhanced_search_api._apply_business_filters(analysis.filters, analysis.lender_type_preference)
             
-            # Extract location information (fix typos in common state names)
-            query_clean = query_lower.replace("califprnia", "california").replace("califronia", "california")
-            
-            if "california" in query_clean or " ca " in query_clean or query_clean.endswith(" ca"):
-                filters.states = ["CA"]
-            elif "texas" in query_clean or " tx " in query_clean or query_clean.endswith(" tx"):
-                filters.states = ["TX"]
-            elif "florida" in query_clean or " fl " in query_clean or query_clean.endswith(" fl"):
-                filters.states = ["FL"]
-            elif "new york" in query_clean or " ny " in query_clean or query_clean.endswith(" ny"):
-                filters.states = ["NY"]
-            
-            # For basic company searches, just search by company name
-            if any(term in query_clean for term in ["companies", "company", "companie"]):
-                # Don't set specific license filters for basic company searches
-                pass
-            elif any(term in query_lower for term in ["personal loan", "consumer credit", "consumer loan", "installment loan", "finance company", "small loan"]):
-                filters.license_types = [
-                    "Consumer Loan Company License", "Consumer Credit License", "Consumer Lender License",
-                    "Consumer Loan License", "Consumer Finance License", "Sales Finance License",
-                    "Sales Finance Company License", "Small Loan Lender License", "Small Loan License",
-                    "Small Loan Company License", "Installment Lender License", "Installment Loan License",
-                    "Installment Loan Company License", "Consumer Installment Loan License",
-                    "Supervised Lender License", "Money Lender License", "Payday Lender License",
-                    "Short-Term Lender License", "Title Pledge Lender License",
-                    "Consumer Financial Services Class I License", "Consumer Financial Services Class II License"
-                ]
-            elif any(term in query_lower for term in ["mortgage", "home loan", "real estate"]):
-                filters.license_types = [
-                    "Mortgage Loan Company License", "Mortgage Loan Originator License", "Mortgage Broker License",
-                    "Mortgage Lender License", "Mortgage Company License", "Residential Mortgage Lender License"
-                ]
-            else:
-                # Extract key search terms from the query instead of using the full phrase
-                if "bank" in query_lower: filters.query = "bank"
-                elif "credit union" in query_lower: filters.query = "credit union"
-                elif "finance" in query_lower: filters.query = "finance"
-                elif "lending" in query_lower or "lender" in query_lower: filters.query = "lend"
-                elif "loan" in query_lower: filters.query = "loan"
-            
-            # Get total count first
-            count_query, count_params = SearchService.build_count_query(filters)
-            
-            logger.info(f"Count query: {count_query}")
-            logger.info(f"Count params: {count_params}")
-            
+            # Get total count
+            count_query, count_params = SearchService.build_count_query(analysis.filters)
             total_count = await conn.fetchval(count_query, *count_params)
-            logger.info(f"Total count found: {total_count}")
-            
-            # If no results with license type filter, fall back to broader search
-            if total_count == 0 and filters.license_types:
-                logger.info("No results with license filter, trying broader search...")
-                fallback_filters = SearchFilters(states=filters.states) if filters.states else SearchFilters()
-                count_query, count_params = SearchService.build_count_query(fallback_filters)
-                total_count = await conn.fetchval(count_query, *count_params)
-                filters = fallback_filters
-                logger.info(f"Fallback search count: {total_count}")
-            
-            # If still no results, try even broader search
-            if total_count == 0:
-                logger.info("Still no results, trying very broad search...")
-                broad_filters = SearchFilters()
-                if filters.states:
-                    broad_filters.states = filters.states
-                count_query, count_params = SearchService.build_count_query(broad_filters)
-                total_count = await conn.fetchval(count_query, *count_params)
-                filters = broad_filters
-                logger.info(f"Broad search count: {total_count}")
             
             # Get results
             search_query, search_params = SearchService.build_search_query(
-                filters, page, page_size, 
+                analysis.filters, page, page_size, 
                 SortField.company_name, SortOrder.asc
             )
             
-            logger.info(f"Search query: {search_query}")
-            logger.info(f"Search params: {search_params}")
-            
             rows = await conn.fetch(search_query, *search_params)
-            logger.info(f"Rows fetched: {len(rows)}")
             
             # Enhance results with business intelligence
             enhanced_companies = []
             for row in rows:
                 company_data = dict(row)
+                
+                # Classify lender type
                 lender_classification = LenderClassifier.classify_company(
                     company_data.get('license_types', [])
                 )
+                
+                # Validate contact info
                 has_valid_contact, contact_issues = ContactValidator.has_valid_contact_info(company_data)
-                business_score = calculate_business_score(lender_classification, has_valid_contact, company_data)
+                
+                # Create enhanced company response
                 enhanced_company = {
                     **company_data,
                     "lender_type": lender_classification.value,
                     "has_valid_contact": has_valid_contact,
                     "contact_issues": contact_issues,
-                    "business_score": business_score
+                    "business_score": calculate_business_score(
+                        lender_classification, has_valid_contact, company_data
+                    )
                 }
+                
                 enhanced_companies.append(enhanced_company)
             
+            # Sort by business score
             if apply_filters:
                 enhanced_companies.sort(key=lambda x: x['business_score'], reverse=True)
             
+            # Calculate statistics
             stats = calculate_result_stats(enhanced_companies, query)
-            intent = "find_companies"
-            explanation = f"Searching for companies matching: {query}"
-            business_flags = ["claude_api_unavailable"]
-            
-            if "personal loan" in query_lower:
-                intent = "find_personal_lenders"
-                explanation = f"Searching for personal loan companies"
-                if not any(c['lender_type'] == 'unsecured_personal' for c in enhanced_companies):
-                    business_flags.append("no_target_lenders_found")
-            elif "mortgage" in query_lower:
-                intent = "find_mortgage_lenders"
-                explanation = f"Searching for mortgage companies (flagged as non-target for Fido)"
-                business_flags.append("mortgage_focus_detected")
             
             return {
                 "query_analysis": {
-                    "original_query": query, "intent": intent, "confidence": 0.8,
-                    "explanation": explanation, "business_critical_flags": business_flags
+                    "original_query": query,
+                    "intent": analysis.intent.value,
+                    "confidence": analysis.confidence,
+                    "explanation": analysis.explanation,
+                    "business_critical_flags": analysis.business_critical_flags
                 },
-                "filters_applied": filters.model_dump(exclude_unset=True),
+                "filters_applied": analysis.filters.model_dump(exclude_unset=True),
                 "companies": enhanced_companies,
                 "pagination": {
-                    "total_count": total_count, "page": page, "page_size": page_size,
+                    "total_count": total_count,
+                    "page": page,
+                    "page_size": page_size,
                     "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 0
                 },
                 "business_intelligence": stats
             }
                 
     except Exception as e:
-        logger.error(f"Search error in run_natural_search: {e}", exc_info=True)
-        # traceback.print_exc() # logger with exc_info=True does this
+        logger.error(f"Search error in run_enhanced_search: {e}", exc_info=True)
         # Re-raise the exception so Streamlit can display it appropriately
         raise e
 
@@ -775,11 +708,7 @@ def show_natural_search_page():
         with st.spinner("🔍 Searching database..."):
             try:
                 # Use the AI-powered enhanced search API
-                async def run_enhanced_search():
-                    await enhanced_search_api.initialize()
-                    return await enhanced_search_api.natural_language_search(query, True, 1, 10000)
-                
-                result = run_async(run_enhanced_search())
+                result = run_async(run_enhanced_search(query, True, 1, 10000))
                 if result:
                     st.session_state.search_results = result
                     st.session_state.selected_companies = []
