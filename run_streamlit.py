@@ -80,7 +80,7 @@ async def test_database_connection():
 
 def check_anthropic_api():
     """Check Claude API configuration"""
-    api_key = "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"
+    api_key = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
     
     if api_key and api_key.startswith('sk-ant-'):
         print("✅ Claude API key configured")

@@ -44,7 +44,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Claude client
-ANTHROPIC_API_KEY = "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"
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
 claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
 # Database connection
