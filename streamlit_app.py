@@ -237,14 +237,69 @@ async def run_enhanced_search(query: str, apply_filters: bool = True, page: int 
             
             # Analyze the query using Claude AI
             await enhanced_search_api.initialize()
-            analysis = await enhanced_search_api.nlp.analyze_query(query)
             
-            # Apply business filters
-            analysis.filters = await enhanced_search_api._apply_business_filters(analysis.filters, analysis.lender_type_preference)
+            try:
+                analysis = await enhanced_search_api.nlp.analyze_query(query)
+                logger.info(f"AI Analysis - Intent: {analysis.intent}, Confidence: {analysis.confidence}")
+                logger.info(f"AI Analysis - Explanation: {analysis.explanation}")
+                logger.info(f"AI Analysis - Original filters: {analysis.filters}")
+                
+                # Apply business filters
+                analysis.filters = await enhanced_search_api._apply_business_filters(analysis.filters, analysis.lender_type_preference)
+                logger.info(f"AI Analysis - Final filters after business logic: {analysis.filters}")
+                
+            except Exception as ai_error:
+                logger.error(f"AI Analysis failed: {ai_error}")
+                # Fallback to simple parsing
+                from search_api import SearchFilters
+                from natural_language_search import QueryIntent, QueryAnalysis, LenderType
+                
+                # Simple fallback parsing
+                query_lower = query.lower()
+                filters = SearchFilters()
+                
+                # Basic state detection
+                if "california" in query_lower or " ca " in query_lower:
+                    filters.states = ["CA"]
+                elif "arizona" in query_lower or " az " in query_lower:
+                    filters.states = ["AZ"]
+                elif "texas" in query_lower or " tx " in query_lower:
+                    filters.states = ["TX"]
+                elif "florida" in query_lower or " fl " in query_lower:
+                    filters.states = ["FL"]
+                elif "new york" in query_lower or " ny " in query_lower:
+                    filters.states = ["NY"]
+                
+                # Basic query extraction
+                if "bank" in query_lower:
+                    filters.query = "bank"
+                elif "credit union" in query_lower:
+                    filters.query = "credit union"
+                elif "finance" in query_lower:
+                    filters.query = "finance"
+                elif "lend" in query_lower:
+                    filters.query = "lend"
+                
+                # Create fallback analysis
+                analysis = QueryAnalysis(
+                    intent=QueryIntent.FIND_COMPANIES,
+                    filters=filters,
+                    lender_type_preference=None,
+                    semantic_query=None,
+                    confidence=0.5,
+                    explanation=f"Fallback parsing (AI unavailable): {query}",
+                    business_critical_flags=["ai_analysis_failed"]
+                )
+                
+                logger.info(f"Fallback Analysis - Filters: {analysis.filters}")
             
             # Get total count
             count_query, count_params = SearchService.build_count_query(analysis.filters)
+            logger.info(f"Count Query: {count_query}")
+            logger.info(f"Count Params: {count_params}")
+            
             total_count = await conn.fetchval(count_query, *count_params)
+            logger.info(f"Total count found: {total_count}")
             
             # Get results
             search_query, search_params = SearchService.build_search_query(
@@ -252,7 +307,11 @@ async def run_enhanced_search(query: str, apply_filters: bool = True, page: int 
                 SortField.company_name, SortOrder.asc
             )
             
+            logger.info(f"Search Query: {search_query}")
+            logger.info(f"Search Params: {search_params}")
+            
             rows = await conn.fetch(search_query, *search_params)
+            logger.info(f"Rows fetched: {len(rows)}")
             
             # Enhance results with business intelligence
             enhanced_companies = []
@@ -712,11 +771,61 @@ def show_natural_search_page():
                 if result:
                     st.session_state.search_results = result
                     st.session_state.selected_companies = []
+                    
+                    # Debug section - show what the AI understood
+                    with st.expander("🔍 Debug: AI Query Analysis", expanded=False):
+                        query_analysis = result.get('query_analysis', {})
+                        filters_applied = result.get('filters_applied', {})
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("**🧠 What the AI Understood:**")
+                            st.write(f"**Original Query:** {query_analysis.get('original_query', 'N/A')}")
+                            st.write(f"**Intent:** {query_analysis.get('intent', 'N/A')}")
+                            st.write(f"**Confidence:** {query_analysis.get('confidence', 'N/A')}")
+                            st.write(f"**Explanation:** {query_analysis.get('explanation', 'N/A')}")
+                            
+                            if query_analysis.get('business_critical_flags'):
+                                st.write(f"**Flags:** {', '.join(query_analysis.get('business_critical_flags', []))}")
+                        
+                        with col2:
+                            st.markdown("**⚙️ Filters Applied:**")
+                            if filters_applied:
+                                for key, value in filters_applied.items():
+                                    if value is not None:
+                                        st.write(f"**{key}:** {value}")
+                            else:
+                                st.write("No filters applied")
+                        
+                        # Show SQL query if we can reconstruct it
+                        st.markdown("**🗄️ Generated SQL Query:**")
+                        try:
+                            from search_api import SearchService, SearchFilters
+                            # Reconstruct the filters object
+                            search_filters = SearchFilters(**filters_applied)
+                            count_query, count_params = SearchService.build_count_query(search_filters)
+                            search_query, search_params = SearchService.build_search_query(
+                                search_filters, 1, 10000, 
+                                SearchService.SortField.company_name, SearchService.SortOrder.asc
+                            )
+                            
+                            st.code(f"COUNT QUERY:\n{count_query}\nPARAMS: {count_params}", language="sql")
+                            st.code(f"SEARCH QUERY:\n{search_query}\nPARAMS: {search_params}", language="sql")
+                            
+                        except Exception as e:
+                            st.error(f"Could not reconstruct SQL query: {e}")
                 else:
                     st.error("❌ No results found. Try a different search.")
             except Exception as e:
                 st.error(f"❌ Search failed: {str(e)}")
                 logger.error(f"Search error: {e}")
+                
+                # Show error details in debug section
+                with st.expander("🐛 Debug: Error Details", expanded=True):
+                    st.code(str(e))
+                    import traceback
+                    st.code(traceback.format_exc())
     
     # Display results with focus on states and lender type
     if st.session_state.search_results:
