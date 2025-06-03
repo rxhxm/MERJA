@@ -735,17 +735,19 @@ def show_natural_search_page():
     with col1:
         st.markdown("**📍 States Licensed In:**")
         selected_states = st.multiselect(
-            "Filter by states",
+            "",
             ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
-            help="Select states to filter lenders"
+            help="Select states to filter lenders",
+            label_visibility="collapsed"
         )
     
     with col2:
         st.markdown("**🏦 Lender Type:**")
         lender_type_filter = st.selectbox(
-            "Filter by lender type",
+            "",
             ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
-            help="Filter by the type of lending business"
+            help="Filter by the type of lending business",
+            label_visibility="collapsed"
         )
     
     # Perform search
@@ -803,8 +805,54 @@ def show_natural_search_page():
             st.metric("States Covered", states_covered)
         
         # Main results table - focused on the two key things
-        st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+        results_subheader_cols = st.columns([0.8, 0.2]) # Adjust ratio as needed
+        with results_subheader_cols[0]:
+            st.subheader(f"📋 Lenders Found ({len(companies)} results)")
         
+        if companies: # Only show export button if there are companies
+            with results_subheader_cols[1]:
+                # Prepare DataFrame for export here, as it's needed for the button
+                # This reuses the display_data logic already present for the main table
+                export_display_data = []
+                for company_export_item in companies: # Use the filtered 'companies' list
+                    states_licensed_export = company_export_item.get('states_licensed', [])
+                    states_str_export = ', '.join(sorted(states_licensed_export)) if states_licensed_export else 'Unknown'
+                    
+                    lender_type_export = company_export_item.get('lender_type', 'unknown')
+                    license_types_export = company_export_item.get('license_types', [])
+                    if license_types_export is None: license_types_export = []
+                    from natural_language_search import LenderClassifier # Ensure import is accessible
+                    target_licenses_export = [lt for lt in license_types_export if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+                    exclude_licenses_export = [lt for lt in license_types_export if lt in LenderClassifier.MORTGAGE_LICENSES]
+                    
+                    if lender_type_export == 'unsecured_personal': lender_display_export = f'TARGET ({len(target_licenses_export)} personal)'
+                    elif lender_type_export == 'mortgage': lender_display_export = f'EXCLUDE ({len(exclude_licenses_export)} mortgage)'
+                    elif lender_type_export == 'mixed': lender_display_export = f'MIXED ({len(target_licenses_export)} personal + {len(exclude_licenses_export)} mortgage)'
+                    else: lender_display_export = 'UNKNOWN'
+
+                    export_display_data.append({
+                        'NMLS ID': company_export_item.get('nmls_id', ''),
+                        'Company Name': company_export_item.get('company_name', ''),
+                        'Lender Type (Classification)': lender_display_export,
+                        'License Types (Raw)': "; ".join(license_types_export) if license_types_export else 'N/A',
+                        'States Licensed': states_str_export,
+                        'Total States': len(states_licensed_export),
+                        'Contact Info Available': 'Yes' if (company_export_item.get('phone') and company_export_item.get('email')) else 'Email Only' if company_export_item.get('email') else 'Phone Only' if company_export_item.get('phone') else 'No',
+                        'Email': company_export_item.get('email', ''),
+                        'Phone': company_export_item.get('phone', ''),
+                        'Website': company_export_item.get('website', ''),
+                        'Business Score': company_export_item.get('business_score', 0)
+                    })
+                df_export = pd.DataFrame(export_display_data)
+                csv_export = df_export.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export CSV",
+                    data=csv_export,
+                    file_name=f"lenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
         if companies:
             # Create focused display data
             display_data = []
@@ -980,40 +1028,6 @@ def show_natural_search_page():
                                 st.write(f"{i}. ❌ **{license_type}**{state_info} - Mortgage")
                             else:
                                 st.write(f"{i}. ❓ **{license_type}**{state_info} - Other")
-            
-            # Quick actions
-            st.markdown("### 🚀 Quick Actions")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                if st.button("📊 Export Results"):
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        "📥 Download CSV",
-                        csv,
-                        f"lenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        "text/csv"
-                    )
-            
-            with col2:
-                target_lenders = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
-                if st.button(f"🎯 Show Only Targets ({len(target_lenders)})"):
-                    # Filter to show only target lenders
-                    st.session_state.lender_type_filter = "unsecured_personal"
-                    st.experimental_rerun()
-            
-            with col3:
-                if st.button("🗺️ Show State Breakdown"):
-                    # Show state breakdown
-                    all_states = [state for c in companies for state in c.get('states_licensed', [])]
-                    state_counts = pd.Series(all_states).value_counts()
-                    
-                    st.markdown("**📊 Companies by State:**")
-                    for state, count in state_counts.head(10).items():
-                        st.write(f"**{state}**: {count} companies")
-                    
-                    if len(state_counts) > 10:
-                        st.write(f"... and {len(state_counts) - 10} more states")
             
             # Company Enrichment Section
             st.markdown("---")
