@@ -233,12 +233,16 @@ async def run_enhanced_search(query: str, apply_filters: bool = True, page: int 
         async with pool.acquire() as conn:
             # Import search API - moved inside as it's used with conn
             from search_api import SearchService, SearchFilters, SortField, SortOrder
-            from natural_language_search import LenderClassifier, ContactValidator, LenderType
+            from natural_language_search import LenderClassifier, ContactValidator, LenderType, QueryIntent, QueryAnalysis
             
-            # Analyze the query using Claude AI
-            await enhanced_search_api.initialize()
-            
+            # Try AI analysis first, but fall back to simple parsing if it fails
             try:
+                # Analyze the query using Claude AI
+                await enhanced_search_api.initialize()
+                
+                # Pass our database pool to the NLP processor
+                enhanced_search_api.nlp.vector_search.pool = pool
+                
                 analysis = await enhanced_search_api.nlp.analyze_query(query)
                 logger.info(f"AI Analysis - Intent: {analysis.intent}, Confidence: {analysis.confidence}")
                 logger.info(f"AI Analysis - Explanation: {analysis.explanation}")
@@ -251,46 +255,7 @@ async def run_enhanced_search(query: str, apply_filters: bool = True, page: int 
             except Exception as ai_error:
                 logger.error(f"AI Analysis failed: {ai_error}")
                 # Fallback to simple parsing
-                from search_api import SearchFilters
-                from natural_language_search import QueryIntent, QueryAnalysis, LenderType
-                
-                # Simple fallback parsing
-                query_lower = query.lower()
-                filters = SearchFilters()
-                
-                # Basic state detection
-                if "california" in query_lower or " ca " in query_lower:
-                    filters.states = ["CA"]
-                elif "arizona" in query_lower or " az " in query_lower:
-                    filters.states = ["AZ"]
-                elif "texas" in query_lower or " tx " in query_lower:
-                    filters.states = ["TX"]
-                elif "florida" in query_lower or " fl " in query_lower:
-                    filters.states = ["FL"]
-                elif "new york" in query_lower or " ny " in query_lower:
-                    filters.states = ["NY"]
-                
-                # Basic query extraction
-                if "bank" in query_lower:
-                    filters.query = "bank"
-                elif "credit union" in query_lower:
-                    filters.query = "credit union"
-                elif "finance" in query_lower:
-                    filters.query = "finance"
-                elif "lend" in query_lower:
-                    filters.query = "lend"
-                
-                # Create fallback analysis
-                analysis = QueryAnalysis(
-                    intent=QueryIntent.FIND_COMPANIES,
-                    filters=filters,
-                    lender_type_preference=None,
-                    semantic_query=None,
-                    confidence=0.5,
-                    explanation=f"Fallback parsing (AI unavailable): {query}",
-                    business_critical_flags=["ai_analysis_failed"]
-                )
-                
+                analysis = await run_simple_query_analysis(query)
                 logger.info(f"Fallback Analysis - Filters: {analysis.filters}")
             
             # Get total count
@@ -369,6 +334,85 @@ async def run_enhanced_search(query: str, apply_filters: bool = True, page: int 
         logger.error(f"Search error in run_enhanced_search: {e}", exc_info=True)
         # Re-raise the exception so Streamlit can display it appropriately
         raise e
+
+async def run_simple_query_analysis(query: str):
+    """Simple fallback query analysis when AI is unavailable"""
+    from search_api import SearchFilters
+    from natural_language_search import QueryIntent, QueryAnalysis, LenderType
+    
+    # Simple fallback parsing
+    query_lower = query.lower()
+    filters = SearchFilters()
+    
+    # Enhanced state detection - all 50 states
+    state_mapping = {
+        'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR', 'california': 'CA',
+        'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE', 'florida': 'FL', 'georgia': 'GA',
+        'hawaii': 'HI', 'idaho': 'ID', 'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA',
+        'kansas': 'KS', 'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+        'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS', 'missouri': 'MO',
+        'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ',
+        'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH',
+        'oklahoma': 'OK', 'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+        'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT', 'vermont': 'VT',
+        'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV', 'wisconsin': 'WI', 'wyoming': 'WY'
+    }
+    
+    # Check for state names and abbreviations
+    detected_states = []
+    for state_name, state_abbr in state_mapping.items():
+        if state_name in query_lower or f" {state_abbr.lower()} " in query_lower or f" {state_abbr} " in query:
+            detected_states.append(state_abbr)
+    
+    if detected_states:
+        filters.states = detected_states
+    
+    # Enhanced query extraction
+    search_terms = []
+    if "bank" in query_lower:
+        search_terms.append("bank")
+    if "credit union" in query_lower:
+        search_terms.append("credit union")
+    if "finance" in query_lower:
+        search_terms.append("finance")
+    if "lend" in query_lower:
+        search_terms.append("lend")
+    if "loan" in query_lower:
+        search_terms.append("loan")
+    if "personal" in query_lower:
+        search_terms.append("personal")
+    if "consumer" in query_lower:
+        search_terms.append("consumer")
+    
+    # If no specific terms found, use the whole query
+    if search_terms:
+        filters.query = " ".join(search_terms)
+    else:
+        # Extract meaningful words (remove common words)
+        stop_words = {'find', 'me', 'get', 'show', 'list', 'search', 'for', 'in', 'the', 'a', 'an', 'and', 'or', 'but'}
+        words = [word for word in query_lower.split() if word not in stop_words and len(word) > 2]
+        if words:
+            filters.query = " ".join(words[:3])  # Take first 3 meaningful words
+    
+    # Determine lender type preference
+    lender_preference = LenderType.UNKNOWN
+    if any(term in query_lower for term in ['personal', 'consumer', 'installment', 'payday']):
+        lender_preference = LenderType.UNSECURED_PERSONAL
+    elif any(term in query_lower for term in ['mortgage', 'home', 'real estate']):
+        lender_preference = LenderType.MORTGAGE
+    
+    # Create analysis
+    explanation = f"Simple parsing: Found states {detected_states}, search terms '{filters.query}', preference {lender_preference.value}"
+    
+    return QueryAnalysis(
+        intent=QueryIntent.FIND_COMPANIES,
+        filters=filters,
+        lender_type_preference=lender_preference,
+        semantic_query=None,
+        confidence=0.7,  # Higher confidence for simple parsing
+        explanation=explanation,
+        business_critical_flags=["simple_parsing_used"]
+    )
 
 def calculate_business_score(lender_type: LenderType, has_valid_contact: bool, company_data: Dict) -> float:
     """Calculate business relevance score for Fido"""
