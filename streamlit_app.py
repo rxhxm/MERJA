@@ -851,7 +851,7 @@ def show_natural_search_page():
                             count_query, count_params = SearchService.build_count_query(search_filters)
                             search_query, search_params = SearchService.build_search_query(
                                 search_filters, 1, 10000, 
-                                SearchService.SortField.company_name, SearchService.SortOrder.asc
+                                SortField.company_name, SortOrder.asc
                             )
                             
                             st.code(f"COUNT QUERY:\n{count_query}\nPARAMS: {count_params}", language="sql")

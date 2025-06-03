@@ -44,14 +44,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Claude client
-ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
+try:
+    import streamlit as st
+    ANTHROPIC_API_KEY = st.secrets.get('ANTHROPIC_API_KEY', os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here'))
+    DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres'))
+except ImportError:
+    ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
+
 claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
-# Database connection
-DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
-
 # Import SearchFilters from the existing search API
-from search_api import SearchFilters, CompanyResponse, SearchResponse
+from search_api import SearchFilters, CompanyResponse, SearchResponse, SortField, SortOrder
 
 class QueryIntent(str, Enum):
     """Types of search intents"""
@@ -561,7 +565,7 @@ class EnhancedSearchAPI:
                 # Get results
                 search_query, search_params = SearchService.build_search_query(
                     analysis.filters, page, page_size, 
-                    SearchService.SortField.company_name, SearchService.SortOrder.asc
+                    SortField.company_name, SortOrder.asc
                 )
                 
                 rows = await conn.fetch(search_query, *search_params)
