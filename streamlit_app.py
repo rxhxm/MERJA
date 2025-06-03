@@ -257,7 +257,7 @@ async def run_natural_search(query: str, apply_filters: bool = True, page: int =
             raise Exception("DATABASE_URL environment variable not set")
         
         # Use a simple connection instead of a pool for Streamlit
-        conn = await asyncpg.connect(DATABASE_URL)
+        conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
         
         try:
             # Get total count first
@@ -545,7 +545,7 @@ async def fetch_company_licenses_with_states(nmls_id: str) -> Dict[str, List[str
         DATABASE_URL = os.getenv('DATABASE_URL')
         if not DATABASE_URL:
             raise Exception("DATABASE_URL environment variable not set")
-        conn = await asyncpg.connect(DATABASE_URL)
+        conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
         
         try:
             rows = await conn.fetch("""
@@ -1383,7 +1383,7 @@ async def get_license_state_breakdown(nmls_id: str) -> Dict[str, List[str]]:
     """Get detailed breakdown of which states each license type is in for a company"""
     try:
         DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
-        conn = await asyncpg.connect(DATABASE_URL)
+        conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
         
         try:
             # Get individual licenses with their state information
