@@ -352,7 +352,11 @@ def create_enrichment_service() -> Optional[EnrichmentService]:
         import streamlit as st
         api_key = st.secrets.get('SIXTYFOUR_API_KEY', os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b'))
     except ImportError:
+        # Streamlit not available, fall back to environment variable
         api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
+    except Exception:
+        # Any other error, fall back to environment variable
+    api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
     
     if not api_key:
         return None

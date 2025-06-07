@@ -38,9 +38,9 @@ logger = logging.getLogger(__name__)
 # Database connection
 try:
     import streamlit as st
-    DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres'))
-except ImportError:
-    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
+    DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL', 'postgresql://postgres.eissjxpcsxcktoanftjw:Ronin320320.@aws-0-us-east-1.pooler.supabase.com:5432/postgres'))
+except (ImportError, Exception):
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres.eissjxpcsxcktoanftjw:Ronin320320.@aws-0-us-east-1.pooler.supabase.com:5432/postgres')
 
 # Pydantic Models
 class SortOrder(str, Enum):
@@ -132,7 +132,12 @@ class DatabaseManager:
     async def connect(self):
         """Initialize database connection pool"""
         try:
-            self.pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
+            self.pool = await asyncpg.create_pool(
+                DATABASE_URL, 
+                min_size=1, 
+                max_size=10,
+                statement_cache_size=0  # Disable prepared statements for pgbouncer compatibility
+            )
             logger.info("✅ Database connection pool created")
         except Exception as e:
             logger.error(f"❌ Failed to create database pool: {e}")
@@ -488,6 +493,10 @@ async def search_companies(
     
     try:
         async with db_manager.pool.acquire() as conn:
+            # Execute DEALLOCATE ALL to clear any prepared statements
+            await conn.execute("DEALLOCATE ALL")
+            logger.info(f"Executed DEALLOCATE ALL on connection {conn}")
+            
             # Get total count for pagination
             count_query, count_params = SearchService.build_count_query(filters)
             total_count = await conn.fetchval(count_query, *count_params)
@@ -546,6 +555,9 @@ async def get_search_suggestions(
     """Get search suggestions for autocomplete"""
     try:
         async with db_manager.pool.acquire() as conn:
+            # Execute DEALLOCATE ALL to clear any prepared statements
+            await conn.execute("DEALLOCATE ALL")
+            
             suggestions = await conn.fetch("""
                 SELECT DISTINCT company_name, nmls_id
                 FROM companies

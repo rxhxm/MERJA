@@ -1,17 +1,66 @@
 #!/usr/bin/env python3
-"""
-NMLS Database Search & Intelligence Platform
-Comprehensive Streamlit app for searching and analyzing NMLS database with AI-powered natural language processing.
 
-Features:
-- Natural language search with Claude AI
-- Advanced filtering and sorting
-- Business intelligence dashboard
-- Lender classification and contact validation
-- Export capabilities
-- Real-time search suggestions
-"""
+# WORKAROUND for torch.classes error in Streamlit watcher
+import sys
+import os
 
+# Prevent Streamlit from watching torch modules
+if 'STREAMLIT_RUNNING' not in os.environ:
+    os.environ['STREAMLIT_RUNNING'] = 'true'
+
+# Monkey patch torch.classes to prevent __path__._path access issues
+try:
+    import torch
+    
+    # Store the original classes
+    _original_torch_classes = torch.classes
+    
+    # Create a safe version of torch.classes that doesn't break Streamlit's watcher
+    class SafeClasses:
+        def __init__(self, original_classes):
+            self._original = original_classes
+            
+        def __getattr__(self, name):
+            if name == '__path__':
+                # Return a safe object that handles _path attribute safely
+                class SafePath:
+                    def __init__(self, original_path):
+                        self._original_path = original_path
+                        
+                    def __getattr__(self, attr):
+                        if attr == '_path':
+                            # Instead of raising an error, return an empty list
+                            # This prevents Streamlit watcher from crashing
+                            return []
+                        return getattr(self._original_path, attr)
+                        
+                    def __iter__(self):
+                        # Make it iterable for Streamlit watcher
+                        return iter([])
+                        
+                    def __len__(self):
+                        return 0
+                
+                return SafePath(self._original.__path__)
+            return getattr(self._original, name)
+            
+        def __dir__(self):
+            # Ensure dir() works properly
+            return dir(self._original)
+    
+    # Replace torch.classes with safe version only if we detect Streamlit environment
+    if 'streamlit' in sys.modules or os.environ.get('STREAMLIT_RUNNING'):
+        torch.classes = SafeClasses(_original_torch_classes)
+    
+except ImportError:
+    # torch not available, no workaround needed
+    pass
+except Exception as e:
+    # If workaround fails, log it but continue
+    import logging
+    logging.getLogger(__name__).warning(f"torch.classes workaround failed: {e}")
+
+# Standard imports continue below
 import streamlit as st
 import asyncio
 import pandas as pd
@@ -47,8 +96,18 @@ except ImportError:
 
 try:
     from enrichment_service import create_enrichment_service, EnrichmentService
-except ImportError:
-    st.warning("enrichment_service module not found. Enrichment features will be disabled.")
+    ENRICHMENT_AVAILABLE = True
+except ImportError as import_error:
+    ENRICHMENT_AVAILABLE = False
+    if "torch" in str(import_error).lower():
+        st.warning("⚠️ Enrichment service unavailable due to PyTorch dependency issues. Search functionality will work normally.")
+    else:
+        st.warning("⚠️ Enrichment service module not found. Enrichment features will be disabled.")
+    logger.warning(f"Enrichment service import failed: {import_error}")
+except Exception as other_error:
+    ENRICHMENT_AVAILABLE = False
+    st.warning("⚠️ Enrichment service unavailable due to initialization error. Search functionality will work normally.")
+    logger.error(f"Enrichment service import error: {other_error}")
     
 try:
     import asyncpg
@@ -191,10 +250,51 @@ if 'selected_companies' not in st.session_state:
 def run_async(coro):
     """Run async function in Streamlit with proper event loop handling"""
     try:
-        # For Streamlit, we need to create a fresh event loop
         import asyncio
         import sys
+        import nest_asyncio
         
+        # Apply nest_asyncio to allow nested event loops
+        try:
+            nest_asyncio.apply()
+        except Exception as e:
+            logger.warning(f"nest_asyncio.apply() failed: {e}")
+        
+        # Check if we're already in an event loop
+        try:
+            current_loop = asyncio.get_running_loop()
+            logger.info(f"Running in existing event loop: {current_loop}")
+            
+            # If we're in an existing loop, try to run directly
+            try:
+                # Create a task and run it
+                import concurrent.futures
+                import threading
+                
+                def run_in_thread():
+                    # Create a new event loop in a separate thread
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(coro)
+                    finally:
+                        new_loop.close()
+                
+                # Run in a separate thread to avoid event loop conflicts
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_thread)
+                    result = future.result(timeout=300)  # 5 minute timeout
+                    return result
+                    
+            except Exception as nested_error:
+                logger.error(f"Failed to run in nested event loop: {nested_error}")
+                raise nested_error
+        
+        except RuntimeError:
+            # No running event loop, create a new one
+            logger.info("No running event loop, creating new one")
+            
+            # Platform-specific event loop policy
         if sys.platform == 'win32':
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         
@@ -207,18 +307,17 @@ def run_async(coro):
             return result
         finally:
             loop.close()
-            # It's good practice to reset the event loop for the current context
-            # if it was explicitly set.
-            try:
-                if asyncio.get_event_loop_policy().get_event_loop() is loop:
-                    asyncio.set_event_loop(None)
-            except RuntimeError: # Handles case where no current event loop was set by this thread
-                pass
+                # Reset the event loop for the current context
+                try:
+                    if asyncio.get_event_loop_policy().get_event_loop() is loop:
+                        asyncio.set_event_loop(None)
+                except RuntimeError:
+                    pass
             
     except Exception as e:
-        logger.error(f"Async execution error. Original error: {e}")
-        # Re-raise the original exception rather than attempting a problematic fallback
-        raise e
+        logger.error(f"Async execution error: {e}", exc_info=True)
+        # Re-raise with more context
+        raise Exception(f"Async execution failed: {str(e)}")
 
 # Custom search function that uses our existing database pool
 async def run_enhanced_search(query: str, apply_filters: bool = True, page: int = 1, page_size: int = 20):
@@ -232,7 +331,7 @@ async def run_enhanced_search(query: str, apply_filters: bool = True, page: int 
     try:
         async with pool.acquire() as conn:
             # Import search API - moved inside as it's used with conn
-            from search_api import SearchService, SearchFilters, SortField, SortOrder
+        from search_api import SearchService, SearchFilters, SortField, SortOrder
             from natural_language_search import LenderClassifier, ContactValidator, LenderType, QueryIntent, QueryAnalysis
             
             # Try AI analysis first, but fall back to simple parsing if it fails
@@ -790,7 +889,7 @@ def show_natural_search_page():
     with col1:
         st.markdown("**📍 States Licensed In:**")
         selected_states = st.multiselect(
-            "",
+            "Select states to filter by",
             ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
             help="Select states to filter lenders",
             label_visibility="collapsed"
@@ -799,7 +898,7 @@ def show_natural_search_page():
     with col2:
         st.markdown("**🏦 Lender Type:**")
         lender_type_filter = st.selectbox(
-            "",
+            "Select lender type to filter by",
             ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
             help="Filter by the type of lending business",
             label_visibility="collapsed"
@@ -912,7 +1011,7 @@ def show_natural_search_page():
         # Main results table - focused on the two key things
         results_subheader_cols = st.columns([0.8, 0.2]) # Adjust ratio as needed
         with results_subheader_cols[0]:
-            st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+        st.subheader(f"📋 Lenders Found ({len(companies)} results)")
         
         if companies: # Only show export button if there are companies
             with results_subheader_cols[1]:
@@ -957,7 +1056,7 @@ def show_natural_search_page():
                     mime="text/csv",
                     use_container_width=True
                 )
-
+        
         if companies:
             # Create focused display data
             display_data = []
@@ -1137,6 +1236,15 @@ def show_natural_search_page():
             # Company Enrichment Section
             st.markdown("---")
             st.markdown("### 🧠 SixtyFour AI Enrichment")
+            
+            if not ENRICHMENT_AVAILABLE:
+                st.error("❌ Enrichment service is currently unavailable due to dependency issues.")
+                st.info("💡 You can continue using the search functionality. The enrichment features will be restored once the dependencies are fixed.")
+                st.markdown("**Common fixes:**")
+                st.markdown("- Restart the Streamlit app")
+                st.markdown("- Check if PyTorch is properly installed")
+                st.markdown("- Contact support if the issue persists")
+            else:
             st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
             
             # Enrichment controls
@@ -1172,7 +1280,8 @@ def show_natural_search_page():
                         companies_to_enrich = companies
                     
                     if companies_to_enrich:
-                        # Run enrichment
+                            # Run enrichment with enhanced error handling
+                            try:
                         enrichment_service = create_enrichment_service()
                         if enrichment_service:
                             st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies...")
@@ -1187,7 +1296,8 @@ def show_natural_search_page():
                                 status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%})")
                             
                             try:
-                                # Run enrichment
+                                        # Run enrichment with timeout and error handling
+                                        with st.spinner("Running AI enrichment..."):
                                 enriched_df, contacts_df = run_async(
                                     enrichment_service.enrich_companies_batch(
                                         companies_to_enrich, 
@@ -1206,11 +1316,36 @@ def show_natural_search_page():
                                 status_text.text("✅ Enrichment completed!")
                                 st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
                                 
-                            except Exception as e:
-                                st.error(f"❌ Enrichment failed: {str(e)}")
-                                logger.error(f"Enrichment error: {e}")
+                                    except Exception as enrichment_error:
+                                        st.error(f"❌ Enrichment failed: {str(enrichment_error)}")
+                                        logger.error(f"Enrichment execution error: {enrichment_error}", exc_info=True)
+                                        
+                                        # Clear progress indicators on error
+                                        progress_bar.empty()
+                                        status_text.empty()
+                                        
+                                        # Show detailed error info in expander
+                                        with st.expander("🐛 Enrichment Error Details", expanded=False):
+                                            st.code(str(enrichment_error))
+                                            if "torch" in str(enrichment_error).lower():
+                                                st.warning("💡 This appears to be a PyTorch-related error. Try restarting the Streamlit app or contact support.")
+                                            if "event loop" in str(enrichment_error).lower():
+                                                st.warning("💡 This appears to be an event loop error. Try refreshing the page.")
                         else:
                             st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
+                            
+                            except Exception as service_error:
+                                st.error(f"❌ Failed to initialize enrichment service: {str(service_error)}")
+                                logger.error(f"Enrichment service initialization error: {service_error}", exc_info=True)
+                                
+                                # Show helpful error message based on error type
+                                if "torch" in str(service_error).lower():
+                                    st.warning("💡 PyTorch dependency issue detected. Enrichment features are temporarily unavailable.")
+                                    st.info("You can continue using the search functionality without enrichment.")
+                                elif "import" in str(service_error).lower():
+                                    st.warning("💡 Missing dependencies for enrichment service. Please install required packages.")
+                                else:
+                                    st.warning("💡 Enrichment service temporarily unavailable. You can continue using search functionality.")
                     else:
                         st.warning("⚠️ No companies selected for enrichment.")
             

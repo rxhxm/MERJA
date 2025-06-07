@@ -47,10 +47,40 @@ logger = logging.getLogger(__name__)
 try:
     import streamlit as st
     ANTHROPIC_API_KEY = st.secrets.get('ANTHROPIC_API_KEY', os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here'))
-    DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres'))
-except ImportError:
+    DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL', 'postgresql://postgres.eissjxpcsxcktoanftjw:Ronin320320.@aws-0-us-east-1.pooler.supabase.com:5432/postgres'))
+    
+    # Cached model loading function
+    @st.cache_resource
+    def load_sentence_transformer_model():
+        """Load and cache the SentenceTransformer model to prevent re-downloading"""
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            logger.warning("SentenceTransformers not available - returning None")
+            return None
+        
+        try:
+            logger.info("Loading SentenceTransformer model 'all-MiniLM-L6-v2'...")
+            model = SentenceTransformer('all-MiniLM-L6-v2')
+            logger.info("SentenceTransformer model loaded successfully and cached")
+            return model
+        except Exception as e:
+            logger.error(f"Failed to load SentenceTransformer model: {e}")
+            return None
+    
+    STREAMLIT_AVAILABLE = True
+except (ImportError, Exception):
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
-    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres.eissjxpcsxcktoanftjw:Ronin320320.@aws-0-us-east-1.pooler.supabase.com:5432/postgres')
+    STREAMLIT_AVAILABLE = False
+    
+    def load_sentence_transformer_model():
+        """Fallback model loading without caching"""
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            return None
+        try:
+            return SentenceTransformer('all-MiniLM-L6-v2')
+        except Exception as e:
+            logger.error(f"Failed to load SentenceTransformer model: {e}")
+            return None
 
 claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -286,25 +316,86 @@ class VectorSearchService:
     """Semantic vector search for company names and descriptions"""
     
     def __init__(self):
-        if SENTENCE_TRANSFORMERS_AVAILABLE:
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
-        else:
-            self.model = None
+        self.model = None
         self.pool = None
+        self._model_loaded = False
+    
+    def _ensure_model_loaded(self):
+        """Ensure the model is loaded using cached function"""
+        if not self._model_loaded:
+            self.model = load_sentence_transformer_model()
+            self._model_loaded = True
+            if self.model is None:
+                logger.warning("SentenceTransformer model could not be loaded - vector search disabled")
     
     async def connect(self):
         """Initialize database connection"""
-        self.pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+        try:
+            self.pool = await asyncpg.create_pool(
+                DATABASE_URL, 
+                min_size=1, 
+                max_size=5,
+                statement_cache_size=0  # Disable prepared statements for pgbouncer compatibility
+            )
+            logger.info("Database connection pool created successfully for vector search")
+        except Exception as e:
+            logger.error(f"Failed to create database pool for vector search: {e}")
+            raise
     
+    def _fallback_text_similarity(self, query: str, texts: List[str], nmls_ids: List[str], limit: int = 50) -> List[str]:
+        """Fallback text similarity search when sentence transformers fail"""
+        try:
+            from difflib import SequenceMatcher
+            
+            query_lower = query.lower()
+            similarities = []
+            
+            for i, text in enumerate(texts):
+                text_lower = text.lower()
+                
+                # Simple scoring based on word overlap and sequence similarity
+                score = 0.0
+                
+                # Word overlap scoring
+                query_words = set(query_lower.split())
+                text_words = set(text_lower.split())
+                if query_words and text_words:
+                    overlap = len(query_words.intersection(text_words))
+                    score += (overlap / len(query_words)) * 0.7
+                
+                # Sequence similarity
+                seq_sim = SequenceMatcher(None, query_lower, text_lower).ratio()
+                score += seq_sim * 0.3
+                
+                # Substring matching bonus
+                if query_lower in text_lower:
+                    score += 0.2
+                
+                similarities.append((score, nmls_ids[i]))
+            
+            # Sort by similarity and return top matches above threshold
+            similarities.sort(reverse=True)
+            top_matches = [nmls_id for score, nmls_id in similarities[:limit] if score > 0.2]
+            
+            logger.info(f"Fallback text similarity found {len(top_matches)} matches")
+            return top_matches
+            
+        except Exception as e:
+            logger.error(f"Fallback text similarity error: {e}")
+            return []
+
     async def semantic_search(self, query: str, limit: int = 50) -> List[str]:
         """Perform semantic search on company names and trade names"""
-        if not SENTENCE_TRANSFORMERS_AVAILABLE:
-            logger.warning("Vector search disabled - sentence_transformers not available")
-            return []
-            
+        # Ensure model is loaded
+        self._ensure_model_loaded()
+        
         try:
             # Get company names and trade names
             async with self.pool.acquire() as conn:
+                # Execute DEALLOCATE ALL to clear any prepared statements
+                await conn.execute("DEALLOCATE ALL")
+                logger.info(f"Executed DEALLOCATE ALL on new connection {conn}.")
+                
                 rows = await conn.fetch("""
                     SELECT nmls_id, company_name, trade_names
                     FROM companies
@@ -326,18 +417,35 @@ class VectorSearchService:
                 texts.append(company_text)
                 nmls_ids.append(row['nmls_id'])
             
-            # Encode query and corpus
-            query_embedding = self.model.encode([query])
-            corpus_embeddings = self.model.encode(texts)
+            if not texts:
+                logger.warning("No company texts found for semantic search")
+                return []
             
-            # Calculate cosine similarity
-            similarities = np.dot(query_embedding, corpus_embeddings.T)[0]
-            
-            # Get top matches
-            top_indices = np.argsort(similarities)[-limit:][::-1]
-            top_nmls_ids = [nmls_ids[i] for i in top_indices if similarities[i] > 0.3]  # Threshold
-            
-            return top_nmls_ids
+            # Try sentence transformers first
+            if self.model is not None:
+                try:
+                    logger.info(f"Encoding {len(texts)} company texts for semantic search...")
+                    
+                    # Encode query and corpus with error handling
+                    query_embedding = self.model.encode([query])
+                    corpus_embeddings = self.model.encode(texts)
+                    
+                    # Calculate cosine similarity
+                    similarities = np.dot(query_embedding, corpus_embeddings.T)[0]
+                    
+                    # Get top matches
+                    top_indices = np.argsort(similarities)[-limit:][::-1]
+                    top_nmls_ids = [nmls_ids[i] for i in top_indices if similarities[i] > 0.3]  # Threshold
+                    
+                    logger.info(f"Semantic search found {len(top_nmls_ids)} matches above threshold")
+                    return top_nmls_ids
+                    
+                except Exception as encoding_error:
+                    logger.error(f"Model encoding error, falling back to text similarity: {encoding_error}")
+                    return self._fallback_text_similarity(query, texts, nmls_ids, limit)
+            else:
+                logger.info("SentenceTransformer model not available, using fallback text similarity")
+                return self._fallback_text_similarity(query, texts, nmls_ids, limit)
             
         except Exception as e:
             logger.error(f"Vector search error: {e}")

@@ -52,7 +52,7 @@ def check_environment():
         
         # Set default DATABASE_URL if not provided
         if 'DATABASE_URL' in missing_env:
-            os.environ['DATABASE_URL'] = 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres'
+            os.environ['DATABASE_URL'] = 'postgresql://postgres.eissjxpcsxcktoanftjw:Ronin320320.@aws-0-us-east-1.pooler.supabase.com:5432/postgres'
             print("✅ DATABASE_URL set to default")
     else:
         print("✅ Environment variables configured")
