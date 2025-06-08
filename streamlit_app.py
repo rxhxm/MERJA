@@ -87,7 +87,6 @@ async def search_companies(
             query=query,
             filters=search_filters,
             use_ai=True,
-            apply_business_filters=True,
             page=1,
             page_size=10000
         )
@@ -109,7 +108,7 @@ def format_lender_type(lender_type: str, license_types: List[str]) -> str:
         license_types = []
 
     target_licenses = [
-        lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+        lt for lt in license_types if lt in LenderClassifier.UNSECURED_LICENSES]
     exclude_licenses = [
         lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
 
