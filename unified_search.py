@@ -380,12 +380,14 @@ class VectorSearchService:
 
         try:
             async with self.pool.acquire() as conn:
+                # Limit the initial dataset to prevent long processing times
                 rows = await conn.fetch("""
                     SELECT nmls_id, company_name,
                            COALESCE(trade_names, ARRAY[]::text[]) as trade_names
                     FROM companies
                     WHERE company_name IS NOT NULL
-                    LIMIT 10000
+                    ORDER BY RANDOM()  -- Add randomization to get diverse results
+                    LIMIT 1000         -- Reduced from 10000 to speed up processing
                 """)
 
                 if not rows:
@@ -404,20 +406,27 @@ class VectorSearchService:
                 # Try sentence transformers first
                 if self.model is not None:
                     try:
+                        # Process in smaller batches to avoid memory issues
+                        batch_size = 100
                         query_embedding = self.model.encode([query])
-                        corpus_embeddings = self.model.encode(texts)
-                        similarities = np.dot(
-                            query_embedding, corpus_embeddings.T)[0]
+                        
+                        # Process corpus in batches
+                        similarities = []
+                        for i in range(0, len(texts), batch_size):
+                            batch_texts = texts[i:i + batch_size]
+                            batch_embeddings = self.model.encode(batch_texts)
+                            batch_similarities = np.dot(query_embedding, batch_embeddings.T)[0]
+                            similarities.extend(batch_similarities)
+                        
+                        # Convert to numpy array and get top results
+                        similarities = np.array(similarities)
                         top_indices = np.argsort(similarities)[-limit:][::-1]
-                        return [nmls_ids[i]
-                                for i in top_indices if similarities[i] > 0.3]
+                        return [nmls_ids[i] for i in top_indices if similarities[i] > 0.3]
                     except Exception as e:
                         logger.error(f"Model encoding error: {e}")
-                        return self._fallback_text_similarity(
-                            query, texts, nmls_ids, limit)
+                        return self._fallback_text_similarity(query, texts, nmls_ids, limit)
                 else:
-                    return self._fallback_text_similarity(
-                        query, texts, nmls_ids, limit)
+                    return self._fallback_text_similarity(query, texts, nmls_ids, limit)
 
         except Exception as e:
             logger.error(f"Vector search error: {e}")
@@ -599,7 +608,18 @@ class DatabaseManager:
 
     async def disconnect(self):
         if self.pool:
-            await self.pool.close()
+            try:
+                # First, close all connections gracefully with timeout
+                await asyncio.wait_for(self.pool.close(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Pool close timed out, terminating connections")
+                # Force terminate if graceful close times out
+                self.pool.terminate()
+            except Exception as e:
+                logger.error(f"Error during pool disconnect: {e}")
+                self.pool.terminate()
+            finally:
+                self.pool = None
             logger.info("🔌 Database connection pool closed")
 
 # ============================================================================
@@ -1079,9 +1099,15 @@ async def run_unified_search(
         # Always clean up connections
         try:
             await api_instance.db_manager.disconnect()
-            # Also clean up vector search connections
+            # Also clean up vector search connections with timeout
             if hasattr(api_instance.nlp, 'vector_search') and api_instance.nlp.vector_search.pool:
-                await api_instance.nlp.vector_search.pool.close()
+                try:
+                    await asyncio.wait_for(api_instance.nlp.vector_search.pool.close(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Vector search pool close timed out, terminating")
+                    api_instance.nlp.vector_search.pool.terminate()
+                except Exception:
+                    api_instance.nlp.vector_search.pool.terminate()
         except Exception as cleanup_error:
             logger.warning(f"Cleanup error (non-critical): {cleanup_error}")
 
