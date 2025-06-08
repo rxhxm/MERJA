@@ -548,7 +548,7 @@ class SearchService:
             c.phone,
             c.email,
             c.website,
-            a.street_address,
+            a.full_address as street_address,
             a.mailing_address,
             c.federal_regulator,
             c.created_at,
@@ -570,7 +570,7 @@ class SearchService:
             param_count += 1
             conditions.append(f"""
                 (c.company_name ILIKE ${param_count} 
-                 OR a.street_address ILIKE ${param_count}
+                 OR a.full_address ILIKE ${param_count}
                  OR a.mailing_address ILIKE ${param_count})
             """)
             params.append(f"%{filters.query}%")
@@ -646,7 +646,7 @@ class SearchService:
             param_count += 1
             conditions.append(f"""
                 (c.company_name ILIKE ${param_count} 
-                 OR a.street_address ILIKE ${param_count}
+                 OR a.full_address ILIKE ${param_count}
                  OR a.mailing_address ILIKE ${param_count})
             """)
             params.append(f"%{filters.query}%")
