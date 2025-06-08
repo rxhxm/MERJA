@@ -74,6 +74,10 @@ import nest_asyncio
 
 nest_asyncio.apply() # Allow nesting of asyncio event loops
 
+# Configure logging early so it's available for import error handling
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Configure Streamlit page
 st.set_page_config(
     page_title="NMLS Search",
@@ -116,10 +120,6 @@ except ImportError:
     st.stop()
     
 import os
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Global variable to hold the asyncpg connection pool
 _db_pool = None
