@@ -245,6 +245,13 @@ if 'enriched_results' not in st.session_state:
     st.session_state.enriched_results = None
 if 'selected_companies' not in st.session_state:
     st.session_state.selected_companies = []
+# Add process management
+if 'enrichment_running' not in st.session_state:
+    st.session_state.enrichment_running = False
+if 'enrichment_cancelled' not in st.session_state:
+    st.session_state.enrichment_cancelled = False
+if 'current_enrichment_id' not in st.session_state:
+    st.session_state.current_enrichment_id = None
 
 # Helper functions
 def run_async(coro):
@@ -854,6 +861,23 @@ def format_license_summary_with_states(company: Dict) -> str:
 
 # Main app
 def main():
+    # Check for and handle concurrent processes
+    if 'page_load_id' not in st.session_state:
+        st.session_state.page_load_id = str(time.time())
+    
+    # If enrichment is running but this is a new page load, reset the state
+    current_page_id = str(time.time())
+    if (st.session_state.enrichment_running and 
+        hasattr(st.session_state, 'last_page_load_id') and 
+        st.session_state.last_page_load_id != st.session_state.page_load_id):
+        
+        st.warning("🔄 Detected page reload during enrichment. Resetting enrichment state.")
+        st.session_state.enrichment_running = False
+        st.session_state.enrichment_cancelled = True
+        st.session_state.current_enrichment_id = None
+    
+    st.session_state.last_page_load_id = st.session_state.page_load_id
+    
     # Header
     st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
     
@@ -862,10 +886,53 @@ def main():
 
 def show_natural_search_page():
     """Natural language search interface"""
+    
+    # Status bar for enrichment processes
+    if st.session_state.enrichment_running or st.session_state.enrichment_cancelled:
+        if st.session_state.enrichment_running:
+            st.info(f"🔄 Enrichment Process Running (ID: {st.session_state.current_enrichment_id})")
+        elif st.session_state.enrichment_cancelled:
+            st.warning("⚠️ Last enrichment process was cancelled")
+            if st.button("🗑️ Clear Status", help="Clear the cancellation status"):
+                st.session_state.enrichment_cancelled = False
+                st.rerun()
+    
     st.header("NMLS Lender Search")
     
     # Prominent filtering section
     st.subheader("🎯 Search & Filter")
+    
+    # Add utility section for process management
+    with st.expander("🔧 Process Management", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**Current Status:**")
+            if st.session_state.enrichment_running:
+                st.error(f"🔄 Enrichment Running (ID: {st.session_state.current_enrichment_id})")
+            elif st.session_state.enrichment_cancelled:
+                st.warning("⚠️ Last process cancelled")
+            else:
+                st.success("✅ No active processes")
+        
+        with col2:
+            st.markdown("**Actions:**")
+            if st.button("🛑 Force Stop All", help="Force stop any running enrichment processes"):
+                st.session_state.enrichment_running = False
+                st.session_state.enrichment_cancelled = True
+                st.session_state.current_enrichment_id = None
+                st.success("✅ All processes stopped")
+                st.rerun()
+        
+        with col3:
+            st.markdown("**Reset:**")
+            if st.button("🔄 Reset State", help="Reset all enrichment state variables"):
+                st.session_state.enrichment_running = False
+                st.session_state.enrichment_cancelled = False
+                st.session_state.current_enrichment_id = None
+                st.session_state.enriched_results = None
+                st.success("✅ State reset")
+                st.rerun()
     
     # Main search and filters in a clean layout
     col1, col2, col3 = st.columns(3)
@@ -1237,6 +1304,27 @@ def show_natural_search_page():
             st.markdown("---")
             st.markdown("### 🧠 SixtyFour AI Enrichment")
             
+            # Check if enrichment is currently running
+            if st.session_state.enrichment_running:
+                st.warning("🔄 Enrichment is currently running. Please wait for it to complete or cancel it below.")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("❌ Cancel Enrichment", type="secondary"):
+                        st.session_state.enrichment_cancelled = True
+                        st.session_state.enrichment_running = False
+                        st.success("✅ Enrichment cancelled!")
+                        st.rerun()
+                
+                with col2:
+                    st.info(f"🆔 Process ID: {st.session_state.current_enrichment_id}")
+                
+                # Show current enrichment results if available
+                if st.session_state.enriched_results:
+                    st.info("📊 Previous enrichment results are available below.")
+                
+                return  # Exit early to prevent new enrichment from starting
+            
             if not ENRICHMENT_AVAILABLE:
                 st.error("❌ Enrichment service is currently unavailable due to dependency issues.")
                 st.info("💡 You can continue using the search functionality. The enrichment features will be restored once the dependencies are fixed.")
@@ -1266,6 +1354,18 @@ def show_natural_search_page():
             with col3:
                 st.markdown("**🚀 Start Enrichment:**")
                 if st.button("🧠 Enrich Companies", type="secondary"):
+                    # Check if already running
+                    if st.session_state.enrichment_running:
+                        st.error("❌ Enrichment is already running. Please wait for it to complete or cancel it.")
+                        return
+                    
+                    # Generate unique process ID and set running state
+                    import uuid
+                    process_id = str(uuid.uuid4())[:8]
+                    st.session_state.current_enrichment_id = process_id
+                    st.session_state.enrichment_running = True
+                    st.session_state.enrichment_cancelled = False
+                    
                     # Determine which companies to enrich
                     companies_to_enrich = []
                     
@@ -1284,41 +1384,69 @@ def show_natural_search_page():
                         try:
                             enrichment_service = create_enrichment_service()
                             if enrichment_service:
-                                st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies...")
+                                st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies... (Process ID: {process_id})")
                                 
                                 # Progress tracking
                                 progress_bar = st.progress(0)
                                 status_text = st.empty()
                                 
                                 def progress_callback(completed, total):
+                                    # Check for cancellation
+                                    if st.session_state.enrichment_cancelled:
+                                        raise Exception("Enrichment cancelled by user")
+                                    
                                     progress = completed / total
                                     progress_bar.progress(progress)
-                                    status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%})")
+                                    status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%}) - Process {process_id}")
+                                
+                                def cancellation_check():
+                                    return st.session_state.enrichment_cancelled
                                 
                                 try:
                                     # Run enrichment with timeout and error handling
-                                    with st.spinner("Running AI enrichment..."):
+                                    with st.spinner(f"Running AI enrichment... (Process {process_id})"):
                                         enriched_df, contacts_df = run_async(
                                             enrichment_service.enrich_companies_batch(
                                                 companies_to_enrich, 
-                                                progress_callback
+                                                progress_callback,
+                                                cancellation_check
                                             )
                                         )
+                                    
+                                    # Check if cancelled during processing
+                                    if st.session_state.enrichment_cancelled:
+                                        st.warning("⚠️ Enrichment was cancelled.")
+                                        progress_bar.empty()
+                                        status_text.empty()
+                                        st.session_state.enrichment_running = False
+                                        return
                                     
                                     # Store results in session state
                                     st.session_state.enriched_results = {
                                         'companies': enriched_df,
                                         'contacts': contacts_df,
-                                        'timestamp': datetime.now()
+                                        'timestamp': datetime.now(),
+                                        'process_id': process_id
                                     }
                                     
                                     progress_bar.progress(1.0)
-                                    status_text.text("✅ Enrichment completed!")
+                                    status_text.text(f"✅ Enrichment completed! (Process {process_id})")
                                     st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
                                     
+                                    # Reset running state
+                                    st.session_state.enrichment_running = False
+                                    st.session_state.current_enrichment_id = None
+                                    
                                 except Exception as enrichment_error:
-                                    st.error(f"❌ Enrichment failed: {str(enrichment_error)}")
-                                    logger.error(f"Enrichment execution error: {enrichment_error}", exc_info=True)
+                                    # Reset running state on error
+                                    st.session_state.enrichment_running = False
+                                    st.session_state.current_enrichment_id = None
+                                    
+                                    if "cancelled" in str(enrichment_error).lower():
+                                        st.warning("⚠️ Enrichment was cancelled.")
+                                    else:
+                                        st.error(f"❌ Enrichment failed: {str(enrichment_error)}")
+                                        logger.error(f"Enrichment execution error: {enrichment_error}", exc_info=True)
                                     
                                     # Clear progress indicators on error
                                     progress_bar.empty()
@@ -1332,9 +1460,15 @@ def show_natural_search_page():
                                         if "event loop" in str(enrichment_error).lower():
                                             st.warning("💡 This appears to be an event loop error. Try refreshing the page.")
                             else:
+                                st.session_state.enrichment_running = False
+                                st.session_state.current_enrichment_id = None
                                 st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
                                 
                         except Exception as service_error:
+                            # Reset running state on service error
+                            st.session_state.enrichment_running = False
+                            st.session_state.current_enrichment_id = None
+                            
                             st.error(f"❌ Failed to initialize enrichment service: {str(service_error)}")
                             logger.error(f"Enrichment service initialization error: {service_error}", exc_info=True)
                             
@@ -1347,6 +1481,8 @@ def show_natural_search_page():
                             else:
                                 st.warning("💡 Enrichment service temporarily unavailable. You can continue using search functionality.")
                     else:
+                        st.session_state.enrichment_running = False
+                        st.session_state.current_enrichment_id = None
                         st.warning("⚠️ No companies selected for enrichment.")
             
             # Display enrichment results if available
@@ -1355,10 +1491,19 @@ def show_natural_search_page():
                 enriched_df = enriched_data['companies']
                 contacts_df = enriched_data['contacts']
                 timestamp = enriched_data['timestamp']
+                process_id = enriched_data.get('process_id', 'Unknown')
                 
                 st.markdown("---")
-                st.markdown(f"### 📊 Enrichment Results")
-                st.markdown(f"*Last updated: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}*")
+                col1, col2 = st.columns([0.8, 0.2])
+                
+                with col1:
+                    st.markdown(f"### 📊 Enrichment Results")
+                    st.markdown(f"*Process ID: {process_id} | Last updated: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}*")
+                
+                with col2:
+                    if st.button("🗑️ Clear Results", help="Clear enrichment results to free up memory"):
+                        st.session_state.enriched_results = None
+                        st.rerun()
                 
                 if not enriched_df.empty:
                     # Enrichment summary

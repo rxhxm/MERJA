@@ -137,7 +137,8 @@ class EnrichmentService:
     async def enrich_companies_batch(
         self, 
         companies: List[Dict[str, Any]], 
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        cancellation_check: Optional[callable] = None
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Enrich a batch of companies and return structured results
@@ -145,12 +146,17 @@ class EnrichmentService:
         Args:
             companies: List of company data from NMLS search
             progress_callback: Optional callback function for progress updates
+            cancellation_check: Optional function that returns True if processing should be cancelled
             
         Returns:
             Tuple of (enriched_companies_df, contacts_df)
         """
         if not companies:
             return pd.DataFrame(), pd.DataFrame()
+        
+        # Check for cancellation before starting
+        if cancellation_check and cancellation_check():
+            raise Exception("Enrichment cancelled before starting")
         
         # Get reference companies for ICP matching (first 3 high-value targets)
         reference_companies = []
@@ -164,32 +170,61 @@ class EnrichmentService:
         logger.info(f"Starting enrichment of {len(companies)} companies")
         logger.info(f"Using reference companies: {reference_companies}")
         
-        # Set up concurrency control
-        semaphore = asyncio.Semaphore(self.max_concurrent)
+        # Set up concurrency control with smaller batches for better responsiveness
+        semaphore = asyncio.Semaphore(min(self.max_concurrent, 3))  # Limit to 3 concurrent for better control
         limits = httpx.Limits(
             max_keepalive_connections=self.max_concurrent,
             max_connections=self.max_concurrent + 5
         )
         
-        # Process companies
+        # Process companies in smaller chunks for better cancellation responsiveness
         results = []
+        chunk_size = 5  # Process 5 companies at a time
+        
         async with httpx.AsyncClient(limits=limits, timeout=self.timeout) as client:
-            tasks = []
-            for i, company in enumerate(companies):
-                task = self.enrich_single_company(
-                    client, semaphore, company, reference_companies
-                )
-                tasks.append(task)
-            
-            # Process with progress tracking
-            completed = 0
-            for task in asyncio.as_completed(tasks):
-                result = await task
-                results.append(result)
-                completed += 1
+            for chunk_start in range(0, len(companies), chunk_size):
+                # Check for cancellation before each chunk
+                if cancellation_check and cancellation_check():
+                    raise Exception("Enrichment cancelled during processing")
                 
-                if progress_callback:
-                    progress_callback(completed, len(companies))
+                chunk_end = min(chunk_start + chunk_size, len(companies))
+                chunk_companies = companies[chunk_start:chunk_end]
+                
+                # Create tasks for this chunk
+                tasks = []
+                for company in chunk_companies:
+                    task = self.enrich_single_company(
+                        client, semaphore, company, reference_companies
+                    )
+                    tasks.append(task)
+                
+                # Process chunk with progress tracking
+                chunk_results = []
+                for task in asyncio.as_completed(tasks):
+                    # Check for cancellation before processing each result
+                    if cancellation_check and cancellation_check():
+                        # Cancel remaining tasks
+                        for remaining_task in tasks:
+                            if not remaining_task.done():
+                                remaining_task.cancel()
+                        raise Exception("Enrichment cancelled during chunk processing")
+                    
+                    result = await task
+                    chunk_results.append(result)
+                    
+                    # Update progress
+                    completed = len(results) + len(chunk_results)
+                    if progress_callback:
+                        progress_callback(completed, len(companies))
+                
+                results.extend(chunk_results)
+                
+                # Small delay between chunks to allow for cancellation checks
+                await asyncio.sleep(0.1)
+        
+        # Final cancellation check before processing results
+        if cancellation_check and cancellation_check():
+            raise Exception("Enrichment cancelled before result processing")
         
         # Process results into structured DataFrames
         return self._process_enrichment_results(results, companies)
@@ -356,7 +391,7 @@ def create_enrichment_service() -> Optional[EnrichmentService]:
         api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
     except Exception:
         # Any other error, fall back to environment variable
-    api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
+        api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
     
     if not api_key:
         return None
