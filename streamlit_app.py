@@ -1,82 +1,37 @@
 #!/usr/bin/env python3
+"""
+MERJA - NMLS Lender Search & Analysis Tool
+A comprehensive Streamlit application for searching and analyzing NMLS database
+with AI-powered natural language processing and business intelligence.
+"""
 
-# WORKAROUND for torch.classes error in Streamlit watcher
-import sys
-import os
-
-# Prevent Streamlit from watching torch modules
-if 'STREAMLIT_RUNNING' not in os.environ:
-    os.environ['STREAMLIT_RUNNING'] = 'true'
-
-# Monkey patch torch.classes to prevent __path__._path access issues
-try:
-    import torch
-    
-    # Store the original classes
-    _original_torch_classes = torch.classes
-    
-    # Create a safe version of torch.classes that doesn't break Streamlit's watcher
-    class SafeClasses:
-        def __init__(self, original_classes):
-            self._original = original_classes
-            
-        def __getattr__(self, name):
-            if name == '__path__':
-                # Return a safe object that handles _path attribute safely
-                class SafePath:
-                    def __init__(self, original_path):
-                        self._original_path = original_path
-                        
-                    def __getattr__(self, attr):
-                        if attr == '_path':
-                            # Instead of raising an error, return an empty list
-                            # This prevents Streamlit watcher from crashing
-                            return []
-                        return getattr(self._original_path, attr)
-                        
-                    def __iter__(self):
-                        # Make it iterable for Streamlit watcher
-                        return iter([])
-                        
-                    def __len__(self):
-                        return 0
-                
-                return SafePath(self._original.__path__)
-            return getattr(self._original, name)
-            
-        def __dir__(self):
-            # Ensure dir() works properly
-            return dir(self._original)
-    
-    # Replace torch.classes with safe version only if we detect Streamlit environment
-    if 'streamlit' in sys.modules or os.environ.get('STREAMLIT_RUNNING'):
-        torch.classes = SafeClasses(_original_torch_classes)
-    
-except ImportError:
-    # torch not available, no workaround needed
-    pass
-except Exception as e:
-    # If workaround fails, log it but continue
-    import logging
-    logging.getLogger(__name__).warning(f"torch.classes workaround failed: {e}")
-
-# Standard imports continue below
 import streamlit as st
-import asyncio
 import pandas as pd
-from datetime import datetime, timedelta
-import json
-import re
-from typing import Dict, List, Any, Optional
+import asyncio
 import time
-import logging
-import nest_asyncio
+import uuid
+from datetime import datetime
+from typing import Dict, List, Any, Optional
 
-nest_asyncio.apply() # Allow nesting of asyncio event loops
+# Import unified search system
+from unified_search import (
+    run_unified_search, 
+    SearchFilters, 
+    SortField, 
+    SortOrder,
+    LenderType,
+    LenderClassifier,
+    ContactValidator,
+    QueryIntent,
+    QueryAnalysis,
+    DatabaseManager
+)
 
-# Configure logging early so it's available for import error handling
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Import enrichment service
+from enrichment_service import create_enrichment_service
+
+# Import your modules - these are now handled by unified_search module
+# Old imports removed and consolidated into unified_search module
 
 # Configure Streamlit page
 st.set_page_config(
@@ -85,18 +40,14 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Import your modules
-try:
-    from natural_language_search import enhanced_search_api, LenderClassifier, ContactValidator, LenderType
-except ImportError:
-    st.error("natural_language_search module not found. Please ensure all required modules are available.")
-    st.stop()
+# Configure logging
+import logging
+import nest_asyncio
 
-try:
-    from search_api import SearchFilters, db_manager, SearchService, SortField, SortOrder
-except ImportError:
-    st.error("search_api module not found. Please ensure all required modules are available.")
-    st.stop()
+nest_asyncio.apply()  # Allow nesting of asyncio event loops
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 try:
     from enrichment_service import create_enrichment_service, EnrichmentService
@@ -302,18 +253,18 @@ def run_async(coro):
             logger.info("No running event loop, creating new one")
             
             # Platform-specific event loop policy
-            if sys.platform == 'win32':
-                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-            
-            # Create a new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                result = loop.run_until_complete(coro)
-                return result
-            finally:
-                loop.close()
+        if sys.platform == 'win32':
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            result = loop.run_until_complete(coro)
+            return result
+        finally:
+            loop.close()
                 # Reset the event loop for the current context
                 try:
                     if asyncio.get_event_loop_policy().get_event_loop() is loop:
@@ -326,125 +277,44 @@ def run_async(coro):
         # Re-raise with more context
         raise Exception(f"Async execution failed: {str(e)}")
 
-# Custom search function that uses our existing database pool
-async def run_enhanced_search(query: str, apply_filters: bool = True, page: int = 1, page_size: int = 20):
-    """Run natural language search with proper error handling"""
-    pool = await get_or_create_pool()
-    if not pool:
-        st.error("Database connection pool is not available. Please check application logs.")
-        # Raising an exception here will stop execution and show the error to the user.
-        raise Exception("Database connection pool is not available.")
-
+async def run_enhanced_search(query: str, filters: Dict[str, Any] = None, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+    """
+    Run enhanced search using the unified search API
+    """
     try:
-        async with pool.acquire() as conn:
-            # Import search API - moved inside as it's used with conn
-            from search_api import SearchService, SearchFilters, SortField, SortOrder
-            from natural_language_search import LenderClassifier, ContactValidator, LenderType, QueryIntent, QueryAnalysis
-            
-            # Try AI analysis first, but fall back to simple parsing if it fails
-            try:
-                # Analyze the query using Claude AI
-                await enhanced_search_api.initialize()
-                
-                # Pass our database pool to the NLP processor
-                enhanced_search_api.nlp.vector_search.pool = pool
-                
-                analysis = await enhanced_search_api.nlp.analyze_query(query)
-                logger.info(f"AI Analysis - Intent: {analysis.intent}, Confidence: {analysis.confidence}")
-                logger.info(f"AI Analysis - Explanation: {analysis.explanation}")
-                logger.info(f"AI Analysis - Original filters: {analysis.filters}")
-                
-                # Apply business filters
-                analysis.filters = await enhanced_search_api._apply_business_filters(analysis.filters, analysis.lender_type_preference)
-                logger.info(f"AI Analysis - Final filters after business logic: {analysis.filters}")
-                
-            except Exception as ai_error:
-                logger.error(f"AI Analysis failed: {ai_error}")
-                # Fallback to simple parsing
-                analysis = await run_simple_query_analysis(query)
-                logger.info(f"Fallback Analysis - Filters: {analysis.filters}")
-            
-            # Get total count
-            count_query, count_params = SearchService.build_count_query(analysis.filters)
-            logger.info(f"Count Query: {count_query}")
-            logger.info(f"Count Params: {count_params}")
-            
-            total_count = await conn.fetchval(count_query, *count_params)
-            logger.info(f"Total count found: {total_count}")
-            
-            # Get results
-            search_query, search_params = SearchService.build_search_query(
-                analysis.filters, page, page_size, 
-                SortField.company_name, SortOrder.asc
-            )
-            
-            logger.info(f"Search Query: {search_query}")
-            logger.info(f"Search Params: {search_params}")
-            
-            rows = await conn.fetch(search_query, *search_params)
-            logger.info(f"Rows fetched: {len(rows)}")
-            
-            # Enhance results with business intelligence
-            enhanced_companies = []
-            for row in rows:
-                company_data = dict(row)
-                
-                # Classify lender type
-                lender_classification = LenderClassifier.classify_company(
-                    company_data.get('license_types', [])
-                )
-                
-                # Validate contact info
-                has_valid_contact, contact_issues = ContactValidator.has_valid_contact_info(company_data)
-                
-                # Create enhanced company response
-                enhanced_company = {
-                    **company_data,
-                    "lender_type": lender_classification.value,
-                    "has_valid_contact": has_valid_contact,
-                    "contact_issues": contact_issues,
-                    "business_score": calculate_business_score(
-                        lender_classification, has_valid_contact, company_data
-                    )
-                }
-                
-                enhanced_companies.append(enhanced_company)
-            
-            # Sort by business score
-            if apply_filters:
-                enhanced_companies.sort(key=lambda x: x['business_score'], reverse=True)
-            
-            # Calculate statistics
-            stats = calculate_result_stats(enhanced_companies, query)
-            
-            return {
-                "query_analysis": {
-                    "original_query": query,
-                    "intent": analysis.intent.value,
-                    "confidence": analysis.confidence,
-                    "explanation": analysis.explanation,
-                    "business_critical_flags": analysis.business_critical_flags
-                },
-                "filters_applied": analysis.filters.model_dump(exclude_unset=True),
-                "companies": enhanced_companies,
-                "pagination": {
-                    "total_count": total_count,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 0
-                },
-                "business_intelligence": stats
-            }
-                
+        # Convert filters dict to SearchFilters object if provided
+        search_filters = None
+        if filters:
+            search_filters = SearchFilters(**filters)
+        
+        # Use unified search
+        result = await run_unified_search(
+            query=query,
+            filters=search_filters,
+            use_ai=True,
+            apply_business_filters=True,
+            page=page,
+            page_size=page_size
+        )
+        
+        return result
+        
     except Exception as e:
-        logger.error(f"Search error in run_enhanced_search: {e}", exc_info=True)
-        # Re-raise the exception so Streamlit can display it appropriately
-        raise e
+        st.error(f"Search error: {str(e)}")
+        return {
+            "companies": [],
+            "total_count": 0,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": 0,
+            "filters_applied": {},
+            "search_time_ms": 0,
+            "query_analysis": None,
+            "business_intelligence": None
+        }
 
 async def run_simple_query_analysis(query: str):
     """Simple fallback query analysis when AI is unavailable"""
-    from search_api import SearchFilters
-    from natural_language_search import QueryIntent, QueryAnalysis, LenderType
     
     # Simple fallback parsing
     query_lower = query.lower()
@@ -783,7 +653,6 @@ def format_license_summary_with_states(company: Dict) -> str:
             
             # Since we don't have per-license state mapping, distribute states across license types
             # This is a simplified approach for demonstration
-            from natural_language_search import LenderClassifier
             
             target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
             exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
@@ -806,7 +675,6 @@ def format_license_summary_with_states(company: Dict) -> str:
             return result
         
         # Import classification for license categorization
-        from natural_language_search import LenderClassifier
         
         # Categorize licenses
         target_licenses = {}
@@ -1009,22 +877,24 @@ def show_natural_search_page():
                                 st.write("No filters applied")
                         
                         # Show SQL query if we can reconstruct it
-                        st.markdown("**🗄️ Generated SQL Query:**")
+                        st.markdown("**🗄️ Search Information:**")
                         try:
-                            from search_api import SearchService, SearchFilters
-                            # Reconstruct the filters object
-                            search_filters = SearchFilters(**filters_applied)
-                            count_query, count_params = SearchService.build_count_query(search_filters)
-                            search_query, search_params = SearchService.build_search_query(
-                                search_filters, 1, 10000, 
-                                SortField.company_name, SortOrder.asc
-                            )
+                            # Show search time and method used
+                            search_time = result.get('search_time_ms', 0)
+                            st.write(f"**Search completed in:** {search_time:.1f}ms")
                             
-                            st.code(f"COUNT QUERY:\n{count_query}\nPARAMS: {count_params}", language="sql")
-                            st.code(f"SEARCH QUERY:\n{search_query}\nPARAMS: {search_params}", language="sql")
+                            # Show query analysis if available
+                            query_analysis = result.get('query_analysis')
+                            if query_analysis:
+                                st.write(f"**AI Analysis:** {query_analysis.get('explanation', 'N/A')}")
+                                st.write(f"**Confidence:** {query_analysis.get('confidence', 0):.1%}")
+                                st.write(f"**Intent:** {query_analysis.get('intent', 'N/A')}")
+                            
+                            # Show applied filters
+                            st.write(f"**Filters Applied:** {filters_applied}")
                             
                         except Exception as e:
-                            st.error(f"Could not reconstruct SQL query: {e}")
+                            st.error(f"Could not show search information: {e}")
                 else:
                     st.error("❌ No results found. Try a different search.")
             except Exception as e:
@@ -1078,7 +948,7 @@ def show_natural_search_page():
         # Main results table - focused on the two key things
         results_subheader_cols = st.columns([0.8, 0.2]) # Adjust ratio as needed
         with results_subheader_cols[0]:
-            st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+        st.subheader(f"📋 Lenders Found ({len(companies)} results)")
         
         if companies: # Only show export button if there are companies
             with results_subheader_cols[1]:
@@ -1092,7 +962,6 @@ def show_natural_search_page():
                     lender_type_export = company_export_item.get('lender_type', 'unknown')
                     license_types_export = company_export_item.get('license_types', [])
                     if license_types_export is None: license_types_export = []
-                    from natural_language_search import LenderClassifier # Ensure import is accessible
                     target_licenses_export = [lt for lt in license_types_export if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
                     exclude_licenses_export = [lt for lt in license_types_export if lt in LenderClassifier.MORTGAGE_LICENSES]
                     
@@ -1143,7 +1012,6 @@ def show_natural_search_page():
                     license_types = []
                 
                 # Import the license sets for analysis
-                from natural_language_search import LenderClassifier
                 
                 # Categorize this company's licenses
                 target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
@@ -1207,7 +1075,6 @@ def show_natural_search_page():
                     lender_type = selected_company.get('lender_type', 'unknown')
                     
                     # Import the license sets for comparison
-                    from natural_language_search import LenderClassifier
                     
                     # Categorize this company's licenses
                     target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
@@ -1309,14 +1176,14 @@ def show_natural_search_page():
                 st.warning("🔄 Enrichment is currently running. Please wait for it to complete or cancel it below.")
                 
                 col1, col2 = st.columns(2)
-                with col1:
+            with col1:
                     if st.button("❌ Cancel Enrichment", type="secondary"):
                         st.session_state.enrichment_cancelled = True
                         st.session_state.enrichment_running = False
                         st.success("✅ Enrichment cancelled!")
                         st.rerun()
-                
-                with col2:
+            
+            with col2:
                     st.info(f"🆔 Process ID: {st.session_state.current_enrichment_id}")
                 
                 # Show current enrichment results if available
@@ -1333,7 +1200,7 @@ def show_natural_search_page():
                 st.markdown("- Check if PyTorch is properly installed")
                 st.markdown("- Contact support if the issue persists")
             else:
-                st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
+            st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
             
             # Enrichment controls
             col1, col2, col3 = st.columns(3)
@@ -1382,32 +1249,32 @@ def show_natural_search_page():
                     if companies_to_enrich:
                         # Run enrichment with enhanced error handling
                         try:
-                            enrichment_service = create_enrichment_service()
-                            if enrichment_service:
+                        enrichment_service = create_enrichment_service()
+                        if enrichment_service:
                                 st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies... (Process ID: {process_id})")
-                                
-                                # Progress tracking
-                                progress_bar = st.progress(0)
-                                status_text = st.empty()
-                                
-                                def progress_callback(completed, total):
+                            
+                            # Progress tracking
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            def progress_callback(completed, total):
                                     # Check for cancellation
                                     if st.session_state.enrichment_cancelled:
                                         raise Exception("Enrichment cancelled by user")
                                     
-                                    progress = completed / total
-                                    progress_bar.progress(progress)
+                                progress = completed / total
+                                progress_bar.progress(progress)
                                     status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%}) - Process {process_id}")
                                 
                                 def cancellation_check():
                                     return st.session_state.enrichment_cancelled
-                                
-                                try:
+                            
+                            try:
                                     # Run enrichment with timeout and error handling
                                     with st.spinner(f"Running AI enrichment... (Process {process_id})"):
-                                        enriched_df, contacts_df = run_async(
-                                            enrichment_service.enrich_companies_batch(
-                                                companies_to_enrich, 
+                                enriched_df, contacts_df = run_async(
+                                    enrichment_service.enrich_companies_batch(
+                                        companies_to_enrich, 
                                                 progress_callback,
                                                 cancellation_check
                                             )
@@ -1421,18 +1288,18 @@ def show_natural_search_page():
                                         st.session_state.enrichment_running = False
                                         return
                                     
-                                    # Store results in session state
-                                    st.session_state.enriched_results = {
-                                        'companies': enriched_df,
-                                        'contacts': contacts_df,
+                                # Store results in session state
+                                st.session_state.enriched_results = {
+                                    'companies': enriched_df,
+                                    'contacts': contacts_df,
                                         'timestamp': datetime.now(),
                                         'process_id': process_id
-                                    }
-                                    
-                                    progress_bar.progress(1.0)
+                                }
+                                
+                                progress_bar.progress(1.0)
                                     status_text.text(f"✅ Enrichment completed! (Process {process_id})")
-                                    st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
-                                    
+                                st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
+                                
                                     # Reset running state
                                     st.session_state.enrichment_running = False
                                     st.session_state.current_enrichment_id = None
@@ -1444,7 +1311,7 @@ def show_natural_search_page():
                                     
                                     if "cancelled" in str(enrichment_error).lower():
                                         st.warning("⚠️ Enrichment was cancelled.")
-                                    else:
+                        else:
                                         st.error(f"❌ Enrichment failed: {str(enrichment_error)}")
                                         logger.error(f"Enrichment execution error: {enrichment_error}", exc_info=True)
                                     
@@ -1462,7 +1329,7 @@ def show_natural_search_page():
                             else:
                                 st.session_state.enrichment_running = False
                                 st.session_state.current_enrichment_id = None
-                                st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
+                            st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
                                 
                         except Exception as service_error:
                             # Reset running state on service error
@@ -1478,7 +1345,7 @@ def show_natural_search_page():
                                 st.info("You can continue using the search functionality without enrichment.")
                             elif "import" in str(service_error).lower():
                                 st.warning("💡 Missing dependencies for enrichment service. Please install required packages.")
-                            else:
+                    else:
                                 st.warning("💡 Enrichment service temporarily unavailable. You can continue using search functionality.")
                     else:
                         st.session_state.enrichment_running = False
@@ -1497,7 +1364,7 @@ def show_natural_search_page():
                 col1, col2 = st.columns([0.8, 0.2])
                 
                 with col1:
-                    st.markdown(f"### 📊 Enrichment Results")
+                st.markdown(f"### 📊 Enrichment Results")
                     st.markdown(f"*Process ID: {process_id} | Last updated: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}*")
                 
                 with col2:
@@ -1711,7 +1578,6 @@ async def get_license_state_breakdown(nmls_id: str) -> Dict[str, List[str]]:
 
 def get_license_category_state_breakdown(license_types_dict: Dict[str, List[str]]) -> Dict[str, List[str]]:
     """Categorize licenses by TARGET/EXCLUDE/OTHER and aggregate their states"""
-    from natural_language_search import LenderClassifier
     
     target_states = set()
     exclude_states = set() 

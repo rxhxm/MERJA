@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 # Import our modules
-from nmls_html_extractor import NMLSHTMLExtractor
+from extractors.nmls_html_extractor import NMLSHTMLExtractor
 from database.database_loader import DatabaseLoader
 
 # Configure logging

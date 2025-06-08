@@ -14,7 +14,7 @@ from psycopg2.extras import RealDictCursor, execute_values
 from datetime import datetime
 
 # Import the data structures from the extractor
-from nmls_html_extractor import CompanyData, Address, ContactInfo, BusinessInfo, MLOInfo, FederalRegistration, LicenseDetails, ResidentAgent
+from extractors.nmls_html_extractor import CompanyData, Address, ContactInfo, BusinessInfo, MLOInfo, FederalRegistration, LicenseDetails, ResidentAgent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

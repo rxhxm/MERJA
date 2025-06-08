@@ -26,7 +26,7 @@ from typing import List, Dict, Any, Tuple
 import time
 
 # Import our existing modules
-from nmls_html_extractor import NMLSHTMLExtractor
+from extractors.nmls_html_extractor import NMLSHTMLExtractor
 from database.database_loader import DatabaseLoader
 
 # Load environment variables

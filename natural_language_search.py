@@ -316,7 +316,7 @@ class VectorSearchService:
     """Semantic vector search for company names and descriptions"""
     
     def __init__(self):
-        self.model = None
+            self.model = None
         self.pool = None
         self._model_loaded = False
     
@@ -383,12 +383,12 @@ class VectorSearchService:
         except Exception as e:
             logger.error(f"Fallback text similarity error: {e}")
             return []
-
+    
     async def semantic_search(self, query: str, limit: int = 50) -> List[str]:
         """Perform semantic search on company names and trade names"""
         # Ensure model is loaded
         self._ensure_model_loaded()
-        
+            
         try:
             # Get company names and trade names
             async with self.pool.acquire() as conn:
@@ -427,18 +427,18 @@ class VectorSearchService:
                     logger.info(f"Encoding {len(texts)} company texts for semantic search...")
                     
                     # Encode query and corpus with error handling
-                    query_embedding = self.model.encode([query])
-                    corpus_embeddings = self.model.encode(texts)
-                    
-                    # Calculate cosine similarity
-                    similarities = np.dot(query_embedding, corpus_embeddings.T)[0]
-                    
-                    # Get top matches
-                    top_indices = np.argsort(similarities)[-limit:][::-1]
-                    top_nmls_ids = [nmls_ids[i] for i in top_indices if similarities[i] > 0.3]  # Threshold
-                    
+            query_embedding = self.model.encode([query])
+            corpus_embeddings = self.model.encode(texts)
+            
+            # Calculate cosine similarity
+            similarities = np.dot(query_embedding, corpus_embeddings.T)[0]
+            
+            # Get top matches
+            top_indices = np.argsort(similarities)[-limit:][::-1]
+            top_nmls_ids = [nmls_ids[i] for i in top_indices if similarities[i] > 0.3]  # Threshold
+            
                     logger.info(f"Semantic search found {len(top_nmls_ids)} matches above threshold")
-                    return top_nmls_ids
+            return top_nmls_ids
                     
                 except Exception as encoding_error:
                     logger.error(f"Model encoding error, falling back to text similarity: {encoding_error}")
