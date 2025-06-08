@@ -245,78 +245,297 @@ class EnrichmentService:
         results: List[Dict[str, Any]],
         original_companies: List[Dict[str, Any]]
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Process enrichment results into structured DataFrames"""
-
+        """
+        Process enrichment results into structured dataframes with enhanced qualification logic
+        """
         enriched_companies = []
-        contacts = []
+        all_contacts = []
 
-        for i, result in enumerate(results):
+        for idx, result in enumerate(results):
             # Get original company data
-            try:
-                original_company = original_companies[i]
-            except IndexError:
-                original_company = {
-                    "company_name": result.get(
-                        "company_name", "Unknown")}
+            original_company = original_companies[idx] if idx < len(
+                original_companies) else {}
 
-            # Create enriched company record
+            # Base company record
             company_record = original_company.copy()
-            company_record["enrichment_timestamp"] = datetime.now().isoformat()
-            company_record["enrichment_processing_time"] = result.get(
-                "processing_time", 0)
+            company_record.update({
+                'enrichment_timestamp': datetime.now().isoformat(),
+                'enrichment_status': 'Success' if result['success'] else 'Failed',
+                'enrichment_processing_time': result.get('processing_time', 0)
+            })
 
-            if not result.get("success"):
-                company_record["enrichment_status"] = "Failed"
-                company_record["enrichment_error"] = result.get(
-                    "error", "Unknown error")
+            if not result['success']:
+                company_record['enrichment_error'] = result.get('error', 'Unknown error')
+                company_record['enrichment_quality_score'] = 0
+                company_record['is_qualified_lead'] = False
                 enriched_companies.append(company_record)
                 continue
 
-            # Process successful enrichment
-            api_data = result.get("data", {})
-            structured_data = api_data.get("structured_data", {})
+            # Extract structured data
+            api_data = result.get('data', {})
+            structured_data = api_data.get('structured_data', {})
+            confidence_score = api_data.get('confidence_score', 0)
 
-            company_record["enrichment_status"] = "Success"
-            company_record["enrichment_confidence"] = api_data.get(
-                "confidence_score", 0)
+            # Add enriched fields with enhanced processing
+            company_record.update({
+                'enrichment_confidence': confidence_score,
+                'enriched_website': structured_data.get('website', ''),
+                'enriched_company_linkedin': structured_data.get('company_linkedin', ''),
+                'enriched_industry': structured_data.get('industry', ''),
+                'enriched_specializes_in_personal_loans': structured_data.get('specializes_in_personal_loans', ''),
+                'enriched_target_customer_segment': structured_data.get('target_customer_segment', ''),
+                'enriched_lending_volume': structured_data.get('lending_volume', ''),
+                'enriched_technology_focus': structured_data.get('technology_focus', ''),
+                'enriched_icp_match': structured_data.get('icp_match', ''),
+                'enriched_competitive_positioning': structured_data.get('competitive_positioning', ''),
+                'enriched_notes': structured_data.get('notes', '')
+            })
 
-            # Add enriched company fields
-            for key, value in structured_data.items():
-                if key != "leads":  # Leads are processed separately
-                    company_record[f"enriched_{key}"] = value
+            # Enhanced employee count parsing
+            employee_str = structured_data.get('num_employees', '0')
+            employee_count = self._parse_employee_count(employee_str)
+            company_record['enriched_num_employees'] = employee_count
+            company_record['enriched_num_employees_raw'] = employee_str
 
-            # Calculate enrichment quality score
-            quality_score = self._calculate_enrichment_quality(structured_data)
-            company_record["enrichment_quality_score"] = quality_score
+            # Process contacts/leads
+            contacts = structured_data.get('leads', [])
+            decision_makers = []
+            qualified_contacts = []
 
-            # Determine if this is a qualified lead
-            is_qualified, qualification_reasons = self._assess_company_qualification(
-                structured_data)
-            company_record["is_qualified_lead"] = is_qualified
-            company_record["qualification_reasons"] = "; ".join(
-                qualification_reasons)
+            for contact in contacts:
+                if isinstance(contact, dict):
+                    contact_record = {
+                        'company_name': result['company_name'],
+                        'nmls_id': result.get('nmls_id', ''),
+                        'contact_name': contact.get('name', ''),
+                        'contact_title': contact.get('title', ''),
+                        'contact_linkedin': contact.get('linkedin', ''),
+                        'contact_email': contact.get('email', ''),
+                        'contact_phone': contact.get('phone', ''),
+                        'is_decision_maker': contact.get('is_decision_maker', '').lower(),
+                        'relevance_score': contact.get('relevance_score', 0),
+                        'enrichment_timestamp': datetime.now().isoformat()
+                    }
+                    
+                    # Enhanced decision maker detection
+                    is_dm = self._is_enhanced_decision_maker(contact)
+                    contact_record['is_enhanced_decision_maker'] = is_dm
+                    contact_record['decision_maker_score'] = self._calculate_decision_maker_score(contact)
+                    
+                    all_contacts.append(contact_record)
+                    
+                    if is_dm:
+                        decision_makers.append(contact)
+                    
+                    # Qualify contacts for relevance
+                    if self._is_relevant_contact(contact):
+                        qualified_contacts.append(contact)
+
+            # Enhanced qualification assessment
+            is_qualified, qualification_reasons = self._assess_enhanced_qualification(
+                structured_data, contacts, confidence_score, employee_count
+            )
+
+            company_record.update({
+                'enrichment_quality_score': self._calculate_enrichment_quality(structured_data),
+                'is_qualified_lead': is_qualified,
+                'qualification_reasons': '; '.join(qualification_reasons),
+                'decision_maker_count': len(decision_makers),
+                'qualified_contact_count': len(qualified_contacts),
+                'total_contact_count': len(contacts)
+            })
 
             enriched_companies.append(company_record)
 
-            # Process contacts/leads
-            leads = structured_data.get("leads", [])
-            for lead in leads:
-                if isinstance(lead, dict):
-                    contact_record = {
-                        "company_name": original_company.get("company_name"),
-                        "nmls_id": original_company.get("nmls_id"),
-                        "contact_name": lead.get("name", ""),
-                        "contact_title": lead.get("title", ""),
-                        "contact_linkedin": lead.get("linkedin", ""),
-                        "contact_email": lead.get("email", ""),
-                        "contact_phone": lead.get("phone", ""),
-                        "is_decision_maker": lead.get("is_decision_maker", "").lower(),
-                        "relevance_score": lead.get("relevance_score", ""),
-                        "enrichment_timestamp": datetime.now().isoformat()
-                    }
-                    contacts.append(contact_record)
+        # Create DataFrames
+        companies_df = pd.DataFrame(enriched_companies)
+        contacts_df = pd.DataFrame(all_contacts)
 
-        return pd.DataFrame(enriched_companies), pd.DataFrame(contacts)
+        return companies_df, contacts_df
+
+    def _parse_employee_count(self, employee_str: str) -> int:
+        """
+        Enhanced employee count parsing similar to bild enrich functionality
+        """
+        if not employee_str or not isinstance(employee_str, str):
+            return 0
+
+        import re
+        
+        # General cleanup
+        cleaned_str = employee_str.lower()
+        phrases_to_remove = ["employees", "staff members", "approximately", "about", "around", "listed on linkedin"]
+        for phrase in phrases_to_remove:
+            cleaned_str = cleaned_str.replace(phrase, "")
+
+        # Remove content in parentheses
+        cleaned_str = re.sub(r'\(.*?\)', '', cleaned_str).strip()
+
+        # Extract numbers
+        numbers = re.findall(r'\d+', cleaned_str)
+
+        if not numbers:
+            return 0
+
+        # Take the first number (usually the lower bound of a range)
+        return int(numbers[0])
+
+    def _is_enhanced_decision_maker(self, contact: Dict[str, Any]) -> bool:
+        """
+        Enhanced decision maker detection with title analysis
+        """
+        title = contact.get('title', '').lower()
+        name = contact.get('name', '').lower()
+        
+        # C-suite and executive titles
+        executive_keywords = ['ceo', 'cfo', 'coo', 'cto', 'chief', 'president', 'founder', 'owner']
+        vp_keywords = ['vp', 'vice president', 'v.p.']
+        director_keywords = ['director', 'head of', 'head ', 'managing director']
+        
+        # Lending-specific titles
+        lending_keywords = ['lending', 'credit', 'loans', 'underwriting', 'risk']
+        
+        # Check API response first
+        api_decision_maker = contact.get('is_decision_maker', '').lower()
+        if 'yes' in api_decision_maker:
+            return True
+            
+        # Check title keywords
+        for keyword in executive_keywords:
+            if keyword in title:
+                return True
+                
+        for keyword in vp_keywords:
+            if keyword in title:
+                return True
+                
+        for keyword in director_keywords:
+            if keyword in title and any(lk in title for lk in lending_keywords):
+                return True
+                
+        return False
+
+    def _calculate_decision_maker_score(self, contact: Dict[str, Any]) -> int:
+        """
+        Calculate decision maker score (1-10) based on title and role
+        """
+        title = contact.get('title', '').lower()
+        
+        # C-suite gets highest scores
+        if any(keyword in title for keyword in ['ceo', 'chief executive', 'founder', 'owner']):
+            return 10
+        if any(keyword in title for keyword in ['cfo', 'coo', 'cto', 'chief']):
+            return 9
+        if any(keyword in title for keyword in ['president', 'managing director']):
+            return 9
+            
+        # VPs get high scores
+        if any(keyword in title for keyword in ['vp', 'vice president', 'v.p.']):
+            return 8
+            
+        # Directors get medium-high scores
+        if 'director' in title:
+            return 7
+            
+        # Managers get medium scores
+        if 'manager' in title:
+            return 5
+            
+        # Team leads get lower scores
+        if any(keyword in title for keyword in ['lead', 'supervisor']):
+            return 4
+            
+        # Default for other roles
+        return 2
+
+    def _is_relevant_contact(self, contact: Dict[str, Any]) -> bool:
+        """
+        Determine if contact is relevant for lending partnerships
+        """
+        title = contact.get('title', '').lower()
+        relevant_keywords = [
+            'lending', 'credit', 'loans', 'business development', 'partnerships',
+            'sales', 'operations', 'underwriting', 'risk', 'finance', 'strategy'
+        ]
+        
+        return any(keyword in title for keyword in relevant_keywords) or self._is_enhanced_decision_maker(contact)
+
+    def _assess_enhanced_qualification(
+        self, 
+        structured_data: Dict[str, Any], 
+        contacts: List[Dict[str, Any]], 
+        confidence_score: float,
+        employee_count: int
+    ) -> Tuple[bool, List[str]]:
+        """
+        Enhanced qualification assessment similar to bild enrich logic
+        """
+        reasons = []
+        is_qualified = False
+        
+        # Confidence score check
+        if confidence_score >= 7.0:
+            reasons.append(f"Good confidence score ({confidence_score})")
+            confidence_qualified = True
+        else:
+            reasons.append(f"Low confidence score ({confidence_score})")
+            confidence_qualified = False
+            
+        # ICP match check
+        icp_match = structured_data.get('icp_match', '').lower()
+        if any(keyword in icp_match for keyword in ['yes', 'good target', 'suitable', 'match']):
+            reasons.append("Matches ICP profile")
+            icp_qualified = True
+        else:
+            reasons.append("Does not match ICP profile")
+            icp_qualified = False
+            
+        # Personal loans specialization check
+        personal_loans = structured_data.get('specializes_in_personal_loans', '').lower()
+        if 'yes' in personal_loans:
+            reasons.append("Specializes in personal loans")
+            loans_qualified = True
+        else:
+            reasons.append("Does not specialize in personal loans")
+            loans_qualified = False
+            
+        # Decision maker count
+        decision_maker_count = sum(1 for contact in contacts 
+                                 if isinstance(contact, dict) and 
+                                 self._is_enhanced_decision_maker(contact))
+        
+        if decision_maker_count > 0:
+            reasons.append(f"Found {decision_maker_count} decision makers")
+            dm_qualified = True
+        else:
+            reasons.append("No decision makers found")
+            dm_qualified = False
+            
+        # Employee count check
+        if employee_count >= 10:
+            reasons.append(f"Sufficient size ({employee_count} employees)")
+            size_qualified = True
+        else:
+            reasons.append(f"Small company ({employee_count} employees)")
+            size_qualified = False
+            
+        # Technology focus check
+        tech_focus = structured_data.get('technology_focus', '').lower()
+        if 'yes' in tech_focus:
+            reasons.append("Technology-focused")
+            tech_qualified = True
+        else:
+            tech_qualified = False
+            
+        # Overall qualification logic
+        # Must have ICP match AND (personal loans OR decision makers) AND reasonable confidence
+        if icp_qualified and confidence_qualified and (loans_qualified or dm_qualified):
+            is_qualified = True
+            reasons.append("✅ QUALIFIED: Meets core criteria")
+        else:
+            reasons.append("❌ NOT QUALIFIED: Missing key criteria")
+            
+        return is_qualified, reasons
 
     def _calculate_enrichment_quality(
             self, structured_data: Dict[str, Any]) -> float:

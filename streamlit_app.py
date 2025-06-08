@@ -617,7 +617,7 @@ def main():
                                     st.session_state[f"enrich_company_{i}"] = False
                                 
                                 selected = st.checkbox(
-                                    "",
+                                    f"Select {company['company_name']}",
                                     key=f"enrich_company_{i}",
                                     label_visibility="collapsed"
                                 )
@@ -745,6 +745,25 @@ def main():
                             avg_quality = enriched_df['enrichment_quality_score'].mean() if 'enrichment_quality_score' in enriched_df.columns else 0
                             st.metric("📈 Avg Quality Score", f"{avg_quality:.1f}")
                         
+                        # Additional metrics row
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            decision_makers = enriched_df['decision_maker_count'].sum() if 'decision_maker_count' in enriched_df.columns else 0
+                            st.metric("🎖️ Decision Makers", int(decision_makers))
+                        
+                        with col2:
+                            personal_loan_specialists = len(enriched_df[enriched_df.get('enriched_specializes_in_personal_loans', '').str.lower().str.contains('yes', na=False)])
+                            st.metric("💰 Personal Loan Specialists", personal_loan_specialists)
+                        
+                        with col3:
+                            tech_focused = len(enriched_df[enriched_df.get('enriched_technology_focus', '').str.lower().str.contains('yes', na=False)])
+                            st.metric("💻 Tech-Focused", tech_focused)
+                        
+                        with col4:
+                            avg_confidence = enriched_df['enrichment_confidence'].mean() if 'enrichment_confidence' in enriched_df.columns else 0
+                            st.metric("🎯 Avg Confidence", f"{avg_confidence:.1f}")
+                        
                         # Detailed enriched company results
                         st.markdown("#### 🏢 Enriched Company Data")
                         
@@ -752,7 +771,7 @@ def main():
                         successful_companies = enriched_df[enriched_df['enrichment_status'] == 'Success'].copy()
                         
                         if not successful_companies.empty:
-                            # Create display dataframe
+                            # Create enhanced display dataframe
                             display_columns = ['company_name', 'nmls_id', 'lender_type']
                             
                             # Add enriched fields if they exist
@@ -760,9 +779,13 @@ def main():
                                 'enriched_website': 'Website',
                                 'enriched_num_employees': 'Employees',
                                 'enriched_specializes_in_personal_loans': 'Personal Loans?',
+                                'enriched_technology_focus': 'Tech Focus?',
                                 'enriched_icp_match': 'ICP Match?',
                                 'enrichment_quality_score': 'Quality Score',
-                                'is_qualified_lead': 'Qualified?'
+                                'enrichment_confidence': 'Confidence',
+                                'is_qualified_lead': 'Qualified?',
+                                'decision_maker_count': 'Decision Makers',
+                                'total_contact_count': 'Total Contacts'
                             }
                             
                             for col, display_name in enriched_fields.items():
@@ -821,7 +844,30 @@ def main():
                         # Contacts section
                         if not contacts_df.empty:
                             st.markdown("#### 👥 Key Contacts Found")
-                            st.dataframe(contacts_df, use_container_width=True)
+                            
+                            # Filter and sort contacts by decision maker score
+                            if 'decision_maker_score' in contacts_df.columns:
+                                # Sort by decision maker score, then by enhanced decision maker flag
+                                contacts_display = contacts_df.sort_values(['decision_maker_score', 'is_enhanced_decision_maker'], ascending=[False, False])
+                                
+                                # Add formatting for better display
+                                contacts_display_formatted = contacts_display.copy()
+                                contacts_display_formatted['Decision Maker Score'] = contacts_display_formatted.get('decision_maker_score', 0)
+                                contacts_display_formatted['Enhanced DM'] = contacts_display_formatted.get('is_enhanced_decision_maker', False)
+                                
+                                # Select columns for display
+                                display_cols = ['company_name', 'contact_name', 'contact_title', 'contact_email', 'contact_linkedin', 'Decision Maker Score', 'Enhanced DM', 'is_decision_maker']
+                                available_cols = [col for col in display_cols if col in contacts_display_formatted.columns]
+                                
+                                st.dataframe(contacts_display_formatted[available_cols], use_container_width=True)
+                                
+                                # Show enhanced decision makers separately
+                                enhanced_dms = contacts_df[contacts_df.get('is_enhanced_decision_maker', False) == True]
+                                if not enhanced_dms.empty:
+                                    st.markdown("##### 🎖️ Enhanced Decision Makers")
+                                    st.dataframe(enhanced_dms[['company_name', 'contact_name', 'contact_title', 'decision_maker_score', 'contact_email']], use_container_width=True)
+                            else:
+                                st.dataframe(contacts_df, use_container_width=True)
                             
                             # Export contacts
                             csv = contacts_df.to_csv(index=False).encode('utf-8')
