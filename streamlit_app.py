@@ -13,15 +13,11 @@ from unified_search import (
 import streamlit as st
 import pandas as pd
 import asyncio
-import nest_asyncio
 import logging
+import threading
+import concurrent.futures
 from datetime import datetime
 from typing import Dict, List, Any
-
-# Apply nest_asyncio to allow nested event loops in Streamlit
-nest_asyncio.apply()
-
-# Import unified search system
 
 # Configure Streamlit page
 st.set_page_config(
@@ -69,36 +65,57 @@ if 'enrichment_running' not in st.session_state:
 
 def run_async(coro):
     """
-    Robust async runner for Streamlit that handles event loop conflicts.
-    Creates a fresh event loop for each call to avoid 'attached to different loop' errors.
+    Production-grade async runner for Streamlit that completely isolates event loops.
+    
+    This approach:
+    1. Runs async code in a separate thread with its own event loop
+    2. Ensures complete cleanup of all async resources
+    3. Prevents any event loop conflicts with Streamlit
+    4. Handles database connections and HTTP clients properly
     """
-    loop = None
-    try:
-        # Always create a fresh event loop to avoid conflicts
+    def run_in_thread():
+        """Run coroutine in a completely separate thread with fresh event loop"""
+        # Create a completely new event loop in this thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
-    except Exception as e:
-        logger.error(f"Async execution error: {e}")
-        # Close the existing loop if open
-        if loop is not None:
-            loop.close()
-
-        # Create a new loop for retry
+        
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return loop.run_until_complete(coro)
-        except Exception as retry_e:
-            logger.error(f"Async retry failed: {retry_e}")
-            raise retry_e
-    finally:
-        # Always clean up the loop
-        if loop is not None:
+            # Run the coroutine in the fresh loop
+            result = loop.run_until_complete(coro)
+            return result
+        except Exception as e:
+            logger.error(f"Async execution error: {e}")
+            raise e
+        finally:
+            # Ensure complete cleanup
             try:
+                # Cancel all pending tasks
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                
+                # Wait for all tasks to complete cancellation
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                
+                # Close the loop
                 loop.close()
-            except:
-                pass
+            except Exception as cleanup_error:
+                logger.warning(f"Cleanup error (non-critical): {cleanup_error}")
+
+    # Use ThreadPoolExecutor to run async code in isolation
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run_in_thread)
+        try:
+            # Wait for result with timeout to prevent hanging
+            result = future.result(timeout=300)  # 5 minute timeout
+            return result
+        except concurrent.futures.TimeoutError:
+            logger.error("Async operation timed out")
+            raise TimeoutError("Search operation timed out after 5 minutes")
+        except Exception as e:
+            logger.error(f"Thread execution error: {e}")
+            raise e
 
 
 async def search_companies(
@@ -119,12 +136,8 @@ async def search_companies(
         return result
 
     except Exception as e:
-        st.error(f"Search error: {str(e)}")
-    return {
-        "companies": [],
-        "total_count": 0,
-        "query_analysis": None
-    }
+        logger.error(f"Search error: {str(e)}")
+        raise Exception(f"Search error: {str(e)}")
 
 
 def format_lender_type(lender_type: str, license_types: List[str]) -> str:
@@ -244,6 +257,7 @@ def main():
                 result = run_async(search_companies(query))
                 if result and result['companies']:
                     st.session_state.search_results = result
+                    st.success(f"✅ Found {len(result['companies'])} results!")
                 else:
                     st.error("❌ No results found. Try a different search.")
             except Exception as e:
