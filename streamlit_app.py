@@ -572,6 +572,10 @@ def main():
                 st.markdown("### 🧠 SixtyFour AI Enrichment")
                 st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
                 
+                # Debug info - show what companies we have
+                target_companies_available = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                st.info(f"🔍 Debug: Found {len(target_companies_available)} TARGET companies in current results")
+                
                 # Enrichment controls
                 col1, col2, col3 = st.columns(3)
                 
@@ -596,13 +600,26 @@ def main():
                         
                         if enrichment_filter == "Top 5 Target Lenders":
                             target_companies = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
-                            companies_to_enrich = sorted(target_companies, key=lambda x: x.get('business_score', 0), reverse=True)[:5]
+                            if target_companies:
+                                # Sort by business_score if available, otherwise by company name
+                                companies_to_enrich = sorted(target_companies, 
+                                                           key=lambda x: x.get('business_score', 50), 
+                                                           reverse=True)[:5]
+                            st.info(f"🔍 Debug: Found {len(target_companies)} target companies, selected {len(companies_to_enrich)}")
                         elif enrichment_filter == "Top 10 by Business Score":
-                            companies_to_enrich = sorted(companies, key=lambda x: x.get('business_score', 0), reverse=True)[:10]
+                            # Sort by business_score if available, otherwise by company name
+                            companies_to_enrich = sorted(companies, 
+                                                       key=lambda x: x.get('business_score', 50), 
+                                                       reverse=True)[:10]
                         elif enrichment_filter == "All TARGET Lenders":
                             companies_to_enrich = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
                         elif enrichment_filter == "All Results":
                             companies_to_enrich = companies
+                        
+                        # Debug: Show what we found
+                        st.info(f"🔍 Debug: Selected {len(companies_to_enrich)} companies for enrichment")
+                        if companies_to_enrich:
+                            st.info(f"🔍 Debug: First company example: {companies_to_enrich[0].get('company_name', 'Unknown')} (Type: {companies_to_enrich[0].get('lender_type', 'Unknown')})")
                         
                         if companies_to_enrich:
                             # Run enrichment
@@ -646,6 +663,10 @@ def main():
                                 st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
                         else:
                             st.warning("⚠️ No companies selected for enrichment.")
+                            # Show debug info about what companies we have
+                            lender_types = [c.get('lender_type', 'unknown') for c in companies]
+                            lender_type_counts = {lt: lender_types.count(lt) for lt in set(lender_types)}
+                            st.info(f"🔍 Debug: Lender types in results: {lender_type_counts}")
                 
                 # Display enrichment results if available
                 if st.session_state.enriched_results:
