@@ -486,6 +486,15 @@ Analyze this natural language search query for an NMLS financial database and co
 
 Query: "{query}"
 
+IMPORTANT SEARCH INTERPRETATION GUIDELINES:
+- When users search for "banks", interpret broadly to include ALL financial institutions:
+  * Banks, Credit companies, Mortgage companies, Lending companies
+  * Capital, Funding, Financial services, Finance companies  
+  * Loan companies, Consumer credit, Money services
+- For location searches like "banks in NY", search for ANY financial institution in that location
+- Use semantic understanding - "lenders" = "banks" = "financial institutions" 
+- Be INCLUSIVE rather than restrictive with financial terminology
+
 Available context:
 - States: {context.get('states', [])}
 - Business structures: {context.get('business_structures', [])}
@@ -496,10 +505,10 @@ Return a JSON response with this exact structure:
     "confidence": 0.0-1.0,
     "explanation": "Brief explanation of what you understood",
     "lender_type_preference": "unsecured_personal|mortgage|mixed|unknown",
-    "semantic_query": "simplified query for semantic search or null",
+    "semantic_query": "broader financial terms for semantic search or null",
     "business_critical_flags": ["flag1", "flag2"],
     "filters": {{
-        "query": "text search terms or null",
+        "query": "broad financial terms (bank OR credit OR mortgage OR lending OR capital OR funding OR financial OR finance OR loan) or null",
         "states": ["CA", "TX"] or null,
         "license_types": ["Consumer Credit License"] or null,
         "business_structures": ["Corporation"] or null,
@@ -509,6 +518,11 @@ Return a JSON response with this exact structure:
         "max_licenses": number or null
     }}
 }}
+
+EXAMPLES:
+- "banks in NY" → query: "(bank OR credit OR mortgage OR lending OR capital OR funding OR financial OR finance OR loan)", states: ["NY"]
+- "find lenders" → query: "(bank OR credit OR mortgage OR lend OR capital OR fund OR financial)"
+- "mortgage companies" → query: "mortgage", lender_type_preference: "mortgage"
 
 Business context: Prioritize unsecured personal lenders with contact information. Flag mortgage-only queries as non-target.
 """
@@ -677,12 +691,37 @@ class SearchService:
         # Add WHERE conditions based on filters
         if filters.query:
             param_count += 1
-            conditions.append(f"""
-                (c.company_name ILIKE ${param_count}
-                 OR a.full_address ILIKE ${param_count}
-                 OR am.full_address ILIKE ${param_count})
-            """)
-            params.append(f"%{filters.query}%")
+            
+            # Check if query contains OR logic (from AI-generated broad searches)
+            if "(" in filters.query and "OR" in filters.query.upper():
+                # Parse OR query: "(bank OR credit OR mortgage OR lending)"
+                # Remove parentheses and split by OR
+                clean_query = filters.query.strip("()")
+                terms = [term.strip() for term in clean_query.split(" OR ")]
+                
+                # Build OR conditions for each term across all searchable fields
+                or_conditions = []
+                for i, term in enumerate(terms):
+                    param_count += 1
+                    term_param = f"%{term}%"
+                    or_conditions.append(f"""
+                        (c.company_name ILIKE ${param_count}
+                         OR a.full_address ILIKE ${param_count}
+                         OR am.full_address ILIKE ${param_count})
+                    """)
+                    params.append(term_param)
+                    
+                # Combine all OR conditions
+                conditions.append("(" + " OR ".join(or_conditions) + ")")
+                param_count -= 1  # Adjust since we incremented inside loop
+            else:
+                # Standard single term search
+                conditions.append(f"""
+                    (c.company_name ILIKE ${param_count}
+                     OR a.full_address ILIKE ${param_count}
+                     OR am.full_address ILIKE ${param_count})
+                """)
+                params.append(f"%{filters.query}%")
 
         if filters.states:
             param_count += 1
@@ -755,12 +794,37 @@ class SearchService:
         # Same conditions as search query
         if filters.query:
             param_count += 1
-            conditions.append(f"""
-                (c.company_name ILIKE ${param_count}
-                 OR a.full_address ILIKE ${param_count}
-                 OR am.full_address ILIKE ${param_count})
-            """)
-            params.append(f"%{filters.query}%")
+            
+            # Check if query contains OR logic (from AI-generated broad searches)
+            if "(" in filters.query and "OR" in filters.query.upper():
+                # Parse OR query: "(bank OR credit OR mortgage OR lending)"
+                # Remove parentheses and split by OR
+                clean_query = filters.query.strip("()")
+                terms = [term.strip() for term in clean_query.split(" OR ")]
+                
+                # Build OR conditions for each term across all searchable fields
+                or_conditions = []
+                for i, term in enumerate(terms):
+                    param_count += 1
+                    term_param = f"%{term}%"
+                    or_conditions.append(f"""
+                        (c.company_name ILIKE ${param_count}
+                         OR a.full_address ILIKE ${param_count}
+                         OR am.full_address ILIKE ${param_count})
+                    """)
+                    params.append(term_param)
+                    
+                # Combine all OR conditions
+                conditions.append("(" + " OR ".join(or_conditions) + ")")
+                param_count -= 1  # Adjust since we incremented inside loop
+            else:
+                # Standard single term search
+                conditions.append(f"""
+                    (c.company_name ILIKE ${param_count}
+                     OR a.full_address ILIKE ${param_count}
+                     OR am.full_address ILIKE ${param_count})
+                """)
+                params.append(f"%{filters.query}%")
 
         if filters.states:
             param_count += 1

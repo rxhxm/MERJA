@@ -27,8 +27,8 @@ async def inspect_database():
     print("=" * 50)
     
     try:
-        # Connect to database
-        conn = await asyncpg.connect(DATABASE_URL)
+        # Connect to database (disable prepared statements for pgbouncer compatibility)
+        conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
         print("✅ Connected to database")
         
         # 1. Total record counts
@@ -58,13 +58,16 @@ async def inspect_database():
         print(f"Companies with NY addresses: {ny_companies_by_address:,}")
         
         # Companies with NY licenses
-        ny_companies_by_license = await conn.fetchval("""
-            SELECT COUNT(DISTINCT c.id)
-            FROM companies c
-            JOIN licenses l ON c.id = l.company_id
-            WHERE UPPER(l.state) LIKE '%NY%' OR UPPER(l.state) LIKE '%NEW YORK%'
-        """)
-        print(f"Companies with NY licenses: {ny_companies_by_license:,}")
+        # Note: licenses table doesn't have state column, skip this analysis
+        # ny_companies_by_license = await conn.fetchval("""
+        #     SELECT COUNT(DISTINCT c.id)
+        #     FROM companies c
+        #     JOIN licenses l ON c.id = l.company_id
+        #     WHERE UPPER(l.state) LIKE '%NY%' OR UPPER(l.state) LIKE '%NEW YORK%'
+        # """)
+        # print(f"Companies with NY licenses: {ny_companies_by_license:,}")
+        
+        print(f"Companies with NY licenses: Skipped (no state column in licenses table)")
         
         # Companies that match "bank" keyword
         bank_companies = await conn.fetchval("""
@@ -74,7 +77,7 @@ async def inspect_database():
         """)
         print(f"Companies with 'BANK' in name: {bank_companies:,}")
         
-        # NY companies with "bank" in name
+        # NY companies with "bank" in name (via addresses)
         ny_bank_companies = await conn.fetchval("""
             SELECT COUNT(DISTINCT c.id)
             FROM companies c
@@ -83,6 +86,48 @@ async def inspect_database():
             AND UPPER(c.company_name) LIKE '%BANK%'
         """)
         print(f"NY companies with 'BANK' in name: {ny_bank_companies:,}")
+        
+        # Companies with email addresses
+        companies_with_email = await conn.fetchval("""
+            SELECT COUNT(DISTINCT c.id)
+            FROM companies c
+            WHERE c.email IS NOT NULL AND c.email != ''
+        """)
+        print(f"Companies with email addresses: {companies_with_email:,}")
+        
+        # NY companies with "bank" in name AND email
+        ny_bank_with_email = await conn.fetchval("""
+            SELECT COUNT(DISTINCT c.id)
+            FROM companies c
+            JOIN addresses a ON c.id = a.company_id
+            WHERE (UPPER(a.state) LIKE '%NY%' OR UPPER(a.state) LIKE '%NEW YORK%')
+            AND UPPER(c.company_name) LIKE '%BANK%'
+            AND c.email IS NOT NULL AND c.email != ''
+        """)
+        print(f"NY companies with 'BANK' + email: {ny_bank_with_email:,}")
+        
+        # Show the actual NY + bank companies
+        ny_bank_sample = await conn.fetch("""
+            SELECT c.nmls_id, c.company_name, c.email, c.phone, a.state, a.full_address
+            FROM companies c
+            JOIN addresses a ON c.id = a.company_id
+            WHERE (UPPER(a.state) LIKE '%NY%' OR UPPER(a.state) LIKE '%NEW YORK%')
+            AND UPPER(c.company_name) LIKE '%BANK%'
+            ORDER BY c.company_name
+            LIMIT 20
+        """)
+        
+        print(f"\n📋 NY BANK COMPANIES SAMPLE:")
+        print("-" * 50)
+        for i, company in enumerate(ny_bank_sample, 1):
+            email_status = "✅" if company['email'] else "❌"
+            phone_status = "✅" if company['phone'] else "❌"
+            print(f"{i}. {company['company_name']} (NMLS: {company['nmls_id']})")
+            print(f"   State: {company['state']}")
+            print(f"   Email: {email_status} | Phone: {phone_status}")
+            if company['email']:
+                print(f"   Email: {company['email']}")
+            print()
         
         # 3. Search query simulation (what your app does)
         print("\n🔍 SEARCH QUERY SIMULATION:")
