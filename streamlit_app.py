@@ -842,7 +842,7 @@ def show_natural_search_page():
         with st.spinner("🔍 Searching database..."):
             try:
                 # Use the AI-powered enhanced search API
-                result = run_async(run_enhanced_search(query, True, 1, 10000))
+                result = run_async(run_enhanced_search(query, None, 1, 10000))
                 if result:
                     st.session_state.search_results = result
                     st.session_state.selected_companies = []
@@ -856,13 +856,16 @@ def show_natural_search_page():
                         
                         with col1:
                             st.markdown("**🧠 What the AI Understood:**")
-                            st.write(f"**Original Query:** {query_analysis.get('original_query', 'N/A')}")
-                            st.write(f"**Intent:** {query_analysis.get('intent', 'N/A')}")
-                            st.write(f"**Confidence:** {query_analysis.get('confidence', 'N/A')}")
-                            st.write(f"**Explanation:** {query_analysis.get('explanation', 'N/A')}")
-                            
-                            if query_analysis.get('business_critical_flags'):
-                                st.write(f"**Flags:** {', '.join(query_analysis.get('business_critical_flags', []))}")
+                            if query_analysis:
+                                st.write(f"**Original Query:** {query_analysis.get('original_query', 'N/A')}")
+                                st.write(f"**Intent:** {query_analysis.get('intent', 'N/A')}")
+                                st.write(f"**Confidence:** {query_analysis.get('confidence', 'N/A')}")
+                                st.write(f"**Explanation:** {query_analysis.get('explanation', 'N/A')}")
+                                
+                                if query_analysis.get('business_critical_flags'):
+                                    st.write(f"**Flags:** {', '.join(query_analysis.get('business_critical_flags', []))}")
+                            else:
+                                st.write("Query analysis not available")
                         
                         with col2:
                             st.markdown("**⚙️ Filters Applied:**")
@@ -881,7 +884,6 @@ def show_natural_search_page():
                             st.write(f"**Search completed in:** {search_time:.1f}ms")
                             
                             # Show query analysis if available
-                            query_analysis = result.get('query_analysis')
                             if query_analysis:
                                 st.write(f"**AI Analysis:** {query_analysis.get('explanation', 'N/A')}")
                                 st.write(f"**Confidence:** {query_analysis.get('confidence', 0):.1%}")
