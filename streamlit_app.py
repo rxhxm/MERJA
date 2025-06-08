@@ -7,9 +7,13 @@ A streamlined Streamlit application for searching and analyzing NMLS database.
 import streamlit as st
 import pandas as pd
 import asyncio
+import nest_asyncio
 import logging
 from datetime import datetime
 from typing import Dict, List, Any
+
+# Apply nest_asyncio to allow nested event loops in Streamlit
+nest_asyncio.apply()
 
 # Import unified search system
 from unified_search import (
@@ -64,14 +68,9 @@ if 'enrichment_running' not in st.session_state:
 
 
 def run_async(coro):
-    """Simple async runner for Streamlit"""
+    """Simple async runner for Streamlit with nest_asyncio support"""
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+        return asyncio.run(coro)
     except Exception as e:
         logger.error(f"Async execution error: {e}")
         raise
