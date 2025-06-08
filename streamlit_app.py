@@ -64,79 +64,17 @@ if 'enrichment_running' not in st.session_state:
 
 
 def run_async(coro):
-    """Improved async runner for Streamlit"""
+    """Simple async runner for Streamlit"""
     try:
-        # Try to get existing event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                raise RuntimeError("Loop is closed")
-        except RuntimeError:
-            # Create new event loop if none exists or current is closed
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        # Run the coroutine
-        if loop.is_running():
-            # If loop is already running, we need to use a different approach
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, coro)
-                return future.result()
-        else:
             return loop.run_until_complete(coro)
-            
+        finally:
+            loop.close()
     except Exception as e:
         logger.error(f"Async execution error: {e}")
-        # Fallback: try asyncio.run which creates a fresh loop
-        try:
-            return asyncio.run(coro)
-        except Exception as e2:
-            logger.error(f"Fallback async execution error: {e2}")
-            raise e2
-
-
-def search_companies_sync(query: str, filters: Dict[str, Any] = None) -> Dict[str, Any]:
-    """Synchronous wrapper for search to avoid event loop issues"""
-    import concurrent.futures
-    import threading
-    
-    def run_search():
-        """Run search in a separate thread with its own event loop"""
-        try:
-            # Create a new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                search_filters = SearchFilters(**filters) if filters else None
-                
-                # Import and run the search
-                from unified_search import run_unified_search
-                result = loop.run_until_complete(run_unified_search(
-                    query=query,
-                    filters=search_filters,
-                    use_ai=True,
-                    page=1,
-                    page_size=10000
-                ))
-                return result
-                
-            finally:
-                loop.close()
-                
-        except Exception as e:
-            logger.error(f"Search error: {e}")
-            return {
-                "companies": [],
-                "total_count": 0,
-                "query_analysis": None
-            }
-    
-    # Run in thread pool to avoid event loop conflicts
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        future = executor.submit(run_search)
-        return future.result(timeout=30)  # 30 second timeout
+        raise
 
 
 async def search_companies(
@@ -149,15 +87,16 @@ async def search_companies(
             query=query,
             filters=search_filters,
             use_ai=True,
+            apply_business_filters=True,
             page=1,
             page_size=10000
         )
 
         return result
-
+                
     except Exception as e:
         st.error(f"Search error: {str(e)}")
-        return {
+    return {
             "companies": [],
             "total_count": 0,
             "query_analysis": None
@@ -166,11 +105,11 @@ async def search_companies(
 
 def format_lender_type(lender_type: str, license_types: List[str]) -> str:
     """Format lender type with simple classification"""
-    if not license_types:
+            if not license_types:
         license_types = []
 
     target_licenses = [
-        lt for lt in license_types if lt in LenderClassifier.UNSECURED_LICENSES]
+        lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
     exclude_licenses = [
         lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
 
@@ -180,7 +119,7 @@ def format_lender_type(lender_type: str, license_types: List[str]) -> str:
         return f'❌ EXCLUDE ({len(exclude_licenses)} mortgage)'
     elif lender_type == 'mixed':
         return f'⚠️ MIXED ({len(target_licenses)} personal + {len(exclude_licenses)} mortgage)'
-    else:
+            else:
         return f'❓ UNKNOWN'
 
 
@@ -192,26 +131,26 @@ def main():
 
     st.header("NMLS Lender Search")
     st.subheader("🎯 Search & Filter")
-
+    
     # Search input
     col1, col2 = st.columns([3, 1])
-
+    
     with col1:
         query = st.text_input(
             "Search for lenders:",
             value=st.session_state.last_query,
             placeholder="e.g., personal loan companies, banks in California, etc.")
-
+    
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         search_clicked = st.button(
             "🔍 Search",
             type="primary",
             use_container_width=True)
-
+    
     # Filters
     col1, col2 = st.columns(2)
-
+    
     with col1:
         selected_states = st.multiselect(
             "📍 States Licensed In:",
@@ -267,30 +206,30 @@ def main():
                 "WY",
                 "HI",
                 "DC"])
-
+    
     with col2:
         lender_type_filter = st.selectbox(
             "🏦 Lender Type:", [
                 "All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"])
-
+    
     # Perform search
     if search_clicked and query:
         st.session_state.last_query = query
         with st.spinner("🔍 Searching database..."):
             try:
-                result = search_companies_sync(query)
+                result = run_async(search_companies(query))
                 if result and result['companies']:
                     st.session_state.search_results = result
                 else:
                     st.error("❌ No results found. Try a different search.")
             except Exception as e:
                 st.error(f"❌ Search failed: {str(e)}")
-
+    
     # Display results
     if st.session_state.search_results:
         result = st.session_state.search_results
         companies = result['companies']
-
+        
         # Apply filters
         if selected_states:
             companies = [
@@ -302,7 +241,7 @@ def main():
         if lender_type_filter != "All Types":
             lender_map = {
                 "Unsecured Personal (TARGET)": "unsecured_personal",
-                "Mortgage (EXCLUDE)": "mortgage",
+                "Mortgage (EXCLUDE)": "mortgage", 
                 "Mixed": "mixed",
                 "Unknown": "unknown"
             }
@@ -310,7 +249,7 @@ def main():
             if target_type:
                 companies = [c for c in companies if c.get(
                     'lender_type') == target_type]
-
+        
         # Summary metrics
         st.markdown("---")
         col1, col2, col3, col4 = st.columns(4)
@@ -328,11 +267,11 @@ def main():
             states_covered = len(
                 set([state for c in companies for state in c.get('states_licensed', [])]))
             st.metric("States Covered", states_covered)
-
+        
         # Results table
         if companies:
-            st.subheader(f"📋 Lenders Found ({len(companies)} results)")
-
+        st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+        
             # Create display data
             display_data = []
             for company in companies:
@@ -341,28 +280,28 @@ def main():
                     sorted(states_licensed)) if states_licensed else 'Unknown'
                 if len(states_str) > 50:
                     states_str = states_str[:47] + '...'
-
+                
                 license_types = company.get('license_types', []) or []
                 lender_type = company.get('lender_type', 'unknown')
 
                 display_data.append(
                     {
-                        'NMLS ID': company['nmls_id'],
-                        'Company Name': company['company_name'],
+                    'NMLS ID': company['nmls_id'],
+                    'Company Name': company['company_name'],
                         'Lender Type': format_lender_type(
                             lender_type,
                             license_types),
-                        'States Licensed': states_str,
-                        'Total States': len(states_licensed),
+                    'States Licensed': states_str,
+                    'Total States': len(states_licensed),
                         'Contact Info': '✅' if (
                             company.get('phone') and company.get('email')) else '📧' if company.get('email') else '📞' if company.get('phone') else '❌'})
-
+            
             df = pd.DataFrame(display_data)
             st.dataframe(df, use_container_width=True)
-
+            
             # Export functionality
             csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
+                    st.download_button(
                 label="📥 Export CSV",
                 data=csv,
                 file_name=f"lenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
@@ -370,24 +309,24 @@ def main():
 
             # Simple enrichment section
             if ENRICHMENT_AVAILABLE:
-                st.markdown("---")
+            st.markdown("---")
                 st.markdown("### 🧠 Company Enrichment")
-
+            
                 if not st.session_state.enrichment_running:
                     col1, col2 = st.columns(2)
-
-                    with col1:
-                        enrichment_filter = st.selectbox(
+            
+            with col1:
+                enrichment_filter = st.selectbox(
                             "Companies to enrich:", [
                                 "Top 5 Target Lenders", "Top 10 Results", "All TARGET Lenders"])
-
-                    with col2:
+            
+            with col2:
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.button("🧠 Start Enrichment", type="secondary"):
                             st.session_state.enrichment_running = True
 
                             # Select companies
-                            if enrichment_filter == "Top 5 Target Lenders":
+                    if enrichment_filter == "Top 5 Target Lenders":
                                 target_companies = [
                                     c for c in companies if c.get('lender_type') == 'unsecured_personal']
                                 companies_to_enrich = sorted(
@@ -399,61 +338,61 @@ def main():
                             else:
                                 companies_to_enrich = [
                                     c for c in companies if c.get('lender_type') == 'unsecured_personal']
-
-                            if companies_to_enrich:
+                    
+                    if companies_to_enrich:
                                 try:
-                                    enrichment_service = create_enrichment_service()
-                                    if enrichment_service:
+                        enrichment_service = create_enrichment_service()
+                        if enrichment_service:
                                         with st.spinner(f"Enriching {len(companies_to_enrich)} companies..."):
-                                            enriched_df, contacts_df = run_async(
+                                enriched_df, contacts_df = run_async(
                                                 enrichment_service.enrich_companies_batch(companies_to_enrich))
 
-                                            st.session_state.enriched_results = {
-                                                'companies': enriched_df,
-                                                'contacts': contacts_df,
-                                                'timestamp': datetime.now()
-                                            }
-
+                                st.session_state.enriched_results = {
+                                    'companies': enriched_df,
+                                    'contacts': contacts_df,
+                                    'timestamp': datetime.now()
+                                }
+                                
                                             st.success(
                                                 f"✅ Enriched {len(enriched_df)} companies!")
                                     else:
                                         st.error(
                                             "❌ Enrichment service not available")
-                                except Exception as e:
-                                    st.error(f"❌ Enrichment failed: {str(e)}")
+                            except Exception as e:
+                                st.error(f"❌ Enrichment failed: {str(e)}")
                                 finally:
                                     st.session_state.enrichment_running = False
-                            else:
+                        else:
                                 st.warning(
                                     "⚠️ No companies selected for enrichment")
                                 st.session_state.enrichment_running = False
-                else:
+                    else:
                     st.info("🔄 Enrichment in progress...")
-
+            
                 # Display enrichment results
-                if st.session_state.enriched_results:
-                    enriched_data = st.session_state.enriched_results
-                    enriched_df = enriched_data['companies']
-                    contacts_df = enriched_data['contacts']
-
+            if st.session_state.enriched_results:
+                enriched_data = st.session_state.enriched_results
+                enriched_df = enriched_data['companies']
+                contacts_df = enriched_data['contacts']
+                
                     st.markdown("#### 📊 Enrichment Results")
-
-                    if not enriched_df.empty:
+                
+                if not enriched_df.empty:
                         successful_companies = enriched_df[enriched_df['enrichment_status'] == 'Success']
-
+                    
                         col1, col2, col3 = st.columns(3)
-                        with col1:
+                    with col1:
                             st.metric("✅ Enriched", len(successful_companies))
-                        with col2:
+                    with col2:
                             qualified = len(
                                 enriched_df[enriched_df.get('is_qualified_lead', False)])
                             st.metric("🎯 Qualified", qualified)
-                        with col3:
+                    with col3:
                             st.metric("👥 Contacts", len(contacts_df)
                                       if not contacts_df.empty else 0)
 
                         # Show enriched data
-                        if not successful_companies.empty:
+                    if not successful_companies.empty:
                             display_cols = [
                                 'company_name', 'nmls_id', 'lender_type']
                             if 'enriched_website' in successful_companies.columns:
@@ -462,11 +401,11 @@ def main():
                                 display_cols.append(
                                     'enriched_specializes_in_personal_loans')
 
-                            st.dataframe(
+                        st.dataframe(
                                 successful_companies[display_cols],
                                 use_container_width=True)
-
-                        # Export enriched data
+                    
+                    # Export enriched data
                         if st.button("📊 Export Enriched Data"):
                             csv = enriched_df.to_csv(index=False)
                             st.download_button(
@@ -474,10 +413,10 @@ def main():
                                 csv,
                                 f"enriched_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                                 "text/csv")
-        else:
+                else:
             st.info(
                 "🔍 No companies match your filters. Try adjusting the filters above.")
 
 
 if __name__ == "__main__":
-    main()
+    main() 
