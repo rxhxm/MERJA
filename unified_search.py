@@ -549,7 +549,7 @@ class SearchService:
             c.email,
             c.website,
             a.full_address as street_address,
-            a.mailing_address,
+            am.full_address as mailing_address,
             c.federal_regulator,
             c.created_at,
             COALESCE(cs.total_licenses, 0) as total_licenses,
@@ -558,7 +558,8 @@ class SearchService:
             COALESCE(cs.states_licensed, ARRAY[]::text[]) as states_licensed
         FROM companies c
         LEFT JOIN company_stats cs ON c.id = cs.company_id
-        LEFT JOIN addresses a ON c.id = a.company_id
+        LEFT JOIN addresses a ON c.id = a.company_id AND a.address_type = 'street'
+        LEFT JOIN addresses am ON c.id = am.company_id AND am.address_type = 'mailing'
         """
         
         conditions = []
@@ -571,7 +572,7 @@ class SearchService:
             conditions.append(f"""
                 (c.company_name ILIKE ${param_count} 
                  OR a.full_address ILIKE ${param_count}
-                 OR a.mailing_address ILIKE ${param_count})
+                 OR am.full_address ILIKE ${param_count})
             """)
             params.append(f"%{filters.query}%")
         
@@ -633,7 +634,8 @@ class SearchService:
         base_query = """
         SELECT COUNT(DISTINCT c.id)
         FROM companies c
-        LEFT JOIN addresses a ON c.id = a.company_id
+        LEFT JOIN addresses a ON c.id = a.company_id AND a.address_type = 'street'
+        LEFT JOIN addresses am ON c.id = am.company_id AND am.address_type = 'mailing'
         LEFT JOIN licenses l ON c.id = l.company_id
         """
         
@@ -647,7 +649,7 @@ class SearchService:
             conditions.append(f"""
                 (c.company_name ILIKE ${param_count} 
                  OR a.full_address ILIKE ${param_count}
-                 OR a.mailing_address ILIKE ${param_count})
+                 OR am.full_address ILIKE ${param_count})
             """)
             params.append(f"%{filters.query}%")
         
