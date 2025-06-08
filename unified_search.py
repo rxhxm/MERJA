@@ -824,17 +824,21 @@ class UnifiedSearchAPI:
             # Use AI to analyze natural language query
             analysis = await self.nlp.analyze_query(query)
             search_filters = analysis.filters
+            logger.info(f"AI Analysis - Original filters: {search_filters.dict(exclude_unset=True)}")
 
             if apply_business_filters:
                 search_filters = await self._apply_business_filters(search_filters, analysis.lender_type_preference)
+                logger.info(f"After business filters: {search_filters.dict(exclude_unset=True)}")
         elif filters:
             # Use provided structured filters
             search_filters = filters
             analysis = None
+            logger.info(f"Using provided filters: {search_filters.dict(exclude_unset=True)}")
         else:
             # Default search
             search_filters = SearchFilters(query=query)
             analysis = None
+            logger.info(f"Default search filters: {search_filters.dict(exclude_unset=True)}")
 
         # Execute search
         async with self.db_manager.pool.acquire() as conn:
@@ -912,9 +916,10 @@ class UnifiedSearchAPI:
             lender_preference: LenderType) -> SearchFilters:
         """Apply Fido's business requirements to search filters"""
 
-        # Prioritize companies with contact information
-        if filters.has_email is None:
-            filters.has_email = True
+        # Don't automatically filter by email - let users see all results
+        # and then they can filter by contact info if needed
+        # if filters.has_email is None:
+        #     filters.has_email = True
 
         # Focus on unsecured personal lenders if no specific preference
         if lender_preference == LenderType.MORTGAGE:
