@@ -9,14 +9,15 @@ import pandas as pd
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 # Import unified search system
 from unified_search import (
     run_unified_search, 
     SearchFilters, 
     LenderType,
-    LenderClassifier
+    LenderClassifier,
+    ContactValidator
 )
 
 # Configure Streamlit page
@@ -38,7 +39,7 @@ except ImportError:
     ENRICHMENT_AVAILABLE = False
     st.warning("⚠️ Enrichment service unavailable. Search functionality will work normally.")
 
-# Simple CSS
+# Simple CSS for basic styling
 st.markdown("""
 <style>
     .main-header {
@@ -100,9 +101,6 @@ async def search_companies(query: str, filters: Dict[str, Any] = None) -> Dict[s
 
 def format_lender_type(lender_type: str, license_types: List[str]) -> str:
     """Format lender type with simple classification"""
-    if not license_types:
-        license_types = []
-        
     target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
     exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
     

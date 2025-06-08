@@ -191,16 +191,16 @@ class EnrichmentService:
                 chunk_companies = companies[chunk_start:chunk_end]
                 
                 # Create tasks for this chunk
-                tasks = []
+            tasks = []
                 for company in chunk_companies:
-                    task = self.enrich_single_company(
-                        client, semaphore, company, reference_companies
-                    )
-                    tasks.append(task)
-                
+                task = self.enrich_single_company(
+                    client, semaphore, company, reference_companies
+                )
+                tasks.append(task)
+            
                 # Process chunk with progress tracking
                 chunk_results = []
-                for task in asyncio.as_completed(tasks):
+            for task in asyncio.as_completed(tasks):
                     # Check for cancellation before processing each result
                     if cancellation_check and cancellation_check():
                         # Cancel remaining tasks
@@ -209,13 +209,13 @@ class EnrichmentService:
                                 remaining_task.cancel()
                         raise Exception("Enrichment cancelled during chunk processing")
                     
-                    result = await task
+                result = await task
                     chunk_results.append(result)
-                    
+                
                     # Update progress
                     completed = len(results) + len(chunk_results)
-                    if progress_callback:
-                        progress_callback(completed, len(companies))
+                if progress_callback:
+                    progress_callback(completed, len(companies))
                 
                 results.extend(chunk_results)
                 
@@ -391,7 +391,7 @@ def create_enrichment_service() -> Optional[EnrichmentService]:
         api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
     except Exception:
         # Any other error, fall back to environment variable
-        api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
+    api_key = os.getenv('SIXTYFOUR_API_KEY', '42342922-b737-43bf-8e67-68be5108be7b')
     
     if not api_key:
         return None
