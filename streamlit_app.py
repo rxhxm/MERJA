@@ -64,17 +64,79 @@ if 'enrichment_running' not in st.session_state:
 
 
 def run_async(coro):
-    """Simple async runner for Streamlit"""
+    """Improved async runner for Streamlit"""
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Try to get existing event loop
         try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("Loop is closed")
+        except RuntimeError:
+            # Create new event loop if none exists or current is closed
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Run the coroutine
+        if loop.is_running():
+            # If loop is already running, we need to use a different approach
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, coro)
+                return future.result()
+        else:
             return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+            
     except Exception as e:
         logger.error(f"Async execution error: {e}")
-        raise
+        # Fallback: try asyncio.run which creates a fresh loop
+        try:
+            return asyncio.run(coro)
+        except Exception as e2:
+            logger.error(f"Fallback async execution error: {e2}")
+            raise e2
+
+
+def search_companies_sync(query: str, filters: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Synchronous wrapper for search to avoid event loop issues"""
+    import concurrent.futures
+    import threading
+    
+    def run_search():
+        """Run search in a separate thread with its own event loop"""
+        try:
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                search_filters = SearchFilters(**filters) if filters else None
+                
+                # Import and run the search
+                from unified_search import run_unified_search
+                result = loop.run_until_complete(run_unified_search(
+                    query=query,
+                    filters=search_filters,
+                    use_ai=True,
+                    page=1,
+                    page_size=10000
+                ))
+                return result
+                
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            return {
+                "companies": [],
+                "total_count": 0,
+                "query_analysis": None
+            }
+    
+    # Run in thread pool to avoid event loop conflicts
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(run_search)
+        return future.result(timeout=30)  # 30 second timeout
 
 
 async def search_companies(
@@ -216,7 +278,7 @@ def main():
         st.session_state.last_query = query
         with st.spinner("🔍 Searching database..."):
             try:
-                result = run_async(search_companies(query))
+                result = search_companies_sync(query)
                 if result and result['companies']:
                     st.session_state.search_results = result
                 else:
