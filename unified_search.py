@@ -1024,13 +1024,73 @@ class UnifiedSearchAPI:
         return recommendations
 
 # ============================================================================
-# FASTAPI ENDPOINTS
+# STREAMLIT INTEGRATION FUNCTIONS
 # ============================================================================
 
 
-# Global API instance
-unified_api = UnifiedSearchAPI()
+async def run_unified_search(
+    query: str = None,
+    filters: SearchFilters = None,
+    use_ai: bool = True,
+    apply_business_filters: bool = True,
+    page: int = 1,
+    page_size: int = 20
+) -> Dict[str, Any]:
+    """
+    Streamlit-compatible search function with proper connection lifecycle management.
+    Creates a fresh UnifiedSearchAPI instance for each search to avoid event loop conflicts.
+    """
+    # Create a fresh API instance for this search
+    api_instance = UnifiedSearchAPI()
+    
+    try:
+        # Initialize connections within the current event loop
+        await api_instance.initialize()
+        
+        # Perform the search
+        response = await api_instance.search(
+            query=query,
+            filters=filters,
+            use_ai=use_ai,
+            apply_business_filters=apply_business_filters,
+            page=page,
+            page_size=page_size
+        )
+        
+        # Convert to dict for Streamlit compatibility
+        result = {
+            "companies": [company.dict() for company in response.companies],
+            "total_count": response.total_count,
+            "page": response.page,
+            "page_size": response.page_size,
+            "total_pages": response.total_pages,
+            "filters_applied": response.filters_applied,
+            "search_time_ms": response.search_time_ms,
+            "query_analysis": response.query_analysis,
+            "business_intelligence": response.business_intelligence
+        }
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Search error in run_unified_search: {e}")
+        raise e
+    finally:
+        # Always clean up connections
+        try:
+            await api_instance.db_manager.disconnect()
+            # Also clean up vector search connections
+            if hasattr(api_instance.nlp, 'vector_search') and api_instance.nlp.vector_search.pool:
+                await api_instance.nlp.vector_search.pool.close()
+        except Exception as cleanup_error:
+            logger.warning(f"Cleanup error (non-critical): {cleanup_error}")
 
+# ============================================================================
+# FASTAPI ENDPOINTS (Keep global instance for FastAPI server)
+# ============================================================================
+
+# Global API instance only for FastAPI server
+unified_api = UnifiedSearchAPI()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1095,47 +1155,6 @@ async def search_endpoint(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-# ============================================================================
-# STREAMLIT INTEGRATION FUNCTIONS
-# ============================================================================
-
-
-async def run_unified_search(
-    query: str = None,
-    filters: SearchFilters = None,
-    use_ai: bool = True,
-    apply_business_filters: bool = True,
-    page: int = 1,
-    page_size: int = 20
-) -> Dict[str, Any]:
-    """
-    Streamlit-compatible search function
-    """
-    if not unified_api.db_manager.pool:
-        await unified_api.initialize()
-
-    response = await unified_api.search(
-        query=query,
-        filters=filters,
-        use_ai=use_ai,
-        apply_business_filters=apply_business_filters,
-        page=page,
-        page_size=page_size
-    )
-
-    # Convert to dict for Streamlit compatibility
-    return {
-        "companies": [company.dict() for company in response.companies],
-        "total_count": response.total_count,
-        "page": response.page,
-        "page_size": response.page_size,
-        "total_pages": response.total_pages,
-        "filters_applied": response.filters_applied,
-        "search_time_ms": response.search_time_ms,
-        "query_analysis": response.query_analysis,
-        "business_intelligence": response.business_intelligence
-    }
 
 # ============================================================================
 # MAIN EXECUTION
