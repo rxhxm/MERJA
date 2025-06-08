@@ -577,44 +577,86 @@ def main():
                 st.info(f"🔍 Debug: Found {len(target_companies_available)} TARGET companies in current results")
                 
                 # Enrichment controls
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns([2, 1])
                 
                 with col1:
                     st.markdown("**🎯 Select Companies to Enrich:**")
-                    enrichment_filter = st.selectbox(
-                        "Which companies to enrich?",
-                        ["Top 5 Target Lenders", "Top 10 by Business Score", "All TARGET Lenders", "All Results", "Custom Selection"],
-                        help="Choose which companies to enrich with SixtyFour API"
-                    )
+                    
+                    # Quick selection options
+                    quick_select_col1, quick_select_col2, quick_select_col3 = st.columns(3)
+                    
+                    with quick_select_col1:
+                        if st.button("Select All", type="secondary", use_container_width=True):
+                            for i, company in enumerate(companies):
+                                st.session_state[f"enrich_company_{i}"] = True
+                    
+                    with quick_select_col2:
+                        if st.button("Select TARGET Only", type="secondary", use_container_width=True):
+                            for i, company in enumerate(companies):
+                                if company.get('lender_type') == 'unsecured_personal':
+                                    st.session_state[f"enrich_company_{i}"] = True
+                                else:
+                                    st.session_state[f"enrich_company_{i}"] = False
+                    
+                    with quick_select_col3:
+                        if st.button("Clear All", type="secondary", use_container_width=True):
+                            for i, company in enumerate(companies):
+                                st.session_state[f"enrich_company_{i}"] = False
+                    
+                    st.markdown("**Individual Company Selection:**")
+                    
+                    # Individual company checkboxes in a scrollable container
+                    with st.container():
+                        # Create a more compact display
+                        for i, company in enumerate(companies):
+                            col_check, col_info = st.columns([0.1, 0.9])
+                            
+                            with col_check:
+                                # Initialize checkbox state if not exists
+                                if f"enrich_company_{i}" not in st.session_state:
+                                    st.session_state[f"enrich_company_{i}"] = False
+                                
+                                selected = st.checkbox(
+                                    "",
+                                    key=f"enrich_company_{i}",
+                                    label_visibility="collapsed"
+                                )
+                            
+                            with col_info:
+                                # Show company info with type indicator
+                                lender_type = company.get('lender_type', 'unknown')
+                                type_emoji = {
+                                    'unsecured_personal': '🎯',
+                                    'mortgage': '❌', 
+                                    'mixed': '⚠️',
+                                    'unknown': '❓'
+                                }.get(lender_type, '❓')
+                                
+                                states_licensed = company.get('states_licensed', [])
+                                states_str = f" ({len(states_licensed)} states)" if states_licensed else ""
+                                
+                                if selected:
+                                    st.markdown(f"**{type_emoji} {company['company_name']}** (NMLS: {company['nmls_id']}){states_str}")
+                                else:
+                                    st.markdown(f"{type_emoji} {company['company_name']} (NMLS: {company['nmls_id']}){states_str}")
                 
                 with col2:
                     st.markdown("**⚙️ Enrichment Options:**")
                     include_contacts = st.checkbox("Find key contacts", value=True, help="Find decision makers and key contacts")
                     icp_analysis = st.checkbox("ICP matching", value=True, help="Analyze fit with ideal customer profile")
-                
-                with col3:
+                    
                     st.markdown("**🚀 Start Enrichment:**")
-                    if st.button("🧠 Enrich Companies", type="secondary"):
-                        # Determine which companies to enrich
-                        companies_to_enrich = []
-                        
-                        if enrichment_filter == "Top 5 Target Lenders":
-                            target_companies = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
-                            if target_companies:
-                                # Sort by business_score if available, otherwise by company name
-                                companies_to_enrich = sorted(target_companies, 
-                                                           key=lambda x: x.get('business_score', 50), 
-                                                           reverse=True)[:5]
-                            st.info(f"🔍 Debug: Found {len(target_companies)} target companies, selected {len(companies_to_enrich)}")
-                        elif enrichment_filter == "Top 10 by Business Score":
-                            # Sort by business_score if available, otherwise by company name
-                            companies_to_enrich = sorted(companies, 
-                                                       key=lambda x: x.get('business_score', 50), 
-                                                       reverse=True)[:10]
-                        elif enrichment_filter == "All TARGET Lenders":
-                            companies_to_enrich = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
-                        elif enrichment_filter == "All Results":
-                            companies_to_enrich = companies
+                    
+                    # Count selected companies
+                    selected_companies = []
+                    for i, company in enumerate(companies):
+                        if st.session_state.get(f"enrich_company_{i}", False):
+                            selected_companies.append(company)
+                    
+                    st.info(f"📊 {len(selected_companies)} companies selected")
+                    
+                    if st.button("🧠 Enrich Selected Companies", type="primary", use_container_width=True):
+                        companies_to_enrich = selected_companies
                         
                         # Debug: Show what we found
                         st.info(f"🔍 Debug: Selected {len(companies_to_enrich)} companies for enrichment")
@@ -655,6 +697,10 @@ def main():
                                     progress_bar.progress(1.0)
                                     status_text.text("✅ Enrichment completed!")
                                     st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
+                                    
+                                    # Clear selections after successful enrichment
+                                    for i in range(len(companies)):
+                                        st.session_state[f"enrich_company_{i}"] = False
                                     
                                 except Exception as e:
                                     st.error(f"❌ Enrichment failed: {str(e)}")
