@@ -4,6 +4,12 @@ MERJA - NMLS Lender Search & Analysis Tool
 A streamlined Streamlit application for searching and analyzing NMLS database.
 """
 
+from unified_search import (
+    run_unified_search,
+    SearchFilters,
+    LenderType,
+    LenderClassifier
+)
 import streamlit as st
 import pandas as pd
 import asyncio
@@ -16,12 +22,6 @@ from typing import Dict, List, Any
 nest_asyncio.apply()
 
 # Import unified search system
-from unified_search import (
-    run_unified_search,
-    SearchFilters,
-    LenderType,
-    LenderClassifier
-)
 
 # Configure Streamlit page
 st.set_page_config(
@@ -68,12 +68,37 @@ if 'enrichment_running' not in st.session_state:
 
 
 def run_async(coro):
-    """Simple async runner for Streamlit with nest_asyncio support"""
+    """
+    Robust async runner for Streamlit that handles event loop conflicts.
+    Creates a fresh event loop for each call to avoid 'attached to different loop' errors.
+    """
+    loop = None
     try:
-        return asyncio.run(coro)
+        # Always create a fresh event loop to avoid conflicts
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
     except Exception as e:
         logger.error(f"Async execution error: {e}")
-        raise
+        # Close the existing loop if open
+        if loop is not None:
+            loop.close()
+
+        # Create a new loop for retry
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(coro)
+        except Exception as retry_e:
+            logger.error(f"Async retry failed: {retry_e}")
+            raise retry_e
+    finally:
+        # Always clean up the loop
+        if loop is not None:
+            try:
+                loop.close()
+            except:
+                pass
 
 
 async def search_companies(
@@ -270,7 +295,7 @@ def main():
         # Results table
         if companies:
             st.subheader(f"📋 Lenders Found ({len(companies)} results)")
-
+            
             # Create display data
             display_data = []
             for company in companies:
@@ -279,25 +304,22 @@ def main():
                     sorted(states_licensed)) if states_licensed else 'Unknown'
                 if len(states_str) > 50:
                     states_str = states_str[:47] + '...'
-
+                
                 license_types = company.get('license_types', []) or []
                 lender_type = company.get('lender_type', 'unknown')
 
-                display_data.append(
-                    {
-                        'NMLS ID': company['nmls_id'],
-                        'Company Name': company['company_name'],
-                        'Lender Type': format_lender_type(
-                            lender_type,
-                            license_types),
-                        'States Licensed': states_str,
-                        'Total States': len(states_licensed),
-                        'Contact Info': '✅' if (
-                            company.get('phone') and company.get('email')) else '📧' if company.get('email') else '📞' if company.get('phone') else '❌'})
-
+                display_data.append({
+                    'NMLS ID': company['nmls_id'],
+                    'Company Name': company['company_name'],
+                    'Lender Type': format_lender_type(lender_type, license_types),
+                    'States Licensed': states_str,
+                    'Total States': len(states_licensed),
+                    'Contact Info': '✅' if (company.get('phone') and company.get('email')) else '📧' if company.get('email') else '📞' if company.get('phone') else '❌'
+                })
+            
             df = pd.DataFrame(display_data)
             st.dataframe(df, use_container_width=True)
-
+            
             # Export functionality
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button(
@@ -310,15 +332,15 @@ def main():
             if ENRICHMENT_AVAILABLE:
                 st.markdown("---")
                 st.markdown("### 🧠 Company Enrichment")
-
+                
                 if not st.session_state.enrichment_running:
                     col1, col2 = st.columns(2)
-
+                    
                     with col1:
                         enrichment_filter = st.selectbox(
                             "Companies to enrich:", [
                                 "Top 5 Target Lenders", "Top 10 Results", "All TARGET Lenders"])
-
+                    
                     with col2:
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.button("🧠 Start Enrichment", type="secondary"):
@@ -326,18 +348,13 @@ def main():
 
                             # Select companies
                             if enrichment_filter == "Top 5 Target Lenders":
-                                target_companies = [
-                                    c for c in companies if c.get('lender_type') == 'unsecured_personal']
-                                companies_to_enrich = sorted(
-                                    target_companies, key=lambda x: x.get(
-                                        'business_score', 0), reverse=True)[
-                                    :5]
+                                target_companies = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                                companies_to_enrich = sorted(target_companies, key=lambda x: x.get('business_score', 0), reverse=True)[:5]
                             elif enrichment_filter == "Top 10 Results":
                                 companies_to_enrich = companies[:10]
                             else:
-                                companies_to_enrich = [
-                                    c for c in companies if c.get('lender_type') == 'unsecured_personal']
-
+                                companies_to_enrich = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                            
                             if companies_to_enrich:
                                 try:
                                     enrichment_service = create_enrichment_service()
@@ -346,64 +363,55 @@ def main():
                                             enriched_df, contacts_df = run_async(
                                                 enrichment_service.enrich_companies_batch(companies_to_enrich))
 
-                                            st.session_state.enriched_results = {
-                                                'companies': enriched_df,
-                                                'contacts': contacts_df,
-                                                'timestamp': datetime.now()
-                                            }
-
-                                            st.success(
-                                                f"✅ Enriched {len(enriched_df)} companies!")
+                                        st.session_state.enriched_results = {
+                                            'companies': enriched_df,
+                                            'contacts': contacts_df,
+                                            'timestamp': datetime.now()
+                                        }
+                                        
+                                        st.success(f"✅ Enriched {len(enriched_df)} companies!")
                                     else:
-                                        st.error(
-                                            "❌ Enrichment service not available")
+                                        st.error("❌ Enrichment service not available")
                                 except Exception as e:
                                     st.error(f"❌ Enrichment failed: {str(e)}")
                                 finally:
                                     st.session_state.enrichment_running = False
                             else:
-                                st.warning(
-                                    "⚠️ No companies selected for enrichment")
+                                st.warning("⚠️ No companies selected for enrichment")
                                 st.session_state.enrichment_running = False
                 else:
                     st.info("🔄 Enrichment in progress...")
-
+                
                 # Display enrichment results
                 if st.session_state.enriched_results:
                     enriched_data = st.session_state.enriched_results
                     enriched_df = enriched_data['companies']
                     contacts_df = enriched_data['contacts']
-
+                    
                     st.markdown("#### 📊 Enrichment Results")
-
+                    
                     if not enriched_df.empty:
                         successful_companies = enriched_df[enriched_df['enrichment_status'] == 'Success']
-
+                        
                         col1, col2, col3 = st.columns(3)
                         with col1:
                             st.metric("✅ Enriched", len(successful_companies))
                         with col2:
-                            qualified = len(
-                                enriched_df[enriched_df.get('is_qualified_lead', False)])
+                            qualified = len(enriched_df[enriched_df.get('is_qualified_lead', False)])
                             st.metric("🎯 Qualified", qualified)
                         with col3:
-                            st.metric("👥 Contacts", len(contacts_df)
-                                      if not contacts_df.empty else 0)
+                            st.metric("👥 Contacts", len(contacts_df) if not contacts_df.empty else 0)
 
                         # Show enriched data
                         if not successful_companies.empty:
-                            display_cols = [
-                                'company_name', 'nmls_id', 'lender_type']
+                            display_cols = ['company_name', 'nmls_id', 'lender_type']
                             if 'enriched_website' in successful_companies.columns:
                                 display_cols.append('enriched_website')
                             if 'enriched_specializes_in_personal_loans' in successful_companies.columns:
-                                display_cols.append(
-                                    'enriched_specializes_in_personal_loans')
+                                display_cols.append('enriched_specializes_in_personal_loans')
 
-                            st.dataframe(
-                                successful_companies[display_cols],
-                                use_container_width=True)
-
+                            st.dataframe(successful_companies[display_cols], use_container_width=True)
+                        
                         # Export enriched data
                         if st.button("📊 Export Enriched Data"):
                             csv = enriched_df.to_csv(index=False)
@@ -413,9 +421,8 @@ def main():
                                 f"enriched_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                                 "text/csv")
         else:
-            st.info(
-                "🔍 No companies match your filters. Try adjusting the filters above.")
+            st.info("🔍 No companies match your filters. Try adjusting the filters above.")
 
 
 if __name__ == "__main__":
-    main()
+    main() 
