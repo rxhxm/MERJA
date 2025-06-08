@@ -30,9 +30,6 @@ from unified_search import (
 # Import enrichment service
 from enrichment_service import create_enrichment_service
 
-# Import your modules - these are now handled by unified_search module
-# Old imports removed and consolidated into unified_search module
-
 # Configure Streamlit page
 st.set_page_config(
     page_title="NMLS Search",
@@ -253,18 +250,18 @@ def run_async(coro):
             logger.info("No running event loop, creating new one")
             
             # Platform-specific event loop policy
-        if sys.platform == 'win32':
-            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        
-        # Create a new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            result = loop.run_until_complete(coro)
-            return result
-        finally:
-            loop.close()
+            if sys.platform == 'win32':
+                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+            
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                result = loop.run_until_complete(coro)
+                return result
+            finally:
+                loop.close()
                 # Reset the event loop for the current context
                 try:
                     if asyncio.get_event_loop_policy().get_event_loop() is loop:
@@ -948,7 +945,7 @@ def show_natural_search_page():
         # Main results table - focused on the two key things
         results_subheader_cols = st.columns([0.8, 0.2]) # Adjust ratio as needed
         with results_subheader_cols[0]:
-        st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+            st.subheader(f"📋 Lenders Found ({len(companies)} results)")
         
         if companies: # Only show export button if there are companies
             with results_subheader_cols[1]:
@@ -1176,14 +1173,14 @@ def show_natural_search_page():
                 st.warning("🔄 Enrichment is currently running. Please wait for it to complete or cancel it below.")
                 
                 col1, col2 = st.columns(2)
-            with col1:
+                with col1:
                     if st.button("❌ Cancel Enrichment", type="secondary"):
                         st.session_state.enrichment_cancelled = True
                         st.session_state.enrichment_running = False
                         st.success("✅ Enrichment cancelled!")
                         st.rerun()
-            
-            with col2:
+                
+                with col2:
                     st.info(f"🆔 Process ID: {st.session_state.current_enrichment_id}")
                 
                 # Show current enrichment results if available
@@ -1200,157 +1197,157 @@ def show_natural_search_page():
                 st.markdown("- Check if PyTorch is properly installed")
                 st.markdown("- Contact support if the issue persists")
             else:
-            st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
-            
-            # Enrichment controls
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown("**🎯 Select Companies to Enrich:**")
-                enrichment_filter = st.selectbox(
-                    "Which companies to enrich?",
-                    ["Top 5 Target Lenders", "Top 10 by Business Score", "All TARGET Lenders", "All Results", "Custom Selection"],
-                    help="Choose which companies to enrich with SixtyFour API"
-                )
-            
-            with col2:
-                st.markdown("**⚙️ Enrichment Options:**")
-                include_contacts = st.checkbox("Find key contacts", value=True, help="Find decision makers and key contacts")
-                icp_analysis = st.checkbox("ICP matching", value=True, help="Analyze fit with ideal customer profile")
-            
-            with col3:
-                st.markdown("**🚀 Start Enrichment:**")
-                if st.button("🧠 Enrich Companies", type="secondary"):
-                    # Check if already running
-                    if st.session_state.enrichment_running:
-                        st.error("❌ Enrichment is already running. Please wait for it to complete or cancel it.")
-                        return
-                    
-                    # Generate unique process ID and set running state
-                    import uuid
-                    process_id = str(uuid.uuid4())[:8]
-                    st.session_state.current_enrichment_id = process_id
-                    st.session_state.enrichment_running = True
-                    st.session_state.enrichment_cancelled = False
-                    
-                    # Determine which companies to enrich
-                    companies_to_enrich = []
-                    
-                    if enrichment_filter == "Top 5 Target Lenders":
-                        target_companies = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
-                        companies_to_enrich = sorted(target_companies, key=lambda x: x.get('business_score', 0), reverse=True)[:5]
-                    elif enrichment_filter == "Top 10 by Business Score":
-                        companies_to_enrich = sorted(companies, key=lambda x: x.get('business_score', 0), reverse=True)[:10]
-                    elif enrichment_filter == "All TARGET Lenders":
-                        companies_to_enrich = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
-                    elif enrichment_filter == "All Results":
-                        companies_to_enrich = companies
-                    
-                    if companies_to_enrich:
-                        # Run enrichment with enhanced error handling
-                        try:
-                        enrichment_service = create_enrichment_service()
-                        if enrichment_service:
-                                st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies... (Process ID: {process_id})")
-                            
-                            # Progress tracking
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            
-                            def progress_callback(completed, total):
-                                    # Check for cancellation
-                                    if st.session_state.enrichment_cancelled:
-                                        raise Exception("Enrichment cancelled by user")
-                                    
-                                progress = completed / total
-                                progress_bar.progress(progress)
-                                    status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%}) - Process {process_id}")
-                                
-                                def cancellation_check():
-                                    return st.session_state.enrichment_cancelled
-                            
+                st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
+                
+                # Enrichment controls
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("**🎯 Select Companies to Enrich:**")
+                    enrichment_filter = st.selectbox(
+                        "Which companies to enrich?",
+                        ["Top 5 Target Lenders", "Top 10 by Business Score", "All TARGET Lenders", "All Results", "Custom Selection"],
+                        help="Choose which companies to enrich with SixtyFour API"
+                    )
+                
+                with col2:
+                    st.markdown("**⚙️ Enrichment Options:**")
+                    include_contacts = st.checkbox("Find key contacts", value=True, help="Find decision makers and key contacts")
+                    icp_analysis = st.checkbox("ICP matching", value=True, help="Analyze fit with ideal customer profile")
+                
+                with col3:
+                    st.markdown("**🚀 Start Enrichment:**")
+                    if st.button("🧠 Enrich Companies", type="secondary"):
+                        # Check if already running
+                        if st.session_state.enrichment_running:
+                            st.error("❌ Enrichment is already running. Please wait for it to complete or cancel it.")
+                            return
+                        
+                        # Generate unique process ID and set running state
+                        import uuid
+                        process_id = str(uuid.uuid4())[:8]
+                        st.session_state.current_enrichment_id = process_id
+                        st.session_state.enrichment_running = True
+                        st.session_state.enrichment_cancelled = False
+                        
+                        # Determine which companies to enrich
+                        companies_to_enrich = []
+                        
+                        if enrichment_filter == "Top 5 Target Lenders":
+                            target_companies = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                            companies_to_enrich = sorted(target_companies, key=lambda x: x.get('business_score', 0), reverse=True)[:5]
+                        elif enrichment_filter == "Top 10 by Business Score":
+                            companies_to_enrich = sorted(companies, key=lambda x: x.get('business_score', 0), reverse=True)[:10]
+                        elif enrichment_filter == "All TARGET Lenders":
+                            companies_to_enrich = [c for c in companies if c.get('lender_type') == 'unsecured_personal']
+                        elif enrichment_filter == "All Results":
+                            companies_to_enrich = companies
+                        
+                        if companies_to_enrich:
+                            # Run enrichment with enhanced error handling
                             try:
-                                    # Run enrichment with timeout and error handling
-                                    with st.spinner(f"Running AI enrichment... (Process {process_id})"):
-                                enriched_df, contacts_df = run_async(
-                                    enrichment_service.enrich_companies_batch(
-                                        companies_to_enrich, 
-                                                progress_callback,
-                                                cancellation_check
-                                            )
-                                        )
+                                enrichment_service = create_enrichment_service()
+                                if enrichment_service:
+                                    st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies... (Process ID: {process_id})")
+                                
+                                    # Progress tracking
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
                                     
-                                    # Check if cancelled during processing
-                                    if st.session_state.enrichment_cancelled:
-                                        st.warning("⚠️ Enrichment was cancelled.")
+                                    def progress_callback(completed, total):
+                                        # Check for cancellation
+                                        if st.session_state.enrichment_cancelled:
+                                            raise Exception("Enrichment cancelled by user")
+                                        
+                                        progress = completed / total
+                                        progress_bar.progress(progress)
+                                        status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%}) - Process {process_id}")
+                                    
+                                    def cancellation_check():
+                                        return st.session_state.enrichment_cancelled
+                                
+                                    try:
+                                        # Run enrichment with timeout and error handling
+                                        with st.spinner(f"Running AI enrichment... (Process {process_id})"):
+                                            enriched_df, contacts_df = run_async(
+                                                enrichment_service.enrich_companies_batch(
+                                                    companies_to_enrich, 
+                                                    progress_callback,
+                                                    cancellation_check
+                                                )
+                                            )
+                                        
+                                        # Check if cancelled during processing
+                                        if st.session_state.enrichment_cancelled:
+                                            st.warning("⚠️ Enrichment was cancelled.")
+                                            progress_bar.empty()
+                                            status_text.empty()
+                                            st.session_state.enrichment_running = False
+                                            return
+                                        
+                                        # Store results in session state
+                                        st.session_state.enriched_results = {
+                                            'companies': enriched_df,
+                                            'contacts': contacts_df,
+                                            'timestamp': datetime.now(),
+                                            'process_id': process_id
+                                        }
+                                        
+                                        progress_bar.progress(1.0)
+                                        status_text.text(f"✅ Enrichment completed! (Process {process_id})")
+                                        st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
+                                        
+                                        # Reset running state
+                                        st.session_state.enrichment_running = False
+                                        st.session_state.current_enrichment_id = None
+                                        
+                                    except Exception as enrichment_error:
+                                        # Reset running state on error
+                                        st.session_state.enrichment_running = False
+                                        st.session_state.current_enrichment_id = None
+                                        
+                                        if "cancelled" in str(enrichment_error).lower():
+                                            st.warning("⚠️ Enrichment was cancelled.")
+                                        else:
+                                            st.error(f"❌ Enrichment failed: {str(enrichment_error)}")
+                                            logger.error(f"Enrichment execution error: {enrichment_error}", exc_info=True)
+                                        
+                                        # Clear progress indicators on error
                                         progress_bar.empty()
                                         status_text.empty()
-                                        st.session_state.enrichment_running = False
-                                        return
-                                    
-                                # Store results in session state
-                                st.session_state.enriched_results = {
-                                    'companies': enriched_df,
-                                    'contacts': contacts_df,
-                                        'timestamp': datetime.now(),
-                                        'process_id': process_id
-                                }
-                                
-                                progress_bar.progress(1.0)
-                                    status_text.text(f"✅ Enrichment completed! (Process {process_id})")
-                                st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
-                                
-                                    # Reset running state
+                                        
+                                        # Show detailed error info in expander
+                                        with st.expander("🐛 Enrichment Error Details", expanded=False):
+                                            st.code(str(enrichment_error))
+                                            if "torch" in str(enrichment_error).lower():
+                                                st.warning("💡 This appears to be a PyTorch-related error. Try restarting the Streamlit app or contact support.")
+                                            if "event loop" in str(enrichment_error).lower():
+                                                st.warning("💡 This appears to be an event loop error. Try refreshing the page.")
+                                else:
                                     st.session_state.enrichment_running = False
                                     st.session_state.current_enrichment_id = None
+                                    st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
                                     
-                                except Exception as enrichment_error:
-                                    # Reset running state on error
-                                    st.session_state.enrichment_running = False
-                                    st.session_state.current_enrichment_id = None
-                                    
-                                    if "cancelled" in str(enrichment_error).lower():
-                                        st.warning("⚠️ Enrichment was cancelled.")
-                        else:
-                                        st.error(f"❌ Enrichment failed: {str(enrichment_error)}")
-                                        logger.error(f"Enrichment execution error: {enrichment_error}", exc_info=True)
-                                    
-                                    # Clear progress indicators on error
-                                    progress_bar.empty()
-                                    status_text.empty()
-                                    
-                                    # Show detailed error info in expander
-                                    with st.expander("🐛 Enrichment Error Details", expanded=False):
-                                        st.code(str(enrichment_error))
-                                        if "torch" in str(enrichment_error).lower():
-                                            st.warning("💡 This appears to be a PyTorch-related error. Try restarting the Streamlit app or contact support.")
-                                        if "event loop" in str(enrichment_error).lower():
-                                            st.warning("💡 This appears to be an event loop error. Try refreshing the page.")
-                            else:
+                            except Exception as service_error:
+                                # Reset running state on service error
                                 st.session_state.enrichment_running = False
                                 st.session_state.current_enrichment_id = None
-                            st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
                                 
-                        except Exception as service_error:
-                            # Reset running state on service error
+                                st.error(f"❌ Failed to initialize enrichment service: {str(service_error)}")
+                                logger.error(f"Enrichment service initialization error: {service_error}", exc_info=True)
+                                
+                                # Show helpful error message based on error type
+                                if "torch" in str(service_error).lower():
+                                    st.warning("💡 PyTorch dependency issue detected. Enrichment features are temporarily unavailable.")
+                                    st.info("You can continue using the search functionality without enrichment.")
+                                elif "import" in str(service_error).lower():
+                                    st.warning("💡 Missing dependencies for enrichment service. Please install required packages.")
+                                else:
+                                    st.warning("💡 Enrichment service temporarily unavailable. You can continue using search functionality.")
+                        else:
                             st.session_state.enrichment_running = False
                             st.session_state.current_enrichment_id = None
-                            
-                            st.error(f"❌ Failed to initialize enrichment service: {str(service_error)}")
-                            logger.error(f"Enrichment service initialization error: {service_error}", exc_info=True)
-                            
-                            # Show helpful error message based on error type
-                            if "torch" in str(service_error).lower():
-                                st.warning("💡 PyTorch dependency issue detected. Enrichment features are temporarily unavailable.")
-                                st.info("You can continue using the search functionality without enrichment.")
-                            elif "import" in str(service_error).lower():
-                                st.warning("💡 Missing dependencies for enrichment service. Please install required packages.")
-                    else:
-                                st.warning("💡 Enrichment service temporarily unavailable. You can continue using search functionality.")
-                    else:
-                        st.session_state.enrichment_running = False
-                        st.session_state.current_enrichment_id = None
-                        st.warning("⚠️ No companies selected for enrichment.")
+                            st.warning("⚠️ No companies selected for enrichment.")
             
             # Display enrichment results if available
             if st.session_state.enriched_results:
@@ -1364,7 +1361,7 @@ def show_natural_search_page():
                 col1, col2 = st.columns([0.8, 0.2])
                 
                 with col1:
-                st.markdown(f"### 📊 Enrichment Results")
+                    st.markdown(f"### 📊 Enrichment Results")
                     st.markdown(f"*Process ID: {process_id} | Last updated: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}*")
                 
                 with col2:
