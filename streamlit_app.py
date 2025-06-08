@@ -295,18 +295,18 @@ def run_async(coro):
             logger.info("No running event loop, creating new one")
             
             # Platform-specific event loop policy
-        if sys.platform == 'win32':
-            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        
-        # Create a new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            result = loop.run_until_complete(coro)
-            return result
-        finally:
-            loop.close()
+            if sys.platform == 'win32':
+                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+            
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                result = loop.run_until_complete(coro)
+                return result
+            finally:
+                loop.close()
                 # Reset the event loop for the current context
                 try:
                     if asyncio.get_event_loop_policy().get_event_loop() is loop:
@@ -331,7 +331,7 @@ async def run_enhanced_search(query: str, apply_filters: bool = True, page: int 
     try:
         async with pool.acquire() as conn:
             # Import search API - moved inside as it's used with conn
-        from search_api import SearchService, SearchFilters, SortField, SortOrder
+            from search_api import SearchService, SearchFilters, SortField, SortOrder
             from natural_language_search import LenderClassifier, ContactValidator, LenderType, QueryIntent, QueryAnalysis
             
             # Try AI analysis first, but fall back to simple parsing if it fails
@@ -1011,7 +1011,7 @@ def show_natural_search_page():
         # Main results table - focused on the two key things
         results_subheader_cols = st.columns([0.8, 0.2]) # Adjust ratio as needed
         with results_subheader_cols[0]:
-        st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+            st.subheader(f"📋 Lenders Found ({len(companies)} results)")
         
         if companies: # Only show export button if there are companies
             with results_subheader_cols[1]:
@@ -1245,7 +1245,7 @@ def show_natural_search_page():
                 st.markdown("- Check if PyTorch is properly installed")
                 st.markdown("- Contact support if the issue persists")
             else:
-            st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
+                st.markdown("Use AI to enrich company data with business intelligence, contact information, and ICP matching.")
             
             # Enrichment controls
             col1, col2, col3 = st.columns(3)
@@ -1280,72 +1280,72 @@ def show_natural_search_page():
                         companies_to_enrich = companies
                     
                     if companies_to_enrich:
-                            # Run enrichment with enhanced error handling
-                            try:
-                        enrichment_service = create_enrichment_service()
-                        if enrichment_service:
-                            st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies...")
-                            
-                            # Progress tracking
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            
-                            def progress_callback(completed, total):
-                                progress = completed / total
-                                progress_bar.progress(progress)
-                                status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%})")
-                            
-                            try:
-                                        # Run enrichment with timeout and error handling
-                                        with st.spinner("Running AI enrichment..."):
-                                enriched_df, contacts_df = run_async(
-                                    enrichment_service.enrich_companies_batch(
-                                        companies_to_enrich, 
-                                        progress_callback
-                                    )
-                                )
+                        # Run enrichment with enhanced error handling
+                        try:
+                            enrichment_service = create_enrichment_service()
+                            if enrichment_service:
+                                st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies...")
                                 
-                                # Store results in session state
-                                st.session_state.enriched_results = {
-                                    'companies': enriched_df,
-                                    'contacts': contacts_df,
-                                    'timestamp': datetime.now()
-                                }
+                                # Progress tracking
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
                                 
-                                progress_bar.progress(1.0)
-                                status_text.text("✅ Enrichment completed!")
-                                st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
+                                def progress_callback(completed, total):
+                                    progress = completed / total
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"Enriched {completed}/{total} companies ({progress:.1%})")
                                 
-                                    except Exception as enrichment_error:
-                                        st.error(f"❌ Enrichment failed: {str(enrichment_error)}")
-                                        logger.error(f"Enrichment execution error: {enrichment_error}", exc_info=True)
-                                        
-                                        # Clear progress indicators on error
-                                        progress_bar.empty()
-                                        status_text.empty()
-                                        
-                                        # Show detailed error info in expander
-                                        with st.expander("🐛 Enrichment Error Details", expanded=False):
-                                            st.code(str(enrichment_error))
-                                            if "torch" in str(enrichment_error).lower():
-                                                st.warning("💡 This appears to be a PyTorch-related error. Try restarting the Streamlit app or contact support.")
-                                            if "event loop" in str(enrichment_error).lower():
-                                                st.warning("💡 This appears to be an event loop error. Try refreshing the page.")
-                        else:
-                            st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
+                                try:
+                                    # Run enrichment with timeout and error handling
+                                    with st.spinner("Running AI enrichment..."):
+                                        enriched_df, contacts_df = run_async(
+                                            enrichment_service.enrich_companies_batch(
+                                                companies_to_enrich, 
+                                                progress_callback
+                                            )
+                                        )
+                                    
+                                    # Store results in session state
+                                    st.session_state.enriched_results = {
+                                        'companies': enriched_df,
+                                        'contacts': contacts_df,
+                                        'timestamp': datetime.now()
+                                    }
+                                    
+                                    progress_bar.progress(1.0)
+                                    status_text.text("✅ Enrichment completed!")
+                                    st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
+                                    
+                                except Exception as enrichment_error:
+                                    st.error(f"❌ Enrichment failed: {str(enrichment_error)}")
+                                    logger.error(f"Enrichment execution error: {enrichment_error}", exc_info=True)
+                                    
+                                    # Clear progress indicators on error
+                                    progress_bar.empty()
+                                    status_text.empty()
+                                    
+                                    # Show detailed error info in expander
+                                    with st.expander("🐛 Enrichment Error Details", expanded=False):
+                                        st.code(str(enrichment_error))
+                                        if "torch" in str(enrichment_error).lower():
+                                            st.warning("💡 This appears to be a PyTorch-related error. Try restarting the Streamlit app or contact support.")
+                                        if "event loop" in str(enrichment_error).lower():
+                                            st.warning("💡 This appears to be an event loop error. Try refreshing the page.")
+                            else:
+                                st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
+                                
+                        except Exception as service_error:
+                            st.error(f"❌ Failed to initialize enrichment service: {str(service_error)}")
+                            logger.error(f"Enrichment service initialization error: {service_error}", exc_info=True)
                             
-                            except Exception as service_error:
-                                st.error(f"❌ Failed to initialize enrichment service: {str(service_error)}")
-                                logger.error(f"Enrichment service initialization error: {service_error}", exc_info=True)
-                                
-                                # Show helpful error message based on error type
-                                if "torch" in str(service_error).lower():
-                                    st.warning("💡 PyTorch dependency issue detected. Enrichment features are temporarily unavailable.")
-                                    st.info("You can continue using the search functionality without enrichment.")
-                                elif "import" in str(service_error).lower():
-                                    st.warning("💡 Missing dependencies for enrichment service. Please install required packages.")
-                                else:
-                                    st.warning("💡 Enrichment service temporarily unavailable. You can continue using search functionality.")
+                            # Show helpful error message based on error type
+                            if "torch" in str(service_error).lower():
+                                st.warning("💡 PyTorch dependency issue detected. Enrichment features are temporarily unavailable.")
+                                st.info("You can continue using the search functionality without enrichment.")
+                            elif "import" in str(service_error).lower():
+                                st.warning("💡 Missing dependencies for enrichment service. Please install required packages.")
+                            else:
+                                st.warning("💡 Enrichment service temporarily unavailable. You can continue using search functionality.")
                     else:
                         st.warning("⚠️ No companies selected for enrichment.")
             
