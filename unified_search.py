@@ -556,10 +556,11 @@ SMART ANALYSIS RULES:
 1. Geographic: Extract state names/abbreviations → convert to standard 2-letter codes
 2. Personal lending keywords → lender_type_preference: "unsecured_personal"
 3. Mortgage keywords → lender_type_preference: "mortgage" 
-4. Contact needs → set has_email: true and add "contact_required" flag
+4. Contact needs → ONLY set has_email: true if user EXPLICITLY mentions contact/email requirements
 5. Size indicators ("large", "big", "major") → min_licenses: 5+
 6. Always prefer active licenses unless specified otherwise
 7. For vague "banks" queries → analyze context to determine if they want personal lenders
+8. DO NOT auto-add contact requirements for simple geographic or general searches
 
 STATE NAME RECOGNITION:
 - "California", "Calif", "CA" → "CA"
@@ -1134,27 +1135,25 @@ class UnifiedSearchAPI:
         # Create a copy to avoid modifying the original
         enhanced_filters = SearchFilters(**filters.dict())
         
-        # Smart license type filtering based on lender preference
+        # DO NOT auto-apply license type filters - let them be handled in scoring
+        # This was causing the search to be too restrictive
         if lender_preference == LenderType.UNSECURED_PERSONAL:
-            # Add personal lending licenses if not already specified
-            if not enhanced_filters.license_types:
-                enhanced_filters.license_types = list(self.classifier.UNSECURED_PERSONAL_LICENSES)
+            # Don't filter by license types automatically
+            # Instead, let the scoring system prioritize personal lenders
+            pass
         elif lender_preference == LenderType.MORTGAGE:
-            # User explicitly wants mortgage lenders - allow it but don't promote them
+            # User explicitly wants mortgage lenders
             if not enhanced_filters.license_types:
                 enhanced_filters.license_types = list(self.classifier.MORTGAGE_LICENSES)
         
-        # For geographic searches without lender type specified, intelligently infer
-        # that they probably want personal lenders since that's Finosu's business
-        if enhanced_filters.states and lender_preference == LenderType.UNKNOWN:
-            # Don't auto-filter by license type - let them see all lenders in the area
-            # but score personal lenders higher
-            pass
+        # For geographic searches, don't add additional restrictions
+        # Let the user's original intent drive the search
         
-        # Always prefer companies with contact information in scoring
-        # but don't filter them out completely
+        # DO NOT require contact information as hard filters
+        # Use them for scoring instead - many good companies might not have perfect contact info
+        # The original code was setting has_email and has_website to True automatically
         
-        # Prioritize active licenses
+        # Only prioritize active licenses - this is reasonable
         if enhanced_filters.active_licenses_only is None:
             enhanced_filters.active_licenses_only = True
 
