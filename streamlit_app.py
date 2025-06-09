@@ -559,6 +559,342 @@ def main():
                         st.warning("⚠️ **CLASSIFIED AS: MIXED** - Has both personal loan and mortgage licenses")
                     else:
                         st.info("❓ **CLASSIFIED AS: UNKNOWN** - License types couldn't be definitively categorized")
+
+            # Add enrichment section after license analysis
+            st.markdown("---")
+            st.markdown("### 🚀 Company Enrichment")
+            st.markdown("Enrich selected companies with additional business intelligence using AI-powered data gathering.")
+            
+            if ENRICHMENT_AVAILABLE:
+                # Company selection for enrichment
+                st.markdown("#### Select Companies to Enrich")
+                enrichment_options = []
+                for i, company in enumerate(companies):
+                    company_name = company['company_name']
+                    nmls_id = company['nmls_id']
+                    lender_type = company.get('lender_type', 'unknown')
+                    states_count = len(company.get('states_licensed', []))
+                    
+                    # Create display string with key info
+                    type_emoji = "🎯" if lender_type == 'unsecured_personal' else "❌" if lender_type == 'mortgage' else "⚠️" if lender_type == 'mixed' else "❓"
+                    display_str = f"{type_emoji} {company_name} (NMLS: {nmls_id}) - {states_count} states"
+                    enrichment_options.append((display_str, i))
+                
+                # Multi-select for companies
+                selected_company_indices = st.multiselect(
+                    "Choose companies to enrich (select multiple):",
+                    options=[opt[1] for opt in enrichment_options],
+                    format_func=lambda i: enrichment_options[i][0],
+                    help="Select companies you want to enrich with additional business data and contacts"
+                )
+                
+                # Enrichment controls
+                col1, col2, col3 = st.columns([2, 1, 1])
+                
+                with col1:
+                    if selected_company_indices:
+                        st.info(f"Selected {len(selected_company_indices)} companies for enrichment")
+                
+                with col2:
+                    enrich_button = st.button(
+                        "🚀 Start Enrichment",
+                        disabled=not selected_company_indices or st.session_state.enrichment_running,
+                        use_container_width=True,
+                        type="primary"
+                    )
+                
+                with col3:
+                    if st.session_state.enrichment_running:
+                        if st.button("🛑 Cancel", use_container_width=True):
+                            st.session_state.enrichment_running = False
+                            st.rerun()
+                
+                # Enrichment processing
+                if enrich_button and selected_company_indices:
+                    st.session_state.enrichment_running = True
+                    selected_companies = [companies[i] for i in selected_company_indices]
+                    
+                    # Create enrichment service
+                    enrichment_service = create_enrichment_service()
+                    
+                    if not enrichment_service:
+                        st.error("❌ Enrichment service unavailable. Please check API key configuration.")
+                        st.session_state.enrichment_running = False
+                    else:
+                        # Progress tracking
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        results_container = st.empty()
+                        
+                        def progress_callback(completed, total, current_company):
+                            progress = completed / total
+                            progress_bar.progress(progress)
+                            status_text.text(f"Enriching {current_company}... ({completed}/{total} completed)")
+                        
+                        def cancellation_check():
+                            return not st.session_state.enrichment_running
+                        
+                        try:
+                            with st.spinner("Starting enrichment process..."):
+                                status_text.text("Initializing enrichment service...")
+                                
+                                # Create custom progress callback for Streamlit
+                                def streamlit_progress_callback(completed, total, current_company):
+                                    if not st.session_state.enrichment_running:
+                                        return
+                                    progress = completed / total
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"🔄 Enriching: {current_company} ({completed}/{total})")
+                                
+                                # Run enrichment
+                                enriched_df, contacts_df = run_async(
+                                    enrichment_service.enrich_companies_batch(
+                                        selected_companies,
+                                        progress_callback=streamlit_progress_callback,
+                                        cancellation_check=cancellation_check
+                                    )
+                                )
+                                
+                                # Store results in session state
+                                st.session_state.enriched_results = {
+                                    'companies': enriched_df,
+                                    'contacts': contacts_df,
+                                    'timestamp': datetime.now()
+                                }
+                                
+                                progress_bar.progress(1.0)
+                                status_text.text("✅ Enrichment completed successfully!")
+                                
+                        except Exception as e:
+                            st.error(f"❌ Enrichment failed: {str(e)}")
+                            status_text.text("❌ Enrichment failed")
+                        finally:
+                            st.session_state.enrichment_running = False
+                
+                # Display enrichment results
+                if st.session_state.enriched_results:
+                    st.markdown("---")
+                    st.markdown("#### 📊 Enrichment Results")
+                    
+                    enriched_data = st.session_state.enriched_results
+                    enriched_df = enriched_data['companies']
+                    contacts_df = enriched_data['contacts']
+                    timestamp = enriched_data['timestamp']
+                    
+                    # Results summary
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Companies Enriched", len(enriched_df))
+                    with col2:
+                        qualified_count = len(enriched_df[enriched_df.get('is_qualified', False) == True]) if 'is_qualified' in enriched_df.columns else 0
+                        st.metric("Qualified Leads", qualified_count)
+                    with col3:
+                        total_contacts = len(contacts_df)
+                        st.metric("Contacts Found", total_contacts)
+                    with col4:
+                        decision_makers = len(contacts_df[contacts_df.get('is_decision_maker', False) == True]) if 'is_decision_maker' in contacts_df.columns else 0
+                        st.metric("Decision Makers", decision_makers)
+                    
+                    # Tabs for different views
+                    tab1, tab2, tab3 = st.tabs(["📈 Company Insights", "👥 Contacts & Leads", "📋 Raw Data"])
+                    
+                    with tab1:
+                        st.markdown("**Enriched Company Analysis**")
+                        
+                        if not enriched_df.empty:
+                            # Filter for display
+                            display_columns = [
+                                'company_name', 'nmls_id', 'api_specializes_in_personal_loans',
+                                'api_icp_match', 'is_qualified', 'api_num_employees',
+                                'api_website', 'api_industry', 'enrichment_quality_score'
+                            ]
+                            
+                            # Only show columns that exist
+                            available_columns = [col for col in display_columns if col in enriched_df.columns]
+                            
+                            if available_columns:
+                                display_df = enriched_df[available_columns].copy()
+                                
+                                # Format columns for better display
+                                if 'api_specializes_in_personal_loans' in display_df.columns:
+                                    display_df['Personal Loans'] = display_df['api_specializes_in_personal_loans'].apply(
+                                        lambda x: "✅ Yes" if str(x).lower().startswith('yes') else "❌ No" if str(x).lower().startswith('no') else "❓ Unknown"
+                                    )
+                                    display_df = display_df.drop('api_specializes_in_personal_loans', axis=1)
+                                
+                                if 'is_qualified' in display_df.columns:
+                                    display_df['Qualified'] = display_df['is_qualified'].apply(
+                                        lambda x: "🎯 YES" if x else "❌ NO"
+                                    )
+                                    display_df = display_df.drop('is_qualified', axis=1)
+                                
+                                # Rename columns for display
+                                column_renames = {
+                                    'company_name': 'Company',
+                                    'nmls_id': 'NMLS ID',
+                                    'api_icp_match': 'ICP Match',
+                                    'api_num_employees': 'Employees',
+                                    'api_website': 'Website',
+                                    'api_industry': 'Industry',
+                                    'enrichment_quality_score': 'Quality Score'
+                                }
+                                
+                                display_df = display_df.rename(columns=column_renames)
+                                st.dataframe(display_df, use_container_width=True)
+                            else:
+                                st.warning("No enrichment data available to display")
+                                
+                        # Detailed company view
+                        if not enriched_df.empty:
+                            st.markdown("**Detailed Company Analysis**")
+                            company_names = enriched_df['company_name'].tolist()
+                            selected_enriched_company = st.selectbox(
+                                "Select company for detailed analysis:",
+                                options=["None"] + company_names
+                            )
+                            
+                            if selected_enriched_company != "None":
+                                company_row = enriched_df[enriched_df['company_name'] == selected_enriched_company].iloc[0]
+                                
+                                st.markdown(f"##### {selected_enriched_company}")
+                                
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.markdown("**Business Intelligence:**")
+                                    
+                                    if 'api_website' in company_row and pd.notna(company_row['api_website']):
+                                        st.write(f"🌐 **Website:** {company_row['api_website']}")
+                                    
+                                    if 'api_industry' in company_row and pd.notna(company_row['api_industry']):
+                                        st.write(f"🏢 **Industry:** {company_row['api_industry']}")
+                                    
+                                    if 'api_num_employees' in company_row and pd.notna(company_row['api_num_employees']):
+                                        st.write(f"👥 **Employees:** {company_row['api_num_employees']}")
+                                    
+                                    if 'api_specializes_in_personal_loans' in company_row:
+                                        personal_loans = company_row['api_specializes_in_personal_loans']
+                                        emoji = "✅" if str(personal_loans).lower().startswith('yes') else "❌"
+                                        st.write(f"{emoji} **Personal Loans:** {personal_loans}")
+                                
+                                with col2:
+                                    st.markdown("**Assessment:**")
+                                    
+                                    if 'is_qualified' in company_row:
+                                        qualified = company_row['is_qualified']
+                                        emoji = "🎯" if qualified else "❌"
+                                        st.write(f"{emoji} **Qualified Lead:** {'Yes' if qualified else 'No'}")
+                                    
+                                    if 'api_icp_match' in company_row and pd.notna(company_row['api_icp_match']):
+                                        st.write(f"🎯 **ICP Match:** {company_row['api_icp_match']}")
+                                    
+                                    if 'enrichment_quality_score' in company_row:
+                                        quality = company_row['enrichment_quality_score']
+                                        st.write(f"⭐ **Quality Score:** {quality:.1f}/100")
+                                    
+                                    if 'qualification_reasons' in company_row and pd.notna(company_row['qualification_reasons']):
+                                        st.write(f"📋 **Reasons:** {company_row['qualification_reasons']}")
+                    
+                    with tab2:
+                        st.markdown("**Contact Information & Decision Makers**")
+                        
+                        if not contacts_df.empty:
+                            # Filter and display contacts
+                            contact_display_columns = [
+                                'company_name', 'name', 'title', 'email', 'linkedin',
+                                'is_decision_maker', 'decision_maker_score', 'relevance_score'
+                            ]
+                            
+                            available_contact_columns = [col for col in contact_display_columns if col in contacts_df.columns]
+                            
+                            if available_contact_columns:
+                                contact_display_df = contacts_df[available_contact_columns].copy()
+                                
+                                # Format decision maker column
+                                if 'is_decision_maker' in contact_display_df.columns:
+                                    contact_display_df['Decision Maker'] = contact_display_df['is_decision_maker'].apply(
+                                        lambda x: "🎯 YES" if x else "👤 No"
+                                    )
+                                    contact_display_df = contact_display_df.drop('is_decision_maker', axis=1)
+                                
+                                # Rename columns
+                                contact_renames = {
+                                    'company_name': 'Company',
+                                    'name': 'Name',
+                                    'title': 'Title',
+                                    'email': 'Email',
+                                    'linkedin': 'LinkedIn',
+                                    'decision_maker_score': 'DM Score',
+                                    'relevance_score': 'Relevance'
+                                }
+                                
+                                contact_display_df = contact_display_df.rename(columns=contact_renames)
+                                
+                                # Sort by decision makers first, then relevance
+                                if 'Decision Maker' in contact_display_df.columns:
+                                    contact_display_df = contact_display_df.sort_values(['Decision Maker', 'Relevance'], ascending=[False, False])
+                                
+                                st.dataframe(contact_display_df, use_container_width=True)
+                                
+                                # Export options
+                                st.markdown("**Export Options:**")
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    if st.button("📧 Download Contacts CSV"):
+                                        csv = contacts_df.to_csv(index=False)
+                                        st.download_button(
+                                            label="Download Contacts",
+                                            data=csv,
+                                            file_name=f"enriched_contacts_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv",
+                                            mime="text/csv"
+                                        )
+                                
+                                with col2:
+                                    if st.button("🏢 Download Companies CSV"):
+                                        csv = enriched_df.to_csv(index=False)
+                                        st.download_button(
+                                            label="Download Companies",
+                                            data=csv,
+                                            file_name=f"enriched_companies_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv",
+                                            mime="text/csv"
+                                        )
+                            else:
+                                st.warning("No contact data available")
+                        else:
+                            st.info("No contacts found in enrichment results")
+                    
+                    with tab3:
+                        st.markdown("**Raw Enrichment Data**")
+                        
+                        if not enriched_df.empty:
+                            st.markdown("**Companies Data:**")
+                            st.dataframe(enriched_df, use_container_width=True)
+                        
+                        if not contacts_df.empty:
+                            st.markdown("**Contacts Data:**")
+                            st.dataframe(contacts_df, use_container_width=True)
+                    
+                    # Additional actions
+                    st.markdown("---")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if st.button("🔄 Clear Results"):
+                            st.session_state.enriched_results = None
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("📊 Run New Enrichment"):
+                            # Keep results but allow new enrichment
+                            pass
+                    
+                    with col3:
+                        st.info(f"Enriched on: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            else:
+                st.warning("⚠️ Enrichment service is not available. Please check that the enrichment dependencies are installed and the API key is configured.")
+                st.info("To enable enrichment, ensure the SixtyFour API key is configured in your Streamlit secrets.")
         else:
             st.info("No companies match the current filters.")
 

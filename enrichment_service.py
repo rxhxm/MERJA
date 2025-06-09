@@ -223,10 +223,16 @@ class EnrichmentService:
                     result = await task
                     chunk_results.append(result)
                     
-                    # Update progress
+                    # Update progress with company name
                     completed = len(results) + len(chunk_results)
+                    current_company = result.get('company_name', 'Unknown')
                     if progress_callback:
-                        progress_callback(completed, len(companies))
+                        try:
+                            # Try new signature first (completed, total, company_name)
+                            progress_callback(completed, len(companies), current_company)
+                        except TypeError:
+                            # Fall back to old signature (completed, total)
+                            progress_callback(completed, len(companies))
                 
                 results.extend(chunk_results)
 
@@ -267,7 +273,7 @@ class EnrichmentService:
             if not result['success']:
                 company_record['enrichment_error'] = result.get('error', 'Unknown error')
                 company_record['enrichment_quality_score'] = 0
-                company_record['is_qualified_lead'] = False
+                company_record['is_qualified'] = False
                 enriched_companies.append(company_record)
                 continue
 
@@ -279,23 +285,23 @@ class EnrichmentService:
             # Add enriched fields with enhanced processing
             company_record.update({
                 'enrichment_confidence': confidence_score,
-                'enriched_website': structured_data.get('website', ''),
-                'enriched_company_linkedin': structured_data.get('company_linkedin', ''),
-                'enriched_industry': structured_data.get('industry', ''),
-                'enriched_specializes_in_personal_loans': structured_data.get('specializes_in_personal_loans', ''),
-                'enriched_target_customer_segment': structured_data.get('target_customer_segment', ''),
-                'enriched_lending_volume': structured_data.get('lending_volume', ''),
-                'enriched_technology_focus': structured_data.get('technology_focus', ''),
-                'enriched_icp_match': structured_data.get('icp_match', ''),
-                'enriched_competitive_positioning': structured_data.get('competitive_positioning', ''),
-                'enriched_notes': structured_data.get('notes', '')
+                'api_website': structured_data.get('website', ''),
+                'api_company_linkedin': structured_data.get('company_linkedin', ''),
+                'api_industry': structured_data.get('industry', ''),
+                'api_specializes_in_personal_loans': structured_data.get('specializes_in_personal_loans', ''),
+                'api_target_customer_segment': structured_data.get('target_customer_segment', ''),
+                'api_lending_volume': structured_data.get('lending_volume', ''),
+                'api_technology_focus': structured_data.get('technology_focus', ''),
+                'api_icp_match': structured_data.get('icp_match', ''),
+                'api_competitive_positioning': structured_data.get('competitive_positioning', ''),
+                'api_notes': structured_data.get('notes', '')
             })
 
             # Enhanced employee count parsing
             employee_str = structured_data.get('num_employees', '0')
             employee_count = self._parse_employee_count(employee_str)
-            company_record['enriched_num_employees'] = employee_count
-            company_record['enriched_num_employees_raw'] = employee_str
+            company_record['api_num_employees'] = employee_count
+            company_record['api_num_employees_raw'] = employee_str
 
             # Process contacts/leads
             contacts = structured_data.get('leads', [])
@@ -307,19 +313,19 @@ class EnrichmentService:
                     contact_record = {
                         'company_name': result['company_name'],
                         'nmls_id': result.get('nmls_id', ''),
-                        'contact_name': contact.get('name', ''),
-                        'contact_title': contact.get('title', ''),
-                        'contact_linkedin': contact.get('linkedin', ''),
-                        'contact_email': contact.get('email', ''),
-                        'contact_phone': contact.get('phone', ''),
-                        'is_decision_maker': contact.get('is_decision_maker', '').lower(),
+                        'name': contact.get('name', ''),
+                        'title': contact.get('title', ''),
+                        'linkedin': contact.get('linkedin', ''),
+                        'email': contact.get('email', ''),
+                        'phone': contact.get('phone', ''),
+                        'is_decision_maker_raw': contact.get('is_decision_maker', '').lower(),
                         'relevance_score': contact.get('relevance_score', 0),
                         'enrichment_timestamp': datetime.now().isoformat()
                     }
                     
                     # Enhanced decision maker detection
                     is_dm = self._is_enhanced_decision_maker(contact)
-                    contact_record['is_enhanced_decision_maker'] = is_dm
+                    contact_record['is_decision_maker'] = is_dm
                     contact_record['decision_maker_score'] = self._calculate_decision_maker_score(contact)
                     
                     all_contacts.append(contact_record)
@@ -338,7 +344,7 @@ class EnrichmentService:
 
             company_record.update({
                 'enrichment_quality_score': self._calculate_enrichment_quality(structured_data),
-                'is_qualified_lead': is_qualified,
+                'is_qualified': is_qualified,
                 'qualification_reasons': '; '.join(qualification_reasons),
                 'decision_maker_count': len(decision_makers),
                 'qualified_contact_count': len(qualified_contacts),
