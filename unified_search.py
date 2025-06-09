@@ -516,29 +516,28 @@ BUSINESS GOAL: Find companies that offer UNSECURED PERSONAL LOANS (consumer cred
 
 Query: "{query}"
 
-KEY RULES - KEEP IT SIMPLE:
-1. Geographic searches (e.g., "banks in california", "find banks in texas") → states: ["CA"], query: null
-   - DO NOT set query to "banks" for geographic searches - this is too restrictive
-   - Most financial companies aren't literally named "banks"
-2. Personal lending searches (e.g., "personal loan providers") → license_types: ["Personal", "Consumer Credit"]  
-3. Consumer credit searches (e.g., "consumer credit companies") → license_types: ["Consumer Credit"]
-4. General searches (e.g., "lenders", "financial companies") → no specific filters, let scoring handle it
-5. Contact searches (e.g., "companies with email") → has_email: true
-6. Size searches (e.g., "large lenders") → min_licenses: 10
+KEY RULES - GEOGRAPHIC SEARCHES:
+1. For geographic searches like "banks in california", "lenders in texas", "financial companies in florida":
+   - DO NOT use the generic term (banks/lenders/financial) as a text search
+   - ONLY set the state filter: {{"states": ["CA"], "query": null}}
+   - Most NMLS companies are named "ABC Financial Services", "XYZ Lending" etc., not "ABC Bank"
 
-CRITICAL FOR GEOGRAPHIC SEARCHES:
-- "banks in california" → {{"states": ["CA"], "query": null}}
-- "find banks in texas" → {{"states": ["TX"], "query": null}}
-- "lenders in florida" → {{"states": ["FL"], "query": null}}
-- "financial companies in new york" → {{"states": ["NY"], "query": null}}
+2. For specific company searches like "Wells Fargo", "Chase Bank":
+   - Use the company name as text search: {{"query": "Wells Fargo"}}
+
+3. For license type searches like "personal loan providers", "consumer credit companies":
+   - Use license type filters: {{"license_types": ["Personal", "Consumer Credit"]}}
+
+4. For contact searches like "companies with email":
+   - Use contact filters: {{"has_email": true}}
 
 EXAMPLES:
 - "Banks in California" → {{"states": ["CA"], "query": null}}
-- "Personal loan providers" → {{"license_types": ["Personal", "Consumer Credit"], "query": null}}
-- "Consumer credit companies" → {{"license_types": ["Consumer Credit"], "query": null}}
-- "Financial companies with email" → {{"has_email": true, "query": null}}
-- "Large lenders" → {{"min_licenses": 10, "query": null}}
-- "ABC Financial Services" → {{"query": "ABC Financial Services"}}
+- "Lenders in Texas" → {{"states": ["TX"], "query": null}}
+- "Financial companies in Florida" → {{"states": ["FL"], "query": null}}
+- "Wells Fargo" → {{"query": "Wells Fargo"}}
+- "Personal loan providers" → {{"license_types": ["Personal", "Consumer Credit"]}}
+- "Consumer credit companies in NY" → {{"states": ["NY"], "license_types": ["Consumer Credit"]}}
 
 LICENSE TYPE TERMS (use general terms that will match multiple variations):
 - "Personal" → matches "Personal Loan License", "Personal Loan", etc.
@@ -567,7 +566,7 @@ Return ONLY this JSON structure:
     }}
 }}
 
-CRITICAL: For geographic searches, ALWAYS set query to null. Only set query for specific company name searches.
+CRITICAL: For geographic searches with generic terms (banks, lenders, financial companies), set query to null and only use state filters.
 """
 
     async def _get_search_context(self) -> Dict:
