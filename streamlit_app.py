@@ -44,6 +44,9 @@ if 'enriched_results' not in st.session_state:
 if 'enrichment_running' not in st.session_state:
     st.session_state.enrichment_running = False
 
+# Global cancellation state (thread-safe, no session state dependency)
+_global_enrichment_state = {'running': False, 'lock': threading.Lock()}
+
 # Check enrichment availability
 try:
     from enrichment_service import create_enrichment_service
@@ -607,12 +610,20 @@ def main():
                 with col3:
                     if st.session_state.enrichment_running:
                         if st.button("🛑 Cancel", use_container_width=True):
+                            # Update both session state and global state for cancellation
                             st.session_state.enrichment_running = False
+                            with _global_enrichment_state['lock']:
+                                _global_enrichment_state['running'] = False
                             st.rerun()
                 
                 # Enrichment processing
                 if enrich_button and selected_company_indices:
                     st.session_state.enrichment_running = True
+                    
+                    # Initialize global cancellation state
+                    with _global_enrichment_state['lock']:
+                        _global_enrichment_state['running'] = True
+                    
                     selected_companies = [companies[i] for i in selected_company_indices]
                     
                     # Create enrichment service
@@ -621,14 +632,13 @@ def main():
                     if not enrichment_service:
                         st.error("❌ Enrichment service unavailable. Please check API key configuration.")
                         st.session_state.enrichment_running = False
+                        with _global_enrichment_state['lock']:
+                            _global_enrichment_state['running'] = False
                     else:
                         # Progress tracking
                         progress_bar = st.progress(0)
                         status_text = st.empty()
                         results_container = st.empty()
-                        
-                        # Create thread-safe state for cancellation
-                        enrichment_state = {'running': True, 'lock': threading.Lock()}
                         
                         def progress_callback(completed, total, current_company):
                             progress = completed / total
@@ -636,34 +646,26 @@ def main():
                             status_text.text(f"Enriching {current_company}... ({completed}/{total} completed)")
                         
                         def cancellation_check():
-                            # Thread-safe check of cancellation state
-                            with enrichment_state['lock']:
-                                return not enrichment_state['running']
-                        
-                        def update_cancellation_state():
-                            # Update cancellation state based on session state
-                            with enrichment_state['lock']:
-                                enrichment_state['running'] = st.session_state.enrichment_running
+                            # Use global thread-safe state
+                            with _global_enrichment_state['lock']:
+                                return not _global_enrichment_state['running']
                         
                         try:
                             with st.spinner("Starting enrichment process..."):
                                 status_text.text("Initializing enrichment service...")
                                 
-                                # Create custom progress callback for Streamlit
+                                # Create custom progress callback for Streamlit - NO session state access
                                 def streamlit_progress_callback(completed, total, current_company):
-                                    # Update cancellation state from main thread
-                                    update_cancellation_state()
-                                    
-                                    # Check if cancelled
-                                    with enrichment_state['lock']:
-                                        if not enrichment_state['running']:
+                                    # Check global thread-safe state
+                                    with _global_enrichment_state['lock']:
+                                        if not _global_enrichment_state['running']:
                                             return
                                     
                                     progress = completed / total
                                     progress_bar.progress(progress)
                                     status_text.text(f"🔄 Enriching: {current_company} ({completed}/{total})")
                                 
-                                # Run enrichment
+                                # Run enrichment with global state - no session state access
                                 enriched_df, contacts_df = run_async(
                                     enrichment_service.enrich_companies_batch(
                                         selected_companies,
@@ -686,7 +688,10 @@ def main():
                             st.error(f"❌ Enrichment failed: {str(e)}")
                             status_text.text("❌ Enrichment failed")
                         finally:
+                            # Clear both session state and global state
                             st.session_state.enrichment_running = False
+                            with _global_enrichment_state['lock']:
+                                _global_enrichment_state['running'] = False
                 
                 # Display enrichment results
                 if st.session_state.enriched_results:
