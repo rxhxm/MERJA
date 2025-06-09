@@ -164,7 +164,7 @@ class EnrichmentService:
         # Check for cancellation before starting
         if cancellation_check and cancellation_check():
             raise Exception("Enrichment cancelled before starting")
-
+        
         # Get reference companies for ICP matching (first 3 high-value targets)
         reference_companies = []
         for company in companies[:3]:
@@ -201,16 +201,16 @@ class EnrichmentService:
                 chunk_companies = companies[chunk_start:chunk_end]
 
                 # Create tasks for this chunk
-                tasks = []
+            tasks = []
                 for company in chunk_companies:
-                    task = self.enrich_single_company(
-                        client, semaphore, company, reference_companies
-                    )
-                    tasks.append(task)
-                
+                task = self.enrich_single_company(
+                    client, semaphore, company, reference_companies
+                )
+                tasks.append(task)
+            
                 # Process chunk with progress tracking
                 chunk_results = []
-                for task in asyncio.as_completed(tasks):
+            for task in asyncio.as_completed(tasks):
                     # Check for cancellation before processing each result
                     if cancellation_check and cancellation_check():
                         # Cancel remaining tasks
@@ -220,9 +220,9 @@ class EnrichmentService:
                         raise Exception(
                             "Enrichment cancelled during chunk processing")
 
-                    result = await task
+                result = await task
                     chunk_results.append(result)
-                    
+                
                     # Update progress
                     completed = len(results) + len(chunk_results)
                 if progress_callback:
@@ -236,7 +236,7 @@ class EnrichmentService:
         # Final cancellation check before processing results
         if cancellation_check and cancellation_check():
             raise Exception("Enrichment cancelled before result processing")
-
+        
         # Process results into structured DataFrames
         return self._process_enrichment_results(results, companies)
     

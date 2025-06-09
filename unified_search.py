@@ -481,36 +481,92 @@ class NaturalLanguageProcessor:
             )
 
     def _create_analysis_prompt(self, query: str, context: Dict) -> str:
+        # Get sample license types for better context
+        sample_personal_licenses = [
+            "Consumer Credit License", "Consumer Loan License", "Personal Loan License",
+            "Consumer Finance License", "Installment Loan License", "Small Loan License"
+        ]
+        sample_mortgage_licenses = [
+            "Mortgage Lender License", "Mortgage Broker License", "Residential Mortgage Lender License"
+        ]
+        
+        # Common state name mappings for better recognition
+        state_mappings = {
+            "california": "CA", "calif": "CA", "ca": "CA",
+            "new york": "NY", "ny": "NY", "newyork": "NY",
+            "texas": "TX", "tx": "TX", "florida": "FL", "fl": "FL",
+            "illinois": "IL", "il": "IL", "pennsylvania": "PA", "pa": "PA"
+        }
+        
         return f"""
-Analyze this natural language search query for an NMLS financial database and convert it to structured search filters.
+You are analyzing search queries for Finosu, a personal lending company looking for potential business partners and prospects.
 
-Query: "{query}"
+BUSINESS CONTEXT:
+- Finosu wants to find UNSECURED PERSONAL LOAN LENDERS (TARGET companies)
+- They want to AVOID mortgage-only companies (EXCLUDE)
+- They need contact information (email/phone) for outreach
+- Geographic coverage (states) is important for expansion
+- They want to identify potential partners and competitors in personal lending
 
-Available context:
+Query to analyze: "{query}"
+
+Available data context:
 - States: {context.get('states', [])}
 - Business structures: {context.get('business_structures', [])}
+- Personal loan license types: {sample_personal_licenses}
+- Mortgage license types (to exclude): {sample_mortgage_licenses}
+- State mappings: {state_mappings}
 
-Return a JSON response with this exact structure:
+FINOSU-SPECIFIC QUERY EXAMPLES:
+1. "Find me personal loan service providers" → Target personal lenders, prioritize contact info
+2. "Banks in California and New York" → Geographic filter: ["CA", "NY"], analyze for lender types
+3. "Consumer credit companies" → License-based search for consumer credit licenses
+4. "Installment loan lenders" → Specific license type: "Installment Loan License"
+5. "Financial companies with email addresses" → Contact requirement: has_email: true
+6. "Large lenders with 10+ licenses" → Size-based: min_licenses: 10
+7. "Personal loan companies in texas" → Geographic + license type combination
+8. "Non-bank lenders" → Exclude traditional banks, focus on finance companies
+9. "Alternative lenders" → Personal/consumer credit focus, modern fintech
+10. "Consumer finance companies" → Specific license type targeting
+
+SMART ANALYSIS RULES:
+1. Geographic: Extract state names/abbreviations → convert to standard 2-letter codes
+2. Personal lending keywords → lender_type_preference: "unsecured_personal"
+3. Mortgage keywords → lender_type_preference: "mortgage" 
+4. Contact needs → set has_email: true and add "contact_required" flag
+5. Size indicators ("large", "big", "major") → min_licenses: 5+
+6. Always prefer active licenses unless specified otherwise
+7. For vague "banks" queries → analyze context to determine if they want personal lenders
+
+STATE NAME RECOGNITION:
+- "California", "Calif", "CA" → "CA"
+- "New York", "NY" → "NY" 
+- "Texas", "TX" → "TX"
+- Handle both full names and abbreviations
+
+Return JSON with this structure:
 {{
-    "intent": "find_companies|find_lenders|filter_by_location|filter_by_licenses|filter_by_contact|find_specific_company|analyze_market",
+    "intent": "find_lenders|find_companies|filter_by_location|filter_by_licenses|filter_by_contact|find_specific_company|analyze_market",
     "confidence": 0.0-1.0,
-    "explanation": "Brief explanation of what you understood",
+    "explanation": "What the user is looking for and why this analysis was chosen",
     "lender_type_preference": "unsecured_personal|mortgage|mixed|unknown",
     "semantic_query": "simplified query for semantic search or null",
-    "business_critical_flags": ["flag1", "flag2"],
+    "business_critical_flags": ["high_value_query", "contact_required", "geographic_focus", "license_specific", "competitor_analysis"],
     "filters": {{
         "query": "text search terms or null",
-        "states": ["CA", "TX"] or null,
+        "states": ["CA", "NY"] or null,
         "license_types": ["Consumer Credit License"] or null,
         "business_structures": ["Corporation"] or null,
         "has_email": true/false/null,
         "has_website": true/false/null,
+        "has_federal_registration": true/false/null,
         "min_licenses": number or null,
-        "max_licenses": number or null
+        "max_licenses": number or null,
+        "active_licenses_only": true
     }}
 }}
 
-Business context: Prioritize unsecured personal lenders with contact information. Flag mortgage-only queries as non-target.
+CRITICAL: Always convert state names to 2-letter codes. Always prioritize personal lending for Finosu's business needs.
 """
 
     async def _get_search_context(self) -> Dict:
@@ -642,22 +698,23 @@ class SearchService:
                 c.nmls_id,
                 COUNT(l.license_id) as total_licenses,
                 COUNT(CASE WHEN l.active = true THEN 1 END) as active_licenses,
-                ARRAY_AGG(DISTINCT l.license_type) FILTER (WHERE l.license_type IS NOT NULL) as license_types,
-                ARRAY_AGG(DISTINCT SUBSTRING(a.state FROM 1 FOR 2)) FILTER (WHERE a.state IS NOT NULL) as states_licensed
+                ARRAY_AGG(DISTINCT l.license_type) FILTER (WHERE l.license_type IS NOT NULL AND l.active = true) as license_types,
+                ARRAY_AGG(DISTINCT COALESCE(SUBSTRING(a.state FROM 1 FOR 2), SUBSTRING(l.regulator FROM '([A-Z]{2})'), 'XX')) 
+                    FILTER (WHERE COALESCE(a.state, l.regulator) IS NOT NULL) as states_licensed
             FROM companies c
             LEFT JOIN licenses l ON c.id = l.company_id
             LEFT JOIN addresses a ON c.id = a.company_id
             GROUP BY c.id, c.nmls_id
         )
-        SELECT
+        SELECT DISTINCT
             c.nmls_id,
             c.company_name,
             c.business_structure,
             c.phone,
             c.email,
             c.website,
-            a.full_address as street_address,
-            am.full_address as mailing_address,
+            (SELECT full_address FROM addresses WHERE company_id = c.id AND address_type = 'street' LIMIT 1) as street_address,
+            (SELECT full_address FROM addresses WHERE company_id = c.id AND address_type = 'mailing' LIMIT 1) as mailing_address,
             c.federal_regulator,
             c.created_at,
             COALESCE(cs.total_licenses, 0) as total_licenses,
@@ -666,42 +723,76 @@ class SearchService:
             COALESCE(cs.states_licensed, ARRAY[]::text[]) as states_licensed
         FROM companies c
         LEFT JOIN company_stats cs ON c.id = cs.company_id
-        LEFT JOIN addresses a ON c.id = a.company_id AND a.address_type = 'street'
-        LEFT JOIN addresses am ON c.id = am.company_id AND am.address_type = 'mailing'
+        LEFT JOIN addresses a ON c.id = a.company_id
+        LEFT JOIN licenses l ON c.id = l.company_id
         """
 
         conditions = []
         params = []
         param_count = 0
 
-        # Add WHERE conditions based on filters
+        # Text search across company name, addresses, and trade names
         if filters.query:
             param_count += 1
             conditions.append(f"""
                 (c.company_name ILIKE ${param_count}
-                 OR a.full_address ILIKE ${param_count}
-                 OR am.full_address ILIKE ${param_count})
+                 OR EXISTS (SELECT 1 FROM addresses addr WHERE addr.company_id = c.id AND addr.full_address ILIKE ${param_count})
+                 OR EXISTS (SELECT 1 FROM unnest(c.trade_names) AS trade_name WHERE trade_name ILIKE ${param_count}))
             """)
             params.append(f"%{filters.query}%")
 
+        # State filtering - improved to handle multiple sources
         if filters.states:
             param_count += 1
-            conditions.append(
-                f"SUBSTRING(a.state FROM 1 FOR 2) = ANY(${param_count})")
-            params.append(filters.states)
+            state_condition = f"""
+                (EXISTS (SELECT 1 FROM addresses addr WHERE addr.company_id = c.id 
+                         AND UPPER(SUBSTRING(addr.state FROM 1 FOR 2)) = ANY(${param_count}))
+                 OR EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
+                           AND lic.active = true 
+                           AND UPPER(SUBSTRING(lic.regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
+            """
+            conditions.append(state_condition)
+            # Convert states to uppercase for consistency
+            params.append([state.upper() for state in filters.states])
 
+        # License type filtering
+        if filters.license_types:
+            param_count += 1
+            conditions.append(f"""
+                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
+                        AND lic.active = true 
+                        AND lic.license_type = ANY(${param_count}))
+            """)
+            params.append(filters.license_types)
+
+        # Business structure filtering
+        if filters.business_structures:
+            param_count += 1
+            conditions.append(f"c.business_structure = ANY(${param_count})")
+            params.append(filters.business_structures)
+
+        # Email filtering
         if filters.has_email is not None:
             if filters.has_email:
-                conditions.append("c.email IS NOT NULL AND c.email != ''")
+                conditions.append("c.email IS NOT NULL AND c.email != '' AND c.email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'")
             else:
-                conditions.append("(c.email IS NULL OR c.email = '')")
+                conditions.append("(c.email IS NULL OR c.email = '' OR c.email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')")
 
+        # Website filtering
         if filters.has_website is not None:
             if filters.has_website:
                 conditions.append("c.website IS NOT NULL AND c.website != ''")
             else:
                 conditions.append("(c.website IS NULL OR c.website = '')")
 
+        # Federal registration filtering
+        if filters.has_federal_registration is not None:
+            if filters.has_federal_registration:
+                conditions.append("c.federal_regulator IS NOT NULL AND c.federal_regulator != ''")
+            else:
+                conditions.append("(c.federal_regulator IS NULL OR c.federal_regulator = '')")
+
+        # License count filtering
         if filters.min_licenses is not None:
             param_count += 1
             conditions.append(f"cs.total_licenses >= ${param_count}")
@@ -711,6 +802,27 @@ class SearchService:
             param_count += 1
             conditions.append(f"cs.total_licenses <= ${param_count}")
             params.append(filters.max_licenses)
+
+        # Active licenses filter
+        if filters.active_licenses_only:
+            conditions.append("cs.active_licenses > 0")
+
+        # Date filters for license issuance
+        if filters.licensed_after:
+            param_count += 1
+            conditions.append(f"""
+                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
+                        AND lic.original_issue_date >= ${param_count})
+            """)
+            params.append(filters.licensed_after)
+
+        if filters.licensed_before:
+            param_count += 1
+            conditions.append(f"""
+                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
+                        AND lic.original_issue_date <= ${param_count})
+            """)
+            params.append(filters.licensed_before)
 
         # Add WHERE clause if conditions exist
         if conditions:
@@ -743,8 +855,7 @@ class SearchService:
         base_query = """
         SELECT COUNT(DISTINCT c.id)
         FROM companies c
-        LEFT JOIN addresses a ON c.id = a.company_id AND a.address_type = 'street'
-        LEFT JOIN addresses am ON c.id = am.company_id AND am.address_type = 'mailing'
+        LEFT JOIN addresses a ON c.id = a.company_id
         LEFT JOIN licenses l ON c.id = l.company_id
         """
 
@@ -752,33 +863,102 @@ class SearchService:
         params = []
         param_count = 0
 
-        # Same conditions as search query
+        # Text search across company name, addresses, and trade names
         if filters.query:
             param_count += 1
             conditions.append(f"""
                 (c.company_name ILIKE ${param_count}
-                 OR a.full_address ILIKE ${param_count}
-                 OR am.full_address ILIKE ${param_count})
+                 OR EXISTS (SELECT 1 FROM addresses addr WHERE addr.company_id = c.id AND addr.full_address ILIKE ${param_count})
+                 OR EXISTS (SELECT 1 FROM unnest(c.trade_names) AS trade_name WHERE trade_name ILIKE ${param_count}))
             """)
             params.append(f"%{filters.query}%")
 
+        # State filtering - improved to handle multiple sources
         if filters.states:
             param_count += 1
-            conditions.append(
-                f"SUBSTRING(a.state FROM 1 FOR 2) = ANY(${param_count})")
-            params.append(filters.states)
+            state_condition = f"""
+                (EXISTS (SELECT 1 FROM addresses addr WHERE addr.company_id = c.id 
+                         AND UPPER(SUBSTRING(addr.state FROM 1 FOR 2)) = ANY(${param_count}))
+                 OR EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
+                           AND lic.active = true 
+                           AND UPPER(SUBSTRING(lic.regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
+            """
+            conditions.append(state_condition)
+            # Convert states to uppercase for consistency
+            params.append([state.upper() for state in filters.states])
 
+        # License type filtering
+        if filters.license_types:
+            param_count += 1
+            conditions.append(f"""
+                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
+                        AND lic.active = true 
+                        AND lic.license_type = ANY(${param_count}))
+            """)
+            params.append(filters.license_types)
+
+        # Business structure filtering
+        if filters.business_structures:
+            param_count += 1
+            conditions.append(f"c.business_structure = ANY(${param_count})")
+            params.append(filters.business_structures)
+
+        # Email filtering
         if filters.has_email is not None:
             if filters.has_email:
-                conditions.append("c.email IS NOT NULL AND c.email != ''")
+                conditions.append("c.email IS NOT NULL AND c.email != '' AND c.email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'")
             else:
-                conditions.append("(c.email IS NULL OR c.email = '')")
+                conditions.append("(c.email IS NULL OR c.email = '' OR c.email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')")
 
+        # Website filtering
         if filters.has_website is not None:
             if filters.has_website:
                 conditions.append("c.website IS NOT NULL AND c.website != ''")
             else:
                 conditions.append("(c.website IS NULL OR c.website = '')")
+
+        # Federal registration filtering
+        if filters.has_federal_registration is not None:
+            if filters.has_federal_registration:
+                conditions.append("c.federal_regulator IS NOT NULL AND c.federal_regulator != ''")
+            else:
+                conditions.append("(c.federal_regulator IS NULL OR c.federal_regulator = '')")
+
+        # License count filtering
+        if filters.min_licenses is not None:
+            param_count += 1
+            conditions.append(f"""
+                (SELECT COUNT(*) FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true) >= ${param_count}
+            """)
+            params.append(filters.min_licenses)
+
+        if filters.max_licenses is not None:
+            param_count += 1
+            conditions.append(f"""
+                (SELECT COUNT(*) FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true) <= ${param_count}
+            """)
+            params.append(filters.max_licenses)
+
+        # Active licenses filter
+        if filters.active_licenses_only:
+            conditions.append("EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true)")
+
+        # Date filters for license issuance
+        if filters.licensed_after:
+            param_count += 1
+            conditions.append(f"""
+                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
+                        AND lic.original_issue_date >= ${param_count})
+            """)
+            params.append(filters.licensed_after)
+
+        if filters.licensed_before:
+            param_count += 1
+            conditions.append(f"""
+                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
+                        AND lic.original_issue_date <= ${param_count})
+            """)
+            params.append(filters.licensed_before)
 
         if conditions:
             base_query += " WHERE " + " AND ".join(conditions)
@@ -914,19 +1094,36 @@ class UnifiedSearchAPI:
             self,
             filters: SearchFilters,
             lender_preference: LenderType) -> SearchFilters:
-        """Apply Fido's business requirements to search filters"""
+        """Apply Finosu's business requirements to search filters"""
 
-        # Don't automatically filter by email - let users see all results
-        # and then they can filter by contact info if needed
-        # if filters.has_email is None:
-        #     filters.has_email = True
-
-        # Focus on unsecured personal lenders if no specific preference
-        if lender_preference == LenderType.MORTGAGE:
-            # Flag mortgage-only searches but don't block them
+        # Create a copy to avoid modifying the original
+        enhanced_filters = SearchFilters(**filters.dict())
+        
+        # Smart license type filtering based on lender preference
+        if lender_preference == LenderType.UNSECURED_PERSONAL:
+            # Add personal lending licenses if not already specified
+            if not enhanced_filters.license_types:
+                enhanced_filters.license_types = list(self.classifier.UNSECURED_PERSONAL_LICENSES)
+        elif lender_preference == LenderType.MORTGAGE:
+            # User explicitly wants mortgage lenders - allow it but don't promote them
+            if not enhanced_filters.license_types:
+                enhanced_filters.license_types = list(self.classifier.MORTGAGE_LICENSES)
+        
+        # For geographic searches without lender type specified, intelligently infer
+        # that they probably want personal lenders since that's Finosu's business
+        if enhanced_filters.states and lender_preference == LenderType.UNKNOWN:
+            # Don't auto-filter by license type - let them see all lenders in the area
+            # but score personal lenders higher
             pass
+        
+        # Always prefer companies with contact information in scoring
+        # but don't filter them out completely
+        
+        # Prioritize active licenses
+        if enhanced_filters.active_licenses_only is None:
+            enhanced_filters.active_licenses_only = True
 
-        return filters
+        return enhanced_filters
 
     def _calculate_business_score(
             self,

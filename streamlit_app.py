@@ -47,8 +47,8 @@ async def get_or_create_pool():
     """Creates and returns the asyncpg connection pool"""
     global _db_pool
     if _db_pool is None:
-        try:
-            import asyncpg
+try:
+    import asyncpg
             DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL'))
             if not DATABASE_URL:
                 logger.error("DATABASE_URL not found")
@@ -114,8 +114,8 @@ def run_async(coro):
             # Run the coroutine in the fresh loop
             result = loop.run_until_complete(coro)
             return result
-        except Exception as e:
-            logger.error(f"Async execution error: {e}")
+    except Exception as e:
+        logger.error(f"Async execution error: {e}")
             raise e
         finally:
             # Ensure complete cleanup
@@ -329,27 +329,27 @@ def format_license_summary(company: Dict[str, Any]) -> str:
         if not nmls_id:
             return "License details unavailable"
         
-        # Use existing data as fallback
-        license_types = company.get('license_types', []) or []
-        states_licensed = company.get('states_licensed', []) or []
-        
-        if not license_types:
-            return "License details unavailable"
-        
-        target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
-        exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
-        other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
-        
-        summary_parts = []
-        states_str = ", ".join(sorted(states_licensed)) if states_licensed else "Unknown"
-        
-        if target_licenses:
-            summary_parts.append(f"🎯 {len(target_licenses)} personal ({states_str})")
-        
-        if exclude_licenses:
-            summary_parts.append(f"❌ {len(exclude_licenses)} mortgage ({states_str})")
-        
-        if other_licenses:
+            # Use existing data as fallback
+            license_types = company.get('license_types', []) or []
+            states_licensed = company.get('states_licensed', []) or []
+            
+            if not license_types:
+                return "License details unavailable"
+            
+            target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+            exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
+            other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
+            
+            summary_parts = []
+            states_str = ", ".join(sorted(states_licensed)) if states_licensed else "Unknown"
+            
+            if target_licenses:
+                summary_parts.append(f"🎯 {len(target_licenses)} personal ({states_str})")
+            
+            if exclude_licenses:
+                summary_parts.append(f"❌ {len(exclude_licenses)} mortgage ({states_str})")
+            
+            if other_licenses:
             summary_parts.append(f"ℹ️ {len(other_licenses)} other ({states_str})")
         
         return " | ".join(summary_parts) if summary_parts else "License details unavailable"
@@ -364,6 +364,48 @@ def main():
     st.markdown(
         '<h1 class="main-header">NMLS Search</h1>',
         unsafe_allow_html=True)
+    
+    # Enhanced search examples for Finosu
+    st.header("🎯 Finosu Quick Search Examples")
+    st.markdown("""
+    **For Personal Lending Prospecting**  
+    Try these example searches that are optimized for finding personal loan lenders:
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🏦 Personal Loan Providers", use_container_width=True):
+            st.session_state['search_query'] = "Find me personal loan service providers"
+            
+        if st.button("🌎 Banks in California", use_container_width=True):
+            st.session_state['search_query'] = "Banks in California"
+            
+        if st.button("💳 Consumer Credit Companies", use_container_width=True):
+            st.session_state['search_query'] = "Consumer credit companies"
+            
+        if st.button("📧 Companies with Contact Info", use_container_width=True):
+            st.session_state['search_query'] = "Financial companies with email addresses"
+    
+    with col2:
+        if st.button("🏢 Large Lenders (10+ Licenses)", use_container_width=True):
+            st.session_state['search_query'] = "Large lenders with 10+ licenses"
+            
+        if st.button("🏛️ Banks in CA and NY", use_container_width=True):
+            st.session_state['search_query'] = "Banks in California and New York"
+            
+        if st.button("💰 Installment Loan Companies", use_container_width=True):
+            st.session_state['search_query'] = "Installment loan companies"
+            
+        if st.button("🏠 Mortgage Companies (Non-Target)", use_container_width=True):
+            st.session_state['search_query'] = "Mortgage companies"
+
+    # Main search interface
+    st.header("🔍 Enhanced AI Search")
+    
+    # Initialize session state for search query
+    if 'search_query' not in st.session_state:
+        st.session_state['search_query'] = ""
     
     st.header("NMLS Lender Search")
     st.subheader("🎯 Search & Filter")
@@ -455,7 +497,7 @@ def main():
         
         # Results table
         if companies:
-            st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+        st.subheader(f"📋 Lenders Found ({len(companies)} results)")
         
             # Create display data
             display_data = []
@@ -552,7 +594,7 @@ def main():
                                 states_for_license = license_state_breakdown.get(license_type, [])
                                 state_info = f" ({', '.join(states_for_license)})" if states_for_license else ""
                                 st.write(f"{i}. **{license_type}**{state_info}")
-                        else:
+                                else:
                             st.write("No other licenses found")
                     
                     # Overall classification explanation
@@ -579,7 +621,7 @@ def main():
                 # Enrichment controls
                 col1, col2 = st.columns([2, 1])
             
-                with col1:
+            with col1:
                     st.markdown("**🎯 Select Companies to Enrich:**")
                     
                     # Quick selection options
@@ -640,12 +682,12 @@ def main():
                                 else:
                                     st.markdown(f"{type_emoji} {company['company_name']} (NMLS: {company['nmls_id']}){states_str}")
             
-                with col2:
-                    st.markdown("**⚙️ Enrichment Options:**")
-                    include_contacts = st.checkbox("Find key contacts", value=True, help="Find decision makers and key contacts")
-                    icp_analysis = st.checkbox("ICP matching", value=True, help="Analyze fit with ideal customer profile")
+            with col2:
+                st.markdown("**⚙️ Enrichment Options:**")
+                include_contacts = st.checkbox("Find key contacts", value=True, help="Find decision makers and key contacts")
+                icp_analysis = st.checkbox("ICP matching", value=True, help="Analyze fit with ideal customer profile")
             
-                    st.markdown("**🚀 Start Enrichment:**")
+                st.markdown("**🚀 Start Enrichment:**")
                     
                     # Count selected companies
                     selected_companies = []
@@ -663,53 +705,53 @@ def main():
                         if companies_to_enrich:
                             st.info(f"🔍 Debug: First company example: {companies_to_enrich[0].get('company_name', 'Unknown')} (Type: {companies_to_enrich[0].get('lender_type', 'Unknown')})")
                     
-                        if companies_to_enrich:
-                            # Run enrichment
-                            enrichment_service = create_enrichment_service()
-                            if enrichment_service:
-                                st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies...")
-                                
+                    if companies_to_enrich:
+                        # Run enrichment
+                        enrichment_service = create_enrichment_service()
+                        if enrichment_service:
+                            st.info(f"🧠 Starting enrichment for {len(companies_to_enrich)} companies...")
+                            
                                 # Progress tracking - simpler approach
-                                progress_bar = st.progress(0)
-                                status_text = st.empty()
-                                
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
                                 # Simple progress tracking without callback conflicts
                                 status_text.text("🔄 Starting enrichment process...")
                                 progress_bar.progress(0.1)
                                 
                                 try:
                                     # Run enrichment without callback to avoid thread issues
-                                    enriched_df, contacts_df = run_async(
-                                        enrichment_service.enrich_companies_batch(
-                                            companies_to_enrich, 
+                                enriched_df, contacts_df = run_async(
+                                    enrichment_service.enrich_companies_batch(
+                                        companies_to_enrich, 
                                             progress_callback=None  # Remove problematic callback
-                                        )
                                     )
-                                    
-                                    # Store results in session state
-                                    st.session_state.enriched_results = {
-                                        'companies': enriched_df,
-                                        'contacts': contacts_df,
-                                        'timestamp': datetime.now()
-                                    }
-                                    
-                                    progress_bar.progress(1.0)
-                                    status_text.text("✅ Enrichment completed!")
-                                    st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
+                                )
+                                
+                                # Store results in session state
+                                st.session_state.enriched_results = {
+                                    'companies': enriched_df,
+                                    'contacts': contacts_df,
+                                    'timestamp': datetime.now()
+                                }
+                                
+                                progress_bar.progress(1.0)
+                                status_text.text("✅ Enrichment completed!")
+                                st.success(f"Successfully enriched {len(enriched_df)} companies and found {len(contacts_df)} contacts!")
                                     
                                     # Clear selections after successful enrichment
                                     for i in range(len(companies)):
                                         st.session_state[f"enrich_company_{i}"] = False
-                                        
-                                except Exception as e:
-                                    st.error(f"❌ Enrichment failed: {str(e)}")
-                                    logger.error(f"Enrichment error: {e}")
+                                
+                            except Exception as e:
+                                st.error(f"❌ Enrichment failed: {str(e)}")
+                                logger.error(f"Enrichment error: {e}")
                                     # Show more detailed error info for debugging
                                     st.error(f"Error details: {type(e).__name__}: {str(e)}")
-                            else:
-                                st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
                         else:
-                            st.warning("⚠️ No companies selected for enrichment.")
+                            st.error("❌ SixtyFour API key not configured. Please set SIXTYFOUR_API_KEY environment variable.")
+                    else:
+                        st.warning("⚠️ No companies selected for enrichment.")
                             # Show debug info about what companies we have
                             lender_types = [c.get('lender_type', 'unknown') for c in companies]
                             lender_type_counts = {lt: lender_types.count(lt) for lt in set(lender_types)}
@@ -872,12 +914,12 @@ def main():
                         
                         # Export contacts
                         csv = contacts_df.to_csv(index=False).encode('utf-8')
-                        st.download_button(
+                            st.download_button(
                             "📥 Export Contacts CSV",
-                            csv,
-                            f"contacts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            "text/csv"
-                        )
+                                csv,
+                                f"contacts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                "text/csv"
+                            )
                 else:
                     st.info("No enriched data available yet. Use the enrichment feature above to get started.")
         
