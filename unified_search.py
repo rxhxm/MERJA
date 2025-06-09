@@ -61,13 +61,36 @@ if STREAMLIT_AVAILABLE:
                 'ANTHROPIC_API_KEY', 'your-api-key-here'))
         DATABASE_URL = st.secrets.get(
             'DATABASE_URL', os.getenv('DATABASE_URL'))
-    except Exception:
+        
+        # Debug logging for Streamlit deployment
+        if DATABASE_URL:
+            logger.info(f"✅ DATABASE_URL loaded from secrets (length: {len(DATABASE_URL)})")
+        else:
+            logger.error("❌ DATABASE_URL not found in secrets or environment")
+            # Try alternative secret names that might be used
+            alt_names = ['DATABASE_URL', 'POSTGRES_URL', 'POSTGRESQL_URL', 'DB_URL']
+            for name in alt_names:
+                value = st.secrets.get(name) or os.getenv(name)
+                if value:
+                    DATABASE_URL = value
+                    logger.info(f"✅ Found database URL using alternative name: {name}")
+                    break
+                    
+    except Exception as e:
         # Fallback to environment variables if secrets not available
+        logger.warning(f"Secrets access failed: {e}, falling back to environment variables")
         ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
         DATABASE_URL = os.getenv('DATABASE_URL')
 else:
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
     DATABASE_URL = os.getenv('DATABASE_URL')
+
+# Final check and logging
+if not DATABASE_URL:
+    logger.error("❌ CRITICAL: DATABASE_URL not configured anywhere!")
+    DATABASE_URL = None  # Make it explicit
+else:
+    logger.info(f"✅ DATABASE_URL configured (starts with: {DATABASE_URL[:20]}...)")
 
 claude_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -644,9 +667,12 @@ class DatabaseManager:
 
     async def connect(self):
         if not DATABASE_URL:
-            raise ValueError("DATABASE_URL not configured")
+            error_msg = "DATABASE_URL not configured. Please check Streamlit secrets or environment variables."
+            logger.error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
 
         try:
+            logger.info(f"🔌 Attempting to connect to database...")
             self.pool = await asyncpg.create_pool(
                 DATABASE_URL,
                 min_size=2,
@@ -654,10 +680,19 @@ class DatabaseManager:
                 statement_cache_size=0,
                 setup=self._setup_connection
             )
-            logger.info("✅ Database connection pool created")
+            logger.info("✅ Database connection pool created successfully")
         except Exception as e:
-            logger.error(f"❌ Failed to create database pool: {e}")
-            raise
+            error_msg = f"Failed to create database pool: {e}"
+            logger.error(f"❌ {error_msg}")
+            logger.error(f"Database URL format: {DATABASE_URL[:30]}...")
+            # Provide more specific error guidance
+            if "password authentication failed" in str(e).lower():
+                error_msg += " - Check database credentials"
+            elif "could not connect to server" in str(e).lower():
+                error_msg += " - Check database host and port"
+            elif "database" in str(e).lower() and "does not exist" in str(e).lower():
+                error_msg += " - Check database name"
+            raise ConnectionError(error_msg)
 
     async def _setup_connection(self, conn):
         await conn.execute("DEALLOCATE ALL;")
@@ -1294,9 +1329,35 @@ async def run_unified_search(
         
         return result
         
+    except (ValueError, ConnectionError) as db_error:
+        # Database configuration or connection issues
+        logger.error(f"Database error in run_unified_search: {db_error}")
+        return {
+            "companies": [],
+            "total_count": 0,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": 0,
+            "filters_applied": filters.dict(exclude_unset=True) if filters else {},
+            "search_time_ms": 0,
+            "query_analysis": None,
+            "business_intelligence": None,
+            "error": f"Database connection failed: {str(db_error)}"
+        }
     except Exception as e:
         logger.error(f"Search error in run_unified_search: {e}")
-        raise e
+        return {
+            "companies": [],
+            "total_count": 0,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": 0,
+            "filters_applied": filters.dict(exclude_unset=True) if filters else {},
+            "search_time_ms": 0,
+            "query_analysis": None,
+            "business_intelligence": None,
+            "error": f"Search failed: {str(e)}"
+        }
     finally:
         # Always clean up connections
         try:

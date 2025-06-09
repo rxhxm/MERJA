@@ -230,13 +230,20 @@ def main():
         with st.spinner("🔍 Searching database..."):
             try:
                 result = run_async(search_companies(query))
-                if result and result['companies']:
+                if result and 'error' in result:
+                    st.error(f"❌ Search failed: {result['error']}")
+                    st.info("💡 This may be a database connection issue. Please try again or contact support.")
+                elif result and result['companies']:
                     st.session_state.search_results = result
                     st.success(f"✅ Found {len(result['companies'])} results!")
                 else:
                     st.error("❌ No results found. Try a different search.")
+                    # Show debug info if no results
+                    if result:
+                        st.info(f"Debug: Total count: {result.get('total_count', 0)}, Filters: {result.get('filters_applied', {})}")
             except Exception as e:
                 st.error(f"❌ Search failed: {str(e)}")
+                st.info("💡 This may be a database connection issue. Please try again or contact support.")
     
     # Display results
     if st.session_state.search_results:
