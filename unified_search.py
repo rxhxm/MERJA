@@ -698,7 +698,7 @@ class SearchService:
             (SELECT COUNT(*) FROM licenses WHERE company_id = c.id) as total_licenses,
             (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) as active_licenses,
             (SELECT ARRAY_AGG(DISTINCT license_type) FROM licenses WHERE company_id = c.id AND active = true AND license_type IS NOT NULL) as license_types,
-            (SELECT ARRAY_AGG(DISTINCT COALESCE(SUBSTRING(addr.state FROM 1 FOR 2), SUBSTRING(lic.regulator FROM '([A-Z]{2})'), 'XX')) 
+            (SELECT ARRAY_AGG(DISTINCT COALESCE(SUBSTRING(combined.state FROM 1 FOR 2), 'XX')) 
              FROM (
                  SELECT state FROM addresses WHERE company_id = c.id AND state IS NOT NULL
                  UNION 
@@ -715,23 +715,29 @@ class SearchService:
         # Text search across company name, addresses, and trade names
         if filters.query:
             param_count += 1
+            param_count += 1
+            param_count += 1
             conditions.append(f"""
-                (c.company_name ILIKE ${param_count}
-                 OR EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id AND full_address ILIKE ${param_count})
+                (c.company_name ILIKE ${param_count-2}
+                 OR EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id AND full_address ILIKE ${param_count-1})
                  OR EXISTS (SELECT 1 FROM unnest(c.trade_names) AS trade_name WHERE trade_name ILIKE ${param_count}))
             """)
+            params.append(f"%{filters.query}%")
+            params.append(f"%{filters.query}%")
             params.append(f"%{filters.query}%")
 
         # State filtering - check both addresses and license regulators
         if filters.states:
             param_count += 1
+            param_count += 1
             conditions.append(f"""
                 (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
-                         AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count}))
+                         AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count-1}))
                  OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
                            AND active = true 
                            AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
             """)
+            params.append([state.upper() for state in filters.states])
             params.append([state.upper() for state in filters.states])
 
         # License type filtering
@@ -848,23 +854,29 @@ class SearchService:
         # Text search across company name, addresses, and trade names
         if filters.query:
             param_count += 1
+            param_count += 1
+            param_count += 1
             conditions.append(f"""
-                (c.company_name ILIKE ${param_count}
-                 OR EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id AND full_address ILIKE ${param_count})
+                (c.company_name ILIKE ${param_count-2}
+                 OR EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id AND full_address ILIKE ${param_count-1})
                  OR EXISTS (SELECT 1 FROM unnest(c.trade_names) AS trade_name WHERE trade_name ILIKE ${param_count}))
             """)
+            params.append(f"%{filters.query}%")
+            params.append(f"%{filters.query}%")
             params.append(f"%{filters.query}%")
 
         # State filtering - check both addresses and license regulators
         if filters.states:
             param_count += 1
+            param_count += 1
             conditions.append(f"""
                 (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
-                         AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count}))
+                         AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count-1}))
                  OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
                            AND active = true 
                            AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
             """)
+            params.append([state.upper() for state in filters.states])
             params.append([state.upper() for state in filters.states])
 
         # License type filtering
