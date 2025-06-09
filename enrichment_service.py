@@ -19,37 +19,37 @@ logger = logging.getLogger(__name__)
 
 class EnrichmentService:
     """Service for enriching company data using SixtyFour API"""
-
+    
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = "https://api.sixtyfour.ai"
         self.enrich_endpoint = "/enrich-company"
         self.max_concurrent = 10  # Conservative for Streamlit
         self.timeout = 300.0  # 5 minutes per API call for web app
-
+        
     async def enrich_single_company(
-        self,
-        client: httpx.AsyncClient,
+        self, 
+        client: httpx.AsyncClient, 
         semaphore: asyncio.Semaphore,
         company_data: Dict[str, Any],
         reference_companies: List[str] = None
     ) -> Dict[str, Any]:
         """
         Enrich a single company using the SixtyFour API
-
+        
         Args:
             client: HTTP client
             semaphore: Concurrency control
             company_data: Company data from NMLS database
             reference_companies: Reference companies for ICP matching
-
+            
         Returns:
             Enrichment result with success status and data
         """
         async with semaphore:
             company_name = company_data.get('company_name', '')
             nmls_id = company_data.get('nmls_id', '')
-
+            
             # Create description from available NMLS data
             description_parts = []
             if company_data.get('business_structure'):
@@ -63,14 +63,14 @@ class EnrichmentService:
             if company_data.get('states_licensed'):
                 states = company_data['states_licensed'][:5]  # First 5 states
                 description_parts.append(f"Licensed in: {', '.join(states)}")
-
+            
             description = "; ".join(
                 description_parts) if description_parts else f"Financial services company with NMLS ID {nmls_id}"
-
+            
             # Define enrichment structure for personal lending focus
             company_struct = {
                 "company_linkedin": "LinkedIn profile URL of the company",
-                "website": "Official website of the company",
+                "website": "Official website of the company", 
                 "num_employees": "Estimated number of employees",
                 "industry": "Primary industry of the company",
                 "specializes_in_personal_loans": "Does this company specialize in unsecured personal loans or consumer credit? Yes/No",
@@ -80,16 +80,16 @@ class EnrichmentService:
                 "icp_match": f"Is this company a good target for Fido's personal lending services? Consider: unsecured personal lending focus, technology adoption, growth potential. Yes/No and explain why.",
                 "competitive_positioning": "How does this company position itself in the personal lending market?",
                 "notes": "Key insights about this company's business model and relevance for personal lending partnerships."}
-
+            
             people_struct = {
                 "name": "Full name of the person",
-                "title": "Job title at the company",
+                "title": "Job title at the company", 
                 "linkedin": "LinkedIn profile URL",
                 "email": "Email address if available",
                 "phone": "Phone number if available",
                 "is_decision_maker": "Is this person a key decision maker for lending partnerships? Answer 'Yes' ONLY for C-suite executives, presidents, VPs, directors, or heads of lending/credit/business development.",
                 "relevance_score": "How relevant is this person for Fido's business (1-10 scale)?"}
-
+            
             headers = {
                 "x-api-key": self.api_key,
                 "Content-Type": "application/json"}
@@ -104,7 +104,7 @@ class EnrichmentService:
                 "people_struct": people_struct,
                 "max_people": 8
             }
-
+            
             start_time = time.time()
             try:
                 logger.info(f"Starting enrichment for: {company_name}")
@@ -115,10 +115,10 @@ class EnrichmentService:
                     timeout=self.timeout
                 )
                 elapsed = time.time() - start_time
-
+                
                 response.raise_for_status()
                 data = response.json()
-
+                
                 logger.info(
                     f"Successfully enriched {company_name} in {elapsed:.2f}s")
                 return {
@@ -128,7 +128,7 @@ class EnrichmentService:
                     "data": data,
                     "processing_time": elapsed
                 }
-
+                
             except Exception as e:
                 elapsed = time.time() - start_time
                 logger.error(
@@ -140,27 +140,27 @@ class EnrichmentService:
                     "error": str(e),
                     "processing_time": elapsed
                 }
-
+    
     async def enrich_companies_batch(
-        self,
-        companies: List[Dict[str, Any]],
+        self, 
+        companies: List[Dict[str, Any]], 
         progress_callback: Optional[callable] = None,
         cancellation_check: Optional[callable] = None
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Enrich a batch of companies and return structured results
-
+        
         Args:
             companies: List of company data from NMLS search
             progress_callback: Optional callback function for progress updates
             cancellation_check: Optional function that returns True if processing should be cancelled
-
+            
         Returns:
             Tuple of (enriched_companies_df, contacts_df)
         """
         if not companies:
             return pd.DataFrame(), pd.DataFrame()
-
+        
         # Check for cancellation before starting
         if cancellation_check and cancellation_check():
             raise Exception("Enrichment cancelled before starting")
@@ -170,13 +170,13 @@ class EnrichmentService:
         for company in companies[:3]:
             if company.get('business_score', 0) > 70:
                 reference_companies.append(company['company_name'])
-
+        
         if not reference_companies:
             reference_companies = [companies[0]['company_name']]
-
+        
         logger.info(f"Starting enrichment of {len(companies)} companies")
         logger.info(f"Using reference companies: {reference_companies}")
-
+        
         # Set up concurrency control with smaller batches for better
         # responsiveness
         # Limit to 3 concurrent for better control
@@ -185,7 +185,7 @@ class EnrichmentService:
             max_keepalive_connections=self.max_concurrent,
             max_connections=self.max_concurrent + 5
         )
-
+        
         # Process companies in smaller chunks for better cancellation
         # responsiveness
         results = []
@@ -207,7 +207,7 @@ class EnrichmentService:
                         client, semaphore, company, reference_companies
                     )
                     tasks.append(task)
-
+                
                 # Process chunk with progress tracking
                 chunk_results = []
                 for task in asyncio.as_completed(tasks):
@@ -222,12 +222,12 @@ class EnrichmentService:
 
                     result = await task
                     chunk_results.append(result)
-
+                    
                     # Update progress
                     completed = len(results) + len(chunk_results)
-                    if progress_callback:
-                        progress_callback(completed, len(companies))
-
+                if progress_callback:
+                    progress_callback(completed, len(companies))
+                
                 results.extend(chunk_results)
 
                 # Small delay between chunks to allow for cancellation checks
@@ -239,10 +239,10 @@ class EnrichmentService:
 
         # Process results into structured DataFrames
         return self._process_enrichment_results(results, companies)
-
+    
     def _process_enrichment_results(
-        self,
-        results: List[Dict[str, Any]],
+        self, 
+        results: List[Dict[str, Any]], 
         original_companies: List[Dict[str, Any]]
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -250,7 +250,7 @@ class EnrichmentService:
         """
         enriched_companies = []
         all_contacts = []
-
+        
         for idx, result in enumerate(results):
             # Get original company data
             original_company = original_companies[idx] if idx < len(
@@ -542,19 +542,19 @@ class EnrichmentService:
         """Calculate a quality score for the enrichment data"""
         score = 0.0
         max_score = 100.0
-
+        
         # Website found
         if structured_data.get("website"):
             score += 20
-
-        # LinkedIn found
+        
+        # LinkedIn found  
         if structured_data.get("company_linkedin"):
             score += 15
-
+        
         # Employee count provided
         if structured_data.get("num_employees"):
             score += 10
-
+        
         # Personal loan specialization identified
         personal_loan_focus = structured_data.get(
             "specializes_in_personal_loans", "").lower()
@@ -562,27 +562,27 @@ class EnrichmentService:
             score += 25
         elif "no" in personal_loan_focus:
             score += 10  # At least we know
-
+        
         # ICP match assessment
         icp_match = structured_data.get("icp_match", "").lower()
         if "yes" in icp_match:
             score += 20
         elif "no" in icp_match:
             score += 5
-
+        
         # Has decision makers/leads
         leads_count = len(structured_data.get("leads", []))
         if leads_count > 0:
             score += min(leads_count * 2, 10)  # Up to 10 points for leads
-
+        
         return min(score, max_score)
-
+    
     def _assess_company_qualification(
             self, structured_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Assess if a company is a qualified lead for Fido"""
         reasons = []
         is_qualified = False
-
+        
         # Check personal loan specialization
         personal_loan_focus = structured_data.get(
             "specializes_in_personal_loans", "").lower()
@@ -591,7 +591,7 @@ class EnrichmentService:
             is_qualified = True
         else:
             reasons.append("Does not specialize in personal loans")
-
+        
         # Check ICP match
         icp_match = structured_data.get("icp_match", "").lower()
         if "yes" in icp_match:
@@ -600,25 +600,25 @@ class EnrichmentService:
         else:
             reasons.append("Does not match ideal customer profile")
             is_qualified = False
-
+        
         # Check for decision makers
         leads = structured_data.get("leads", [])
         decision_makers = sum(
             1 for lead in leads if isinstance(
                 lead, dict) and "yes" in lead.get(
                 "is_decision_maker", "").lower())
-
+        
         if decision_makers > 0:
             reasons.append(f"Found {decision_makers} decision maker(s)")
         else:
             reasons.append("No decision makers identified")
             is_qualified = False
-
+        
         # Check technology focus (bonus)
         tech_focus = structured_data.get("technology_focus", "").lower()
         if "yes" in tech_focus:
             reasons.append("Technology-focused company")
-
+        
         return is_qualified, reasons
 
 # Streamlit integration helper
@@ -627,7 +627,7 @@ class EnrichmentService:
 def create_enrichment_service() -> Optional[EnrichmentService]:
     """Create enrichment service with API key from environment or user input"""
     import os
-
+    
     # Try Streamlit secrets first, then environment variables
     try:
         import streamlit as st
@@ -646,8 +646,8 @@ def create_enrichment_service() -> Optional[EnrichmentService]:
         api_key = os.getenv(
             'SIXTYFOUR_API_KEY',
             '42342922-b737-43bf-8e67-68be5108be7b')
-
+    
     if not api_key:
         return None
-
-    return EnrichmentService(api_key)
+    
+    return EnrichmentService(api_key) 
