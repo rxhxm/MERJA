@@ -60,7 +60,7 @@ if STREAMLIT_AVAILABLE:
             'ANTHROPIC_API_KEY', os.getenv(
                 'ANTHROPIC_API_KEY', 'your-api-key-here'))
         DATABASE_URL = st.secrets.get(
-            'DATABASE_URL', os.getenv('DATABASE_URL'))
+            'DATABASE_URL', os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres'))
         
         # Debug logging for Streamlit deployment
         if DATABASE_URL:
@@ -75,15 +75,20 @@ if STREAMLIT_AVAILABLE:
                     DATABASE_URL = value
                     logger.info(f"✅ Found database URL using alternative name: {name}")
                     break
+            
+            # Final fallback to the correct URL
+            if not DATABASE_URL:
+                DATABASE_URL = 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres'
+                logger.info("✅ Using fallback DATABASE_URL")
                     
     except Exception as e:
         # Fallback to environment variables if secrets not available
         logger.warning(f"Secrets access failed: {e}, falling back to environment variables")
         ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
-        DATABASE_URL = os.getenv('DATABASE_URL')
+        DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
 else:
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', 'your-api-key-here')
-    DATABASE_URL = os.getenv('DATABASE_URL')
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:Ronin320320.@db.eissjxpcsxcktoanftjw.supabase.co:5432/postgres')
 
 # Final check and logging
 if not DATABASE_URL:
