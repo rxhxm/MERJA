@@ -23,7 +23,7 @@ class EnrichmentService:
         self.api_key = api_key
         self.base_url = "https://api.sixtyfour.ai"
         self.enrich_endpoint = "/enrich-company"
-        self.timeout = 180.0  # 3 minutes per company
+        self.timeout = 480.0  # 8 minutes per company (increased for reliability)
         
     async def enrich_single_company(
         self, 
@@ -92,14 +92,37 @@ class EnrichmentService:
                     "processing_time": elapsed
                 }
                 
-            except Exception as e:
+            except httpx.TimeoutException:
                 elapsed = time.time() - start_time
-                logger.error(f"❌ {company_name} failed: {str(e)}")
+                error_msg = f"API timeout after {elapsed:.1f}s (API taking too long to respond)"
+                logger.error(f"❌ {company_name} failed: {error_msg}")
                 return {
                     "success": False,
                     "company_name": company_name,
                     "nmls_id": nmls_id,
-                    "error": str(e),
+                    "error": error_msg,
+                    "processing_time": elapsed
+                }
+            except httpx.HTTPStatusError as e:
+                elapsed = time.time() - start_time
+                error_msg = f"API error {e.response.status_code}: {e.response.text}"
+                logger.error(f"❌ {company_name} failed: {error_msg}")
+                return {
+                    "success": False,
+                    "company_name": company_name,
+                    "nmls_id": nmls_id,
+                    "error": error_msg,
+                    "processing_time": elapsed
+                }
+            except Exception as e:
+                elapsed = time.time() - start_time
+                error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
+                logger.error(f"❌ {company_name} failed: {error_msg}")
+                return {
+                    "success": False,
+                    "company_name": company_name,
+                    "nmls_id": nmls_id,
+                    "error": error_msg,
                     "processing_time": elapsed
                 }
     
@@ -148,7 +171,7 @@ class EnrichmentService:
         for idx, result in enumerate(results):
             # Get original company data
             original_company = original_companies[idx] if idx < len(original_companies) else {}
-            
+
             # Base company record
             company_record = original_company.copy()
             company_record.update({
@@ -189,7 +212,7 @@ class EnrichmentService:
                         'email': contact.get('email', '')
                     }
                     all_contacts.append(contact_record)
-
+                    
             company_record['contacts_found'] = len(contacts)
             enriched_companies.append(company_record)
 
@@ -203,7 +226,7 @@ class EnrichmentService:
         """Simple employee parsing - return as string"""
         if not employee_str:
             return "Unknown"
-        
+
         import re
         # Extract first number and return with text
         numbers = re.findall(r'\d+', str(employee_str))

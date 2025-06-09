@@ -19,6 +19,8 @@ import concurrent.futures
 from datetime import datetime
 from typing import Dict, List, Any
 import os
+import threading
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 # NMLS Search - Enhanced for Finosu (v2.1 - Indentation Fix)
 
@@ -32,6 +34,24 @@ st.set_page_config(
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize error handling for Streamlit warnings
+def handle_streamlit_errors():
+    """Suppress Streamlit threading warnings that are not actionable"""
+    # Suppress specific Streamlit warnings that are expected in our use case
+    streamlit_logger = logging.getLogger('streamlit')
+    
+    class StreamlitWarningFilter(logging.Filter):
+        def filter(self, record):
+            # Filter out the ScriptRunContext warnings that are expected
+            if 'missing ScriptRunContext' in record.getMessage():
+                return False
+            return True
+    
+    streamlit_logger.addFilter(StreamlitWarningFilter())
+
+# Apply error handling immediately
+handle_streamlit_errors()
 
 # Initialize session state at module level to ensure it's available immediately
 if 'search_results' not in st.session_state:
@@ -55,7 +75,7 @@ except ImportError:
 _db_pool = None
 
 async def get_or_create_pool():
-    """Creates and returns the asyncpg connection pool"""
+    """Creates and returns the asyncpg connection pool with proper timeout handling"""
     global _db_pool
     if _db_pool is None:
         try:
@@ -64,16 +84,38 @@ async def get_or_create_pool():
             if not DATABASE_URL:
                 logger.error("DATABASE_URL not found")
                 return None
+            
+            # Create pool with shorter timeouts to prevent hanging
             _db_pool = await asyncpg.create_pool(
                 DATABASE_URL,
                 min_size=1,
-                max_size=5,
-                statement_cache_size=0  # For pgbouncer compatibility
+                max_size=3,  # Reduced from 5 to prevent too many connections
+                statement_cache_size=0,  # For pgbouncer compatibility
+                command_timeout=30,  # 30 second command timeout
+                server_settings={
+                    'application_name': 'merja_streamlit',
+                    'tcp_keepalives_idle': '600',
+                    'tcp_keepalives_interval': '30',
+                    'tcp_keepalives_count': '3'
+                }
             )
+            logger.info("Database pool created successfully")
         except Exception as e:
             logger.error(f"Failed to create database pool: {e}")
             return None
     return _db_pool
+
+async def close_db_pool():
+    """Properly close the database pool"""
+    global _db_pool
+    if _db_pool:
+        try:
+            await _db_pool.close()
+            logger.info("Database pool closed successfully")
+        except Exception as e:
+            logger.warning(f"Error closing database pool: {e}")
+        finally:
+            _db_pool = None
 
 # Simple CSS
 st.markdown("""
@@ -95,37 +137,68 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def run_async(coro):
-    """Production-grade async runner for Streamlit"""
+    """Production-grade async runner for Streamlit with proper context handling"""
+    # Get current Streamlit context
+    ctx = get_script_run_ctx()
+    
     def run_in_thread():
+        # Create new event loop for this thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        
         try:
+            # Add Streamlit context to this thread if available
+            if ctx:
+                current_thread = threading.current_thread()
+                add_script_run_ctx(current_thread, ctx)
+            
+            # Run the coroutine
             result = loop.run_until_complete(coro)
             return result
+            
         except Exception as e:
-            logger.error(f"Async execution error: {e}")
-            raise e
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Async execution error: {error_msg}")
+            import traceback
+            full_traceback = traceback.format_exc()
+            logger.error(f"Full traceback: {full_traceback}")
+            # Re-raise with full context
+            raise Exception(f"Async operation failed: {error_msg}") from e
+            
         finally:
             try:
+                # Clean up pending tasks
                 pending = asyncio.all_tasks(loop)
-                for task in pending:
-                    task.cancel()
                 if pending:
+                    for task in pending:
+                        task.cancel()
+                    # Wait for cancellation to complete
                     loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                
+                # Close the loop
                 loop.close()
+                
             except Exception as cleanup_error:
                 logger.warning(f"Cleanup error (non-critical): {cleanup_error}")
 
+    # Use ThreadPoolExecutor with timeout
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(run_in_thread)
         try:
-            result = future.result(timeout=300)
+            # Increased timeout for enrichment operations
+            result = future.result(timeout=1800)  # 30 minutes
             return result
+            
         except concurrent.futures.TimeoutError:
-            logger.error("Async operation timed out")
-            raise TimeoutError("Search operation timed out after 5 minutes")
+            error_msg = "Operation timed out after 30 minutes"
+            logger.error(error_msg)
+            raise TimeoutError(error_msg)
+            
         except Exception as e:
-            logger.error(f"Thread execution error: {e}")
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Thread execution error: {error_msg}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise e
 
 async def search_companies(query: str, filters: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -320,6 +393,10 @@ def format_license_summary(company: Dict[str, Any]) -> str:
 
 def main():
     """Main application"""
+    # Register cleanup function
+    import atexit
+    atexit.register(cleanup_resources)
+    
     st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
     
     # Main search interface
@@ -565,6 +642,26 @@ def main():
             st.markdown("### 🚀 Company Enrichment")
             st.markdown("Enrich selected companies with additional business intelligence using AI-powered data gathering.")
             
+            # Add helpful note about API behavior
+            with st.expander("ℹ️ About Enrichment Process", expanded=False):
+                st.markdown("""
+                **What this does:**
+                - Uses SixtyFour AI to research each company in real-time
+                - Finds website, industry, employee count, and personal loan offerings
+                - Searches for up to 2 key contacts per company
+                
+                **Expected timeline:**
+                - Each company takes ~8 minutes to research thoroughly
+                - The API does extensive web scraping and LinkedIn research
+                - Failed companies are logged and can be retried individually
+                
+                **Tips for best results:**
+                - Start with 1 company to test (8 minutes)
+                - Companies with common names may take longer
+                - All results are saved even if some companies fail
+                - Be patient - the API is doing deep research!
+                """)
+            
             if ENRICHMENT_AVAILABLE:
                 # Company selection for enrichment
                 st.markdown("#### Select Companies to Enrich")
@@ -594,11 +691,12 @@ def main():
                 with col1:
                     if selected_company_indices:
                         count = len(selected_company_indices)
-                        estimated_time = count * 2  # 2 minutes per company
-                        if count > 5:
-                            st.warning(f"⚠️ {count} companies selected. This will take ~{estimated_time:.0f} minutes. Consider selecting 3-5 companies for faster results.")
+                        estimated_time = count * 8  # 8 minutes per company (extra safe)
+                        if count > 2:
+                            st.warning(f"⚠️ {count} companies selected. This will take ~{estimated_time:.0f} minutes. The SixtyFour API does extensive research - consider selecting 1-2 companies for faster results.")
                         else:
                             st.info(f"Selected {count} companies for enrichment (~{estimated_time:.0f} minutes)")
+                            st.caption("⏱️ Each company takes ~8 minutes due to extensive AI research by the SixtyFour API")
                 
                 with col2:
                     enrich_button = st.button(
@@ -615,12 +713,21 @@ def main():
                     selected_companies = [companies[i] for i in selected_company_indices]
                     
                     # Create enrichment service
-                    enrichment_service = create_enrichment_service()
-                    
-                    if not enrichment_service:
-                        st.error("❌ Enrichment service unavailable. Please check API key configuration.")
+                    try:
+                        enrichment_service = create_enrichment_service()
+                        
+                        if not enrichment_service:
+                            st.error("❌ Enrichment service unavailable. Please check API key configuration.")
+                            st.info("💡 Make sure SIXTYFOUR_API_KEY is set in your Streamlit secrets or environment variables.")
+                            st.session_state.enrichment_running = False
+                        else:
+                            st.info("✅ Enrichment service initialized successfully")
+                    except Exception as e:
+                        st.error(f"❌ Failed to create enrichment service: {type(e).__name__}: {str(e)}")
                         st.session_state.enrichment_running = False
-                    else:
+                        enrichment_service = None
+                    
+                    if enrichment_service:
                         # Progress tracking
                         progress_bar = st.progress(0)
                         status_text = st.empty()
@@ -653,8 +760,37 @@ def main():
                                 status_text.text("✅ Enrichment completed successfully!")
                                 
                         except Exception as e:
-                            st.error(f"❌ Enrichment failed: {str(e)}")
+                            import traceback
+                            error_details = f"{type(e).__name__}: {str(e)}"
+                            full_traceback = traceback.format_exc()
+                            
+                            logger.error(f"Enrichment failed: {error_details}")
+                            logger.error(f"Full traceback: {full_traceback}")
+                            
+                            # Show user-friendly error message
+                            st.error(f"❌ Enrichment failed: {error_details}")
                             status_text.text("❌ Enrichment failed")
+                            
+                            # Show detailed error information in expandable section
+                            with st.expander("🔍 Error Details (Click to expand)", expanded=False):
+                                st.code(f"Error Type: {type(e).__name__}")
+                                st.code(f"Error Message: {str(e)}")
+                                st.text("Full Traceback:")
+                                st.code(full_traceback)
+                                
+                                # Add troubleshooting tips
+                                st.markdown("**💡 Troubleshooting Tips:**")
+                                if "timeout" in str(e).lower():
+                                    st.markdown("- This appears to be a timeout error. The SixtyFour API may be taking longer than expected.")
+                                    st.markdown("- Try selecting fewer companies or retry with a single company.")
+                                elif "api" in str(e).lower():
+                                    st.markdown("- This appears to be an API-related error.")
+                                    st.markdown("- Check your SixtyFour API key configuration.")
+                                    st.markdown("- Verify your internet connection.")
+                                else:
+                                    st.markdown("- Try restarting the Streamlit app.")
+                                    st.markdown("- Check the logs for more detailed error information.")
+                                    st.markdown("- If the issue persists, contact support with the error details above.")
                         finally:
                             st.session_state.enrichment_running = False
                 
@@ -748,6 +884,18 @@ def main():
                 st.info("To enable enrichment, ensure the SixtyFour API key is configured in your Streamlit secrets.")
         else:
             st.info("No companies match the current filters.")
+
+def cleanup_resources():
+    """Clean up resources when app shuts down"""
+    try:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(close_db_pool())
+        loop.close()
+        logger.info("Resources cleaned up successfully")
+    except Exception as e:
+        logger.warning(f"Error during cleanup: {e}")
 
 if __name__ == "__main__":
     main() 
