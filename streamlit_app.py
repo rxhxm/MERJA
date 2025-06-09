@@ -33,6 +33,16 @@ st.set_page_config(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize session state at module level to ensure it's available immediately
+if 'search_results' not in st.session_state:
+    st.session_state.search_results = None
+if 'last_query' not in st.session_state:
+    st.session_state.last_query = ""
+if 'enriched_results' not in st.session_state:
+    st.session_state.enriched_results = None
+if 'enrichment_running' not in st.session_state:
+    st.session_state.enrichment_running = False
+
 # Check enrichment availability
 try:
     from enrichment_service import create_enrichment_service
@@ -83,16 +93,6 @@ st.markdown("""
     .lender-type-mixed { color: #ffc107; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
-
-# Initialize session state
-if 'search_results' not in st.session_state:
-    st.session_state.search_results = None
-if 'last_query' not in st.session_state:
-    st.session_state.last_query = ""
-if 'enriched_results' not in st.session_state:
-    st.session_state.enriched_results = None
-if 'enrichment_running' not in st.session_state:
-    st.session_state.enrichment_running = False
 
 def run_async(coro):
     """Production-grade async runner for Streamlit"""
