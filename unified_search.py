@@ -504,100 +504,48 @@ class NaturalLanguageProcessor:
             )
 
     def _create_analysis_prompt(self, query: str, context: Dict) -> str:
-        # Get sample license types for better context
-        sample_personal_licenses = [
-            "Consumer Credit License", "Consumer Loan License", "Personal Loan License",
-            "Consumer Finance License", "Installment Loan License", "Small Loan License"
-        ]
-        sample_mortgage_licenses = [
-            "Mortgage Lender License", "Mortgage Broker License", "Residential Mortgage Lender License"
-        ]
-        
-        # Common state name mappings for better recognition
-        state_mappings = {
-            "california": "CA", "calif": "CA", "ca": "CA",
-            "new york": "NY", "ny": "NY", "newyork": "NY",
-            "texas": "TX", "tx": "TX", "florida": "FL", "fl": "FL",
-            "illinois": "IL", "il": "IL", "pennsylvania": "PA", "pa": "PA"
-        }
-        
         return f"""
-You are analyzing search queries for Finosu, a personal lending company looking for potential business partners and prospects.
+You are analyzing search queries for Finosu, a personal lending company looking for business prospects.
 
-BUSINESS CONTEXT:
-- Finosu wants to find UNSECURED PERSONAL LOAN LENDERS (TARGET companies)
-- They want to AVOID mortgage-only companies (EXCLUDE)
-- They need contact information (email/phone) for outreach
-- Geographic coverage (states) is important for expansion
-- They want to identify potential partners and competitors in personal lending
+BUSINESS GOAL: Find companies that offer UNSECURED PERSONAL LOANS (consumer credit, installment loans, personal loans).
 
-Query to analyze: "{query}"
+Query: "{query}"
 
-Available data context:
-- States: {context.get('states', [])}
-- Business structures: {context.get('business_structures', [])}
-- Personal loan license types: {sample_personal_licenses}
-- Mortgage license types (to exclude): {sample_mortgage_licenses}
-- State mappings: {state_mappings}
+KEY RULES - KEEP IT SIMPLE:
+1. Geographic searches (e.g., "banks in california") → states: ["CA"], license_types: null
+2. Personal lending searches (e.g., "personal loan providers") → license_types: ["Personal Loan License", "Consumer Credit License"]  
+3. General searches (e.g., "lenders", "financial companies") → no specific filters, let scoring handle it
+4. Contact searches (e.g., "companies with email") → has_email: true
+5. Size searches (e.g., "large lenders") → min_licenses: 10
 
-FINOSU-SPECIFIC QUERY EXAMPLES:
-1. "Find me personal loan service providers" → Target personal lenders, license_types: ["Personal Loan License", "Consumer Credit License"]
-2. "Banks in California and New York" → Geographic filter: ["CA", "NY"], license_types: null (let scoring handle it)
-3. "Consumer credit companies" → License-based search: license_types: ["Consumer Credit License"]
-4. "Installment loan lenders" → Specific license type: license_types: ["Installment Loan License"]
-5. "Financial companies with email addresses" → Contact requirement: has_email: true
-6. "Large lenders with 10+ licenses" → Size-based: min_licenses: 10
-7. "Personal loan companies in texas" → Geographic + license combo: states: ["TX"], license_types: ["Personal Loan License"]
-8. "Non-bank lenders" → Exclude traditional banks, focus on finance companies, license_types: null
-9. "Alternative lenders" → Personal/consumer credit focus, modern fintech, license_types: null  
-10. "Consumer finance companies" → Specific license targeting: license_types: ["Consumer Finance License"]
+EXAMPLES:
+- "Banks in California" → {{"states": ["CA"], "license_types": null}}
+- "Personal loan providers" → {{"license_types": ["Personal Loan License", "Consumer Credit License"]}}
+- "Consumer credit companies" → {{"license_types": ["Consumer Credit License"]}}
+- "Financial companies with email" → {{"has_email": true}}
+- "Large lenders" → {{"min_licenses": 10}}
 
-WHEN NOT TO SET LICENSE_TYPES:
-- Simple geographic searches: "banks in california" → license_types: null
-- General company searches: "financial companies" → license_types: null  
-- Broad exploratory queries: "lenders in texas" → license_types: null
-- When user just wants to see what's available in an area
+STATE MAPPING: california→CA, new york→NY, texas→TX, florida→FL
 
-SMART ANALYSIS RULES:
-1. Geographic: Extract state names/abbreviations → convert to standard 2-letter codes
-2. Personal lending keywords → lender_type_preference: "unsecured_personal" BUT license_types: null unless VERY specific
-3. Mortgage keywords → lender_type_preference: "mortgage" AND license_types: mortgage licenses
-4. Contact needs → ONLY set has_email: true if user EXPLICITLY mentions contact/email requirements
-5. Size indicators ("large", "big", "major") → min_licenses: 5+
-6. Always prefer active licenses unless specified otherwise
-7. For vague "banks" queries → analyze context to determine if they want personal lenders BUT DO NOT auto-set license_types
-8. DO NOT auto-add contact requirements for simple geographic or general searches
-9. CRITICAL: Only set license_types for VERY SPECIFIC license requests, not general searches
-
-STATE NAME RECOGNITION:
-- "California", "Calif", "CA" → "CA"
-- "New York", "NY" → "NY" 
-- "Texas", "TX" → "TX"
-- Handle both full names and abbreviations
-
-Return JSON with this structure:
+Return ONLY this JSON structure:
 {{
-    "intent": "find_lenders|find_companies|filter_by_location|filter_by_licenses|filter_by_contact|find_specific_company|analyze_market",
-    "confidence": 0.0-1.0,
-    "explanation": "What the user is looking for and why this analysis was chosen",
-    "lender_type_preference": "unsecured_personal|mortgage|mixed|unknown",
-    "semantic_query": "simplified query for semantic search or null",
-    "business_critical_flags": ["high_value_query", "contact_required", "geographic_focus", "license_specific", "competitor_analysis"],
+    "intent": "find_lenders",
+    "confidence": 0.8,
+    "explanation": "Brief explanation of what user wants",
+    "lender_type_preference": "unsecured_personal",
+    "semantic_query": null,
+    "business_critical_flags": [],
     "filters": {{
-        "query": "text search terms or null",
-        "states": ["CA", "NY"] or null,
-        "license_types": ["Consumer Credit License"] or null,
-        "business_structures": ["Corporation"] or null,
+        "query": "search terms or null",
+        "states": ["CA"] or null,
+        "license_types": ["Personal Loan License"] or null,
         "has_email": true/false/null,
-        "has_website": true/false/null,
-        "has_federal_registration": true/false/null,
         "min_licenses": number or null,
-        "max_licenses": number or null,
         "active_licenses_only": true
     }}
 }}
 
-CRITICAL: Always convert state names to 2-letter codes. Always prioritize personal lending for Finosu's business needs.
+CRITICAL: Only set specific filters when the user clearly requests them. For geographic searches, do NOT add license_types.
 """
 
     async def _get_search_context(self) -> Dict:
@@ -734,9 +682,9 @@ class SearchService:
             page_size: int,
             sort_field: SortField,
             sort_order: SortOrder) -> tuple:
-        # Simplified query without complex CTE to match count query
+        # Fixed query structure to avoid GROUP BY issues
         base_query = """
-        SELECT DISTINCT
+        SELECT 
             c.nmls_id,
             c.company_name,
             c.business_structure,
@@ -747,17 +695,17 @@ class SearchService:
             (SELECT full_address FROM addresses WHERE company_id = c.id AND address_type = 'mailing' LIMIT 1) as mailing_address,
             c.federal_regulator,
             c.created_at,
-            (SELECT COUNT(*) FROM licenses l WHERE l.company_id = c.id) as total_licenses,
-            (SELECT COUNT(*) FROM licenses l WHERE l.company_id = c.id AND l.active = true) as active_licenses,
-            (SELECT ARRAY_AGG(DISTINCT l.license_type) FROM licenses l WHERE l.company_id = c.id AND l.active = true AND l.license_type IS NOT NULL) as license_types,
-            (SELECT ARRAY_AGG(DISTINCT COALESCE(SUBSTRING(a.state FROM 1 FOR 2), SUBSTRING(l.regulator FROM '([A-Z]{2})'), 'XX')) 
-             FROM (SELECT state FROM addresses WHERE company_id = c.id 
-                   UNION 
-                   SELECT regulator FROM licenses WHERE company_id = c.id AND active = true) as combined(state)
+            (SELECT COUNT(*) FROM licenses WHERE company_id = c.id) as total_licenses,
+            (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) as active_licenses,
+            (SELECT ARRAY_AGG(DISTINCT license_type) FROM licenses WHERE company_id = c.id AND active = true AND license_type IS NOT NULL) as license_types,
+            (SELECT ARRAY_AGG(DISTINCT COALESCE(SUBSTRING(addr.state FROM 1 FOR 2), SUBSTRING(lic.regulator FROM '([A-Z]{2})'), 'XX')) 
+             FROM (
+                 SELECT state FROM addresses WHERE company_id = c.id AND state IS NOT NULL
+                 UNION 
+                 SELECT regulator FROM licenses WHERE company_id = c.id AND active = true AND regulator IS NOT NULL
+             ) as combined(state)
              WHERE combined.state IS NOT NULL) as states_licensed
         FROM companies c
-        LEFT JOIN addresses a ON c.id = a.company_id
-        LEFT JOIN licenses l ON c.id = l.company_id
         """
 
         conditions = []
@@ -769,32 +717,30 @@ class SearchService:
             param_count += 1
             conditions.append(f"""
                 (c.company_name ILIKE ${param_count}
-                 OR EXISTS (SELECT 1 FROM addresses addr WHERE addr.company_id = c.id AND addr.full_address ILIKE ${param_count})
+                 OR EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id AND full_address ILIKE ${param_count})
                  OR EXISTS (SELECT 1 FROM unnest(c.trade_names) AS trade_name WHERE trade_name ILIKE ${param_count}))
             """)
             params.append(f"%{filters.query}%")
 
-        # State filtering - improved to handle multiple sources
+        # State filtering - check both addresses and license regulators
         if filters.states:
             param_count += 1
-            state_condition = f"""
-                (EXISTS (SELECT 1 FROM addresses addr WHERE addr.company_id = c.id 
-                         AND UPPER(SUBSTRING(addr.state FROM 1 FOR 2)) = ANY(${param_count}))
-                 OR EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
-                           AND lic.active = true 
-                           AND UPPER(SUBSTRING(lic.regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
-            """
-            conditions.append(state_condition)
-            # Convert states to uppercase for consistency
+            conditions.append(f"""
+                (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
+                         AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count}))
+                 OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                           AND active = true 
+                           AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
+            """)
             params.append([state.upper() for state in filters.states])
 
         # License type filtering
         if filters.license_types:
             param_count += 1
             conditions.append(f"""
-                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
-                        AND lic.active = true 
-                        AND lic.license_type = ANY(${param_count}))
+                EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                        AND active = true 
+                        AND license_type = ANY(${param_count}))
             """)
             params.append(filters.license_types)
 
@@ -829,35 +775,35 @@ class SearchService:
         if filters.min_licenses is not None:
             param_count += 1
             conditions.append(f"""
-                (SELECT COUNT(*) FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true) >= ${param_count}
+                (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) >= ${param_count}
             """)
             params.append(filters.min_licenses)
 
         if filters.max_licenses is not None:
             param_count += 1
             conditions.append(f"""
-                (SELECT COUNT(*) FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true) <= ${param_count}
+                (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) <= ${param_count}
             """)
             params.append(filters.max_licenses)
 
-        # Active licenses filter - make consistent with count query
+        # Active licenses filter
         if filters.active_licenses_only:
-            conditions.append("EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true)")
+            conditions.append("EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id AND active = true)")
 
         # Date filters for license issuance
         if filters.licensed_after:
             param_count += 1
             conditions.append(f"""
-                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
-                        AND lic.original_issue_date >= ${param_count})
+                EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                        AND original_issue_date >= ${param_count})
             """)
             params.append(filters.licensed_after)
 
         if filters.licensed_before:
             param_count += 1
             conditions.append(f"""
-                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
-                        AND lic.original_issue_date <= ${param_count})
+                EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                        AND original_issue_date <= ${param_count})
             """)
             params.append(filters.licensed_before)
 
@@ -889,11 +835,10 @@ class SearchService:
 
     @staticmethod
     def build_count_query(filters: SearchFilters) -> tuple:
+        # Simplified count query to match main query structure
         base_query = """
-        SELECT COUNT(DISTINCT c.id)
+        SELECT COUNT(*)
         FROM companies c
-        LEFT JOIN addresses a ON c.id = a.company_id
-        LEFT JOIN licenses l ON c.id = l.company_id
         """
 
         conditions = []
@@ -905,32 +850,30 @@ class SearchService:
             param_count += 1
             conditions.append(f"""
                 (c.company_name ILIKE ${param_count}
-                 OR EXISTS (SELECT 1 FROM addresses addr WHERE addr.company_id = c.id AND addr.full_address ILIKE ${param_count})
+                 OR EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id AND full_address ILIKE ${param_count})
                  OR EXISTS (SELECT 1 FROM unnest(c.trade_names) AS trade_name WHERE trade_name ILIKE ${param_count}))
             """)
             params.append(f"%{filters.query}%")
 
-        # State filtering - improved to handle multiple sources
+        # State filtering - check both addresses and license regulators
         if filters.states:
             param_count += 1
-            state_condition = f"""
-                (EXISTS (SELECT 1 FROM addresses addr WHERE addr.company_id = c.id 
-                         AND UPPER(SUBSTRING(addr.state FROM 1 FOR 2)) = ANY(${param_count}))
-                 OR EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
-                           AND lic.active = true 
-                           AND UPPER(SUBSTRING(lic.regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
-            """
-            conditions.append(state_condition)
-            # Convert states to uppercase for consistency
+            conditions.append(f"""
+                (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
+                         AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count}))
+                 OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                           AND active = true 
+                           AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
+            """)
             params.append([state.upper() for state in filters.states])
 
         # License type filtering
         if filters.license_types:
             param_count += 1
             conditions.append(f"""
-                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
-                        AND lic.active = true 
-                        AND lic.license_type = ANY(${param_count}))
+                EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                        AND active = true 
+                        AND license_type = ANY(${param_count}))
             """)
             params.append(filters.license_types)
 
@@ -965,35 +908,35 @@ class SearchService:
         if filters.min_licenses is not None:
             param_count += 1
             conditions.append(f"""
-                (SELECT COUNT(*) FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true) >= ${param_count}
+                (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) >= ${param_count}
             """)
             params.append(filters.min_licenses)
 
         if filters.max_licenses is not None:
             param_count += 1
             conditions.append(f"""
-                (SELECT COUNT(*) FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true) <= ${param_count}
+                (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) <= ${param_count}
             """)
             params.append(filters.max_licenses)
 
         # Active licenses filter
         if filters.active_licenses_only:
-            conditions.append("EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true)")
+            conditions.append("EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id AND active = true)")
 
         # Date filters for license issuance
         if filters.licensed_after:
             param_count += 1
             conditions.append(f"""
-                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
-                        AND lic.original_issue_date >= ${param_count})
+                EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                        AND original_issue_date >= ${param_count})
             """)
             params.append(filters.licensed_after)
 
         if filters.licensed_before:
             param_count += 1
             conditions.append(f"""
-                EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id 
-                        AND lic.original_issue_date <= ${param_count})
+                EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                        AND original_issue_date <= ${param_count})
             """)
             params.append(filters.licensed_before)
 
