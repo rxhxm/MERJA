@@ -541,26 +541,33 @@ Available data context:
 - State mappings: {state_mappings}
 
 FINOSU-SPECIFIC QUERY EXAMPLES:
-1. "Find me personal loan service providers" → Target personal lenders, prioritize contact info
-2. "Banks in California and New York" → Geographic filter: ["CA", "NY"], analyze for lender types
-3. "Consumer credit companies" → License-based search for consumer credit licenses
-4. "Installment loan lenders" → Specific license type: "Installment Loan License"
+1. "Find me personal loan service providers" → Target personal lenders, license_types: ["Personal Loan License", "Consumer Credit License"]
+2. "Banks in California and New York" → Geographic filter: ["CA", "NY"], license_types: null (let scoring handle it)
+3. "Consumer credit companies" → License-based search: license_types: ["Consumer Credit License"]
+4. "Installment loan lenders" → Specific license type: license_types: ["Installment Loan License"]
 5. "Financial companies with email addresses" → Contact requirement: has_email: true
 6. "Large lenders with 10+ licenses" → Size-based: min_licenses: 10
-7. "Personal loan companies in texas" → Geographic + license type combination
-8. "Non-bank lenders" → Exclude traditional banks, focus on finance companies
-9. "Alternative lenders" → Personal/consumer credit focus, modern fintech
-10. "Consumer finance companies" → Specific license type targeting
+7. "Personal loan companies in texas" → Geographic + license combo: states: ["TX"], license_types: ["Personal Loan License"]
+8. "Non-bank lenders" → Exclude traditional banks, focus on finance companies, license_types: null
+9. "Alternative lenders" → Personal/consumer credit focus, modern fintech, license_types: null  
+10. "Consumer finance companies" → Specific license targeting: license_types: ["Consumer Finance License"]
+
+WHEN NOT TO SET LICENSE_TYPES:
+- Simple geographic searches: "banks in california" → license_types: null
+- General company searches: "financial companies" → license_types: null  
+- Broad exploratory queries: "lenders in texas" → license_types: null
+- When user just wants to see what's available in an area
 
 SMART ANALYSIS RULES:
 1. Geographic: Extract state names/abbreviations → convert to standard 2-letter codes
-2. Personal lending keywords → lender_type_preference: "unsecured_personal"
-3. Mortgage keywords → lender_type_preference: "mortgage" 
+2. Personal lending keywords → lender_type_preference: "unsecured_personal" BUT license_types: null unless VERY specific
+3. Mortgage keywords → lender_type_preference: "mortgage" AND license_types: mortgage licenses
 4. Contact needs → ONLY set has_email: true if user EXPLICITLY mentions contact/email requirements
 5. Size indicators ("large", "big", "major") → min_licenses: 5+
 6. Always prefer active licenses unless specified otherwise
-7. For vague "banks" queries → analyze context to determine if they want personal lenders
+7. For vague "banks" queries → analyze context to determine if they want personal lenders BUT DO NOT auto-set license_types
 8. DO NOT auto-add contact requirements for simple geographic or general searches
+9. CRITICAL: Only set license_types for VERY SPECIFIC license requests, not general searches
 
 STATE NAME RECOGNITION:
 - "California", "Calif", "CA" → "CA"
