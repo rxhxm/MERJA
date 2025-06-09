@@ -513,17 +513,25 @@ Query: "{query}"
 
 KEY RULES - KEEP IT SIMPLE:
 1. Geographic searches (e.g., "banks in california") → states: ["CA"], license_types: null
-2. Personal lending searches (e.g., "personal loan providers") → license_types: ["Personal Loan License", "Consumer Credit License"]  
-3. General searches (e.g., "lenders", "financial companies") → no specific filters, let scoring handle it
-4. Contact searches (e.g., "companies with email") → has_email: true
-5. Size searches (e.g., "large lenders") → min_licenses: 10
+2. Personal lending searches (e.g., "personal loan providers") → license_types: ["Personal", "Consumer Credit"]  
+3. Consumer credit searches (e.g., "consumer credit companies") → license_types: ["Consumer Credit"]
+4. General searches (e.g., "lenders", "financial companies") → no specific filters, let scoring handle it
+5. Contact searches (e.g., "companies with email") → has_email: true
+6. Size searches (e.g., "large lenders") → min_licenses: 10
 
 EXAMPLES:
 - "Banks in California" → {{"states": ["CA"], "license_types": null}}
-- "Personal loan providers" → {{"license_types": ["Personal Loan License", "Consumer Credit License"]}}
-- "Consumer credit companies" → {{"license_types": ["Consumer Credit License"]}}
+- "Personal loan providers" → {{"license_types": ["Personal", "Consumer Credit"]}}
+- "Consumer credit companies" → {{"license_types": ["Consumer Credit"]}}
 - "Financial companies with email" → {{"has_email": true}}
 - "Large lenders" → {{"min_licenses": 10}}
+
+LICENSE TYPE TERMS (use general terms that will match multiple variations):
+- "Personal" → matches "Personal Loan License", "Personal Loan", etc.
+- "Consumer Credit" → matches "Consumer Credit License", "Consumer Credit", etc.
+- "Consumer" → matches any consumer-related license
+- "Installment" → matches installment loan licenses
+- "Small Loan" → matches small loan licenses
 
 STATE MAPPING: california→CA, new york→NY, texas→TX, florida→FL
 
@@ -538,7 +546,7 @@ Return ONLY this JSON structure:
     "filters": {{
         "query": "search terms or null",
         "states": ["CA"] or null,
-        "license_types": ["Personal Loan License"] or null,
+        "license_types": ["Personal"] or null,
         "has_email": true/false/null,
         "min_licenses": number or null,
         "active_licenses_only": true
@@ -730,25 +738,47 @@ class SearchService:
         if filters.states:
             param_count += 1
             param_count += 1
-            conditions.append(f"""
-                (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
-                         AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count-1}))
-                 OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
-                           AND active = true 
-                           AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
-            """)
-            params.append([state.upper() for state in filters.states])
-            params.append([state.upper() for state in filters.states])
+            # Handle single vs multiple states differently for PostgreSQL compatibility
+            if len(filters.states) == 1:
+                # Use direct equality for single state to avoid ANY() operator issues
+                state_upper = filters.states[0].upper()
+                conditions.append(f"""
+                    (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
+                             AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ${param_count-1})
+                     OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                               AND active = true 
+                               AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ${param_count}))
+                """)
+                params.append(state_upper)
+                params.append(state_upper)
+            else:
+                # Use ANY() operator for multiple states
+                conditions.append(f"""
+                    (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
+                             AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count-1}))
+                     OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                               AND active = true 
+                               AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
+                """)
+                params.append([state.upper() for state in filters.states])
+                params.append([state.upper() for state in filters.states])
 
-        # License type filtering
+        # License type filtering - use flexible matching
         if filters.license_types:
             param_count += 1
+            # Use ILIKE for flexible matching instead of exact equality
+            license_conditions = []
+            for license_type in filters.license_types:
+                license_conditions.append(f"license_type ILIKE ${param_count}")
+                params.append(f"%{license_type}%")
+                param_count += 1
+            
             conditions.append(f"""
                 EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
                         AND active = true 
-                        AND license_type = ANY(${param_count}))
+                        AND ({' OR '.join(license_conditions)}))
             """)
-            params.append(filters.license_types)
+            param_count -= 1  # Adjust for the loop increment
 
         # Business structure filtering
         if filters.business_structures:
@@ -869,25 +899,47 @@ class SearchService:
         if filters.states:
             param_count += 1
             param_count += 1
-            conditions.append(f"""
-                (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
-                         AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count-1}))
-                 OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
-                           AND active = true 
-                           AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
-            """)
-            params.append([state.upper() for state in filters.states])
-            params.append([state.upper() for state in filters.states])
+            # Handle single vs multiple states differently for PostgreSQL compatibility
+            if len(filters.states) == 1:
+                # Use direct equality for single state to avoid ANY() operator issues
+                state_upper = filters.states[0].upper()
+                conditions.append(f"""
+                    (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
+                             AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ${param_count-1})
+                     OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                               AND active = true 
+                               AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ${param_count}))
+                """)
+                params.append(state_upper)
+                params.append(state_upper)
+            else:
+                # Use ANY() operator for multiple states
+                conditions.append(f"""
+                    (EXISTS (SELECT 1 FROM addresses WHERE company_id = c.id 
+                             AND UPPER(SUBSTRING(state FROM 1 FOR 2)) = ANY(${param_count-1}))
+                     OR EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
+                               AND active = true 
+                               AND UPPER(SUBSTRING(regulator FROM '([A-Z]{{2}})')) = ANY(${param_count})))
+                """)
+                params.append([state.upper() for state in filters.states])
+                params.append([state.upper() for state in filters.states])
 
-        # License type filtering
+        # License type filtering - use flexible matching
         if filters.license_types:
             param_count += 1
+            # Use ILIKE for flexible matching instead of exact equality
+            license_conditions = []
+            for license_type in filters.license_types:
+                license_conditions.append(f"license_type ILIKE ${param_count}")
+                params.append(f"%{license_type}%")
+                param_count += 1
+            
             conditions.append(f"""
                 EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
                         AND active = true 
-                        AND license_type = ANY(${param_count}))
+                        AND ({' OR '.join(license_conditions)}))
             """)
-            params.append(filters.license_types)
+            param_count -= 1  # Adjust for the loop increment
 
         # Business structure filtering
         if filters.business_structures:
