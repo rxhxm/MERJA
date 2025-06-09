@@ -627,13 +627,23 @@ def main():
                         status_text = st.empty()
                         results_container = st.empty()
                         
+                        # Create thread-safe state for cancellation
+                        enrichment_state = {'running': True, 'lock': threading.Lock()}
+                        
                         def progress_callback(completed, total, current_company):
                             progress = completed / total
                             progress_bar.progress(progress)
                             status_text.text(f"Enriching {current_company}... ({completed}/{total} completed)")
                         
                         def cancellation_check():
-                            return not st.session_state.enrichment_running
+                            # Thread-safe check of cancellation state
+                            with enrichment_state['lock']:
+                                return not enrichment_state['running']
+                        
+                        def update_cancellation_state():
+                            # Update cancellation state based on session state
+                            with enrichment_state['lock']:
+                                enrichment_state['running'] = st.session_state.enrichment_running
                         
                         try:
                             with st.spinner("Starting enrichment process..."):
@@ -641,8 +651,14 @@ def main():
                                 
                                 # Create custom progress callback for Streamlit
                                 def streamlit_progress_callback(completed, total, current_company):
-                                    if not st.session_state.enrichment_running:
-                                        return
+                                    # Update cancellation state from main thread
+                                    update_cancellation_state()
+                                    
+                                    # Check if cancelled
+                                    with enrichment_state['lock']:
+                                        if not enrichment_state['running']:
+                                            return
+                                    
                                     progress = completed / total
                                     progress_bar.progress(progress)
                                     status_text.text(f"🔄 Enriching: {current_company} ({completed}/{total})")
