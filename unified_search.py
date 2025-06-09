@@ -734,21 +734,8 @@ class SearchService:
             page_size: int,
             sort_field: SortField,
             sort_order: SortOrder) -> tuple:
+        # Simplified query without complex CTE to match count query
         base_query = """
-        WITH company_stats AS (
-            SELECT
-                c.id as company_id,
-                c.nmls_id,
-                COUNT(l.license_id) as total_licenses,
-                COUNT(CASE WHEN l.active = true THEN 1 END) as active_licenses,
-                ARRAY_AGG(DISTINCT l.license_type) FILTER (WHERE l.license_type IS NOT NULL AND l.active = true) as license_types,
-                ARRAY_AGG(DISTINCT COALESCE(SUBSTRING(a.state FROM 1 FOR 2), SUBSTRING(l.regulator FROM '([A-Z]{2})'), 'XX')) 
-                    FILTER (WHERE COALESCE(a.state, l.regulator) IS NOT NULL) as states_licensed
-            FROM companies c
-            LEFT JOIN licenses l ON c.id = l.company_id
-            LEFT JOIN addresses a ON c.id = a.company_id
-            GROUP BY c.id, c.nmls_id
-        )
         SELECT DISTINCT
             c.nmls_id,
             c.company_name,
@@ -760,12 +747,15 @@ class SearchService:
             (SELECT full_address FROM addresses WHERE company_id = c.id AND address_type = 'mailing' LIMIT 1) as mailing_address,
             c.federal_regulator,
             c.created_at,
-            COALESCE(cs.total_licenses, 0) as total_licenses,
-            COALESCE(cs.active_licenses, 0) as active_licenses,
-            COALESCE(cs.license_types, ARRAY[]::text[]) as license_types,
-            COALESCE(cs.states_licensed, ARRAY[]::text[]) as states_licensed
+            (SELECT COUNT(*) FROM licenses l WHERE l.company_id = c.id) as total_licenses,
+            (SELECT COUNT(*) FROM licenses l WHERE l.company_id = c.id AND l.active = true) as active_licenses,
+            (SELECT ARRAY_AGG(DISTINCT l.license_type) FROM licenses l WHERE l.company_id = c.id AND l.active = true AND l.license_type IS NOT NULL) as license_types,
+            (SELECT ARRAY_AGG(DISTINCT COALESCE(SUBSTRING(a.state FROM 1 FOR 2), SUBSTRING(l.regulator FROM '([A-Z]{2})'), 'XX')) 
+             FROM (SELECT state FROM addresses WHERE company_id = c.id 
+                   UNION 
+                   SELECT regulator FROM licenses WHERE company_id = c.id AND active = true) as combined(state)
+             WHERE combined.state IS NOT NULL) as states_licensed
         FROM companies c
-        LEFT JOIN company_stats cs ON c.id = cs.company_id
         LEFT JOIN addresses a ON c.id = a.company_id
         LEFT JOIN licenses l ON c.id = l.company_id
         """
@@ -838,17 +828,21 @@ class SearchService:
         # License count filtering
         if filters.min_licenses is not None:
             param_count += 1
-            conditions.append(f"cs.total_licenses >= ${param_count}")
+            conditions.append(f"""
+                (SELECT COUNT(*) FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true) >= ${param_count}
+            """)
             params.append(filters.min_licenses)
 
         if filters.max_licenses is not None:
             param_count += 1
-            conditions.append(f"cs.total_licenses <= ${param_count}")
+            conditions.append(f"""
+                (SELECT COUNT(*) FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true) <= ${param_count}
+            """)
             params.append(filters.max_licenses)
 
-        # Active licenses filter
+        # Active licenses filter - make consistent with count query
         if filters.active_licenses_only:
-            conditions.append("cs.active_licenses > 0")
+            conditions.append("EXISTS (SELECT 1 FROM licenses lic WHERE lic.company_id = c.id AND lic.active = true)")
 
         # Date filters for license issuance
         if filters.licensed_after:
@@ -876,7 +870,7 @@ class SearchService:
             SortField.company_name: "c.company_name",
             SortField.nmls_id: "c.nmls_id",
             SortField.business_structure: "c.business_structure",
-            SortField.total_licenses: "cs.total_licenses",
+            SortField.total_licenses: "total_licenses",
             SortField.created_at: "c.created_at"
         }[sort_field]
 
