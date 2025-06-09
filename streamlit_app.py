@@ -159,35 +159,6 @@ def main():
     """Main application"""
     st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
     
-    # Enhanced search examples for Finosu
-    st.header("🎯 Finosu Quick Search Examples")
-    st.markdown("""
-    **For Personal Lending Prospecting**  
-    Try these example searches that are optimized for finding personal loan lenders:
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🏦 Personal Loan Providers", use_container_width=True):
-            st.session_state['search_query'] = "Find me personal loan service providers"
-        if st.button("🌎 Banks in California", use_container_width=True):
-            st.session_state['search_query'] = "Banks in California"
-        if st.button("💳 Consumer Credit Companies", use_container_width=True):
-            st.session_state['search_query'] = "Consumer credit companies"
-        if st.button("📧 Companies with Contact Info", use_container_width=True):
-            st.session_state['search_query'] = "Financial companies with email addresses"
-    
-    with col2:
-        if st.button("🏢 Large Lenders (10+ Licenses)", use_container_width=True):
-            st.session_state['search_query'] = "Large lenders with 10+ licenses"
-        if st.button("🏛️ Banks in CA and NY", use_container_width=True):
-            st.session_state['search_query'] = "Banks in California and New York"
-        if st.button("💰 Installment Loan Companies", use_container_width=True):
-            st.session_state['search_query'] = "Installment loan companies"
-        if st.button("🏠 Mortgage Companies (Non-Target)", use_container_width=True):
-            st.session_state['search_query'] = "Mortgage companies"
-
     # Main search interface
     st.header("🔍 Enhanced AI Search")
     
@@ -210,6 +181,39 @@ def main():
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         search_clicked = st.button("🔍 Search", type="primary", use_container_width=True)
+    
+    # Subtle test cases dropdown for Finosu
+    with st.expander("💡 Example Searches for Personal Lending Prospecting", expanded=False):
+        st.markdown("**Click any example to use it:**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🏦 Personal loan service providers", key="ex1", use_container_width=True):
+                st.session_state.last_query = "Find me personal loan service providers"
+                st.rerun()
+            if st.button("🌎 Banks in California", key="ex2", use_container_width=True):
+                st.session_state.last_query = "Banks in California"  
+                st.rerun()
+            if st.button("💳 Consumer credit companies", key="ex3", use_container_width=True):
+                st.session_state.last_query = "Consumer credit companies"
+                st.rerun()
+            if st.button("📧 Companies with contact info", key="ex4", use_container_width=True):
+                st.session_state.last_query = "Financial companies with email addresses"
+                st.rerun()
+        
+        with col2:
+            if st.button("🏢 Large lenders (10+ licenses)", key="ex5", use_container_width=True):
+                st.session_state.last_query = "Large lenders with 10+ licenses"
+                st.rerun()
+            if st.button("🏛️ Banks in CA and NY", key="ex6", use_container_width=True):
+                st.session_state.last_query = "Banks in California and New York"
+                st.rerun()
+            if st.button("💰 Installment loan companies", key="ex7", use_container_width=True):
+                st.session_state.last_query = "Installment loan companies"
+                st.rerun()
+            if st.button("❌ Mortgage companies (exclude)", key="ex8", use_container_width=True):
+                st.session_state.last_query = "Mortgage companies"
+                st.rerun()
     
     # Filters
     col1, col2 = st.columns(2)
