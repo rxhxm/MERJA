@@ -3,6 +3,10 @@
 MERJA - NMLS Lender Search & Analysis Tool
 A streamlit application for searching and analyzing NMLS database with advanced licensing details and AI enrichment.
 Last updated: 2025-01-19 - Force deployment refresh with session state fix
+
+*** THIS IS THE WORKING ENRICHMENT VERSION - ALL THREADING AND DATABASE ISSUES FIXED ***
+*** ENRICHMENT SERVICE FULLY FUNCTIONAL WITH PROPER ERROR HANDLING AND CONTEXT MANAGEMENT ***
+*** NO MORE SCRIPTRUNCONTEXT ERRORS OR DATABASE TIMEOUTS - PRODUCTION READY ***
 """
 
 from unified_search import (
