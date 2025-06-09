@@ -517,19 +517,28 @@ BUSINESS GOAL: Find companies that offer UNSECURED PERSONAL LOANS (consumer cred
 Query: "{query}"
 
 KEY RULES - KEEP IT SIMPLE:
-1. Geographic searches (e.g., "banks in california") → states: ["CA"], license_types: null
+1. Geographic searches (e.g., "banks in california", "find banks in texas") → states: ["CA"], query: null
+   - DO NOT set query to "banks" for geographic searches - this is too restrictive
+   - Most financial companies aren't literally named "banks"
 2. Personal lending searches (e.g., "personal loan providers") → license_types: ["Personal", "Consumer Credit"]  
 3. Consumer credit searches (e.g., "consumer credit companies") → license_types: ["Consumer Credit"]
 4. General searches (e.g., "lenders", "financial companies") → no specific filters, let scoring handle it
 5. Contact searches (e.g., "companies with email") → has_email: true
 6. Size searches (e.g., "large lenders") → min_licenses: 10
 
+CRITICAL FOR GEOGRAPHIC SEARCHES:
+- "banks in california" → {{"states": ["CA"], "query": null}}
+- "find banks in texas" → {{"states": ["TX"], "query": null}}
+- "lenders in florida" → {{"states": ["FL"], "query": null}}
+- "financial companies in new york" → {{"states": ["NY"], "query": null}}
+
 EXAMPLES:
-- "Banks in California" → {{"states": ["CA"], "license_types": null}}
-- "Personal loan providers" → {{"license_types": ["Personal", "Consumer Credit"]}}
-- "Consumer credit companies" → {{"license_types": ["Consumer Credit"]}}
-- "Financial companies with email" → {{"has_email": true}}
-- "Large lenders" → {{"min_licenses": 10}}
+- "Banks in California" → {{"states": ["CA"], "query": null}}
+- "Personal loan providers" → {{"license_types": ["Personal", "Consumer Credit"], "query": null}}
+- "Consumer credit companies" → {{"license_types": ["Consumer Credit"], "query": null}}
+- "Financial companies with email" → {{"has_email": true, "query": null}}
+- "Large lenders" → {{"min_licenses": 10, "query": null}}
+- "ABC Financial Services" → {{"query": "ABC Financial Services"}}
 
 LICENSE TYPE TERMS (use general terms that will match multiple variations):
 - "Personal" → matches "Personal Loan License", "Personal Loan", etc.
@@ -549,7 +558,7 @@ Return ONLY this JSON structure:
     "semantic_query": null,
     "business_critical_flags": [],
     "filters": {{
-        "query": "search terms or null",
+        "query": null,
         "states": ["CA"] or null,
         "license_types": ["Personal"] or null,
         "has_email": true/false/null,
@@ -558,7 +567,7 @@ Return ONLY this JSON structure:
     }}
 }}
 
-CRITICAL: Only set specific filters when the user clearly requests them. For geographic searches, do NOT add license_types.
+CRITICAL: For geographic searches, ALWAYS set query to null. Only set query for specific company name searches.
 """
 
     async def _get_search_context(self) -> Dict:
