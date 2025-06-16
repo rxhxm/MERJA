@@ -513,63 +513,54 @@ class NaturalLanguageProcessor:
 
     def _create_analysis_prompt(self, query: str, context: Dict) -> str:
         return f"""
-You are analyzing search queries for Finosu, a personal lending company looking for business prospects.
-
-BUSINESS GOAL: Find companies that offer UNSECURED PERSONAL LOANS (consumer credit, installment loans, personal loans).
+You are analyzing search queries for an NMLS database search system.
 
 Query: "{query}"
 
-KEY RULES - GEOGRAPHIC SEARCHES:
-1. For geographic searches like "banks in california", "lenders in texas", "financial companies in florida":
-   - DO NOT use the generic term (banks/lenders/financial) as a text search
-   - ONLY set the state filter: {{"states": ["CA"], "query": null}}
-   - Most NMLS companies are named "ABC Financial Services", "XYZ Lending" etc., not "ABC Bank"
+CRITICAL RULES FOR GEOGRAPHIC SEARCHES:
+1. If the query is asking for companies in specific locations (states/cities) using generic terms like:
+   - "banks in [location]"
+   - "lenders in [location]" 
+   - "financial companies in [location]"
+   - "companies in [location]"
+   
+   Then you MUST:
+   - Set states filter ONLY: {{"states": ["CA"], "query": null, "license_types": null}}
+   - DO NOT add any license_types filters
+   - DO NOT use the generic term as a text search
 
-2. For specific company searches like "Wells Fargo", "Chase Bank":
-   - Use the company name as text search: {{"query": "Wells Fargo"}}
-
-3. For license type searches like "personal loan providers", "consumer credit companies":
-   - Use license type filters: {{"license_types": ["Personal", "Consumer Credit"]}}
-
-4. For contact searches like "companies with email":
-   - Use contact filters: {{"has_email": true}}
+2. Only add license_types filters when the user specifically mentions license types:
+   - "personal loan companies" → add license_types: ["Personal"]
+   - "consumer credit lenders" → add license_types: ["Consumer Credit"]
+   - "mortgage companies" → add license_types: ["Mortgage"]
 
 EXAMPLES:
-- "Banks in California" → {{"states": ["CA"], "query": null}}
-- "Lenders in Texas" → {{"states": ["TX"], "query": null}}
-- "Financial companies in Florida" → {{"states": ["FL"], "query": null}}
-- "Wells Fargo" → {{"query": "Wells Fargo"}}
-- "Personal loan providers" → {{"license_types": ["Personal", "Consumer Credit"]}}
-- "Consumer credit companies in NY" → {{"states": ["NY"], "license_types": ["Consumer Credit"]}}
-
-LICENSE TYPE TERMS (use general terms that will match multiple variations):
-- "Personal" → matches "Personal Loan License", "Personal Loan", etc.
-- "Consumer Credit" → matches "Consumer Credit License", "Consumer Credit", etc.
-- "Consumer" → matches any consumer-related license
-- "Installment" → matches installment loan licenses
-- "Small Loan" → matches small loan licenses
+- "Banks in California" → {{"states": ["CA"], "query": null, "license_types": null}}
+- "Lenders in Texas" → {{"states": ["TX"], "query": null, "license_types": null}}
+- "Banks in California and New York" → {{"states": ["CA", "NY"], "query": null, "license_types": null}}
+- "Financial companies in Florida" → {{"states": ["FL"], "query": null, "license_types": null}}
+- "Personal loan companies in NY" → {{"states": ["NY"], "license_types": ["Personal"]}}
+- "Wells Fargo" → {{"query": "Wells Fargo", "states": null, "license_types": null}}
 
 STATE MAPPING: california→CA, new york→NY, texas→TX, florida→FL
 
 Return ONLY this JSON structure:
 {{
     "intent": "find_lenders",
-    "confidence": 0.8,
-    "explanation": "Brief explanation of what user wants",
-    "lender_type_preference": "unsecured_personal",
+    "confidence": 0.9,
+    "explanation": "User wants to find companies licensed in specific states",
+    "lender_type_preference": null,
     "semantic_query": null,
     "business_critical_flags": [],
     "filters": {{
         "query": null,
-        "states": ["CA"] or null,
-        "license_types": ["Personal"] or null,
-        "has_email": true/false/null,
-        "min_licenses": number or null,
+        "states": ["CA", "NY"],
+        "license_types": null,
         "active_licenses_only": true
     }}
 }}
 
-CRITICAL: For geographic searches with generic terms (banks, lenders, financial companies), set query to null and only use state filters.
+REMEMBER: For geographic searches with generic terms (banks, lenders, financial companies), NEVER add license_types filters. Only filter by states.
 """
 
     async def _get_search_context(self) -> Dict:
