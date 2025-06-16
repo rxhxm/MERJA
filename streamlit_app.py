@@ -594,19 +594,6 @@ def main():
                 st.session_state.last_query = "Mortgage companies"
                 st.rerun()
     
-    # Filters
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        selected_states = st.multiselect(
-            "📍 States Licensed In:",
-            ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"])
-    
-    with col2:
-        lender_type_filter = st.selectbox(
-            "🏦 Lender Type:", 
-            ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"])
-    
     # Advanced Filters Section
     with st.expander("🔧 Advanced Filters & Custom Rules", expanded=False):
         st.markdown("**Customize your filtering criteria with business rules and thresholds**")
@@ -614,6 +601,8 @@ def main():
         # Initialize session state for advanced filters
         if 'advanced_filters' not in st.session_state:
             st.session_state.advanced_filters = {
+                'selected_states': [],
+                'lender_type_filter': 'All Types',
                 'min_licenses': 1,
                 'max_licenses': 1000,
                 'min_states': 1,
@@ -622,6 +611,33 @@ def main():
                 'federal_regulators': [],
                 'has_contact_info': 'Any'
             }
+        
+        # Primary Filters Section
+        st.markdown("##### 🎯 Primary Filters")
+        
+        col_primary1, col_primary2 = st.columns(2)
+        
+        with col_primary1:
+            selected_states = st.multiselect(
+                "📍 States Licensed In:",
+                ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
+                default=st.session_state.advanced_filters['selected_states'],
+                help="Filter companies by states where they are licensed"
+            )
+            st.session_state.advanced_filters['selected_states'] = selected_states
+        
+        with col_primary2:
+            lender_type_filter = st.selectbox(
+                "🏦 Lender Type:", 
+                ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
+                index=["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"].index(
+                    st.session_state.advanced_filters['lender_type_filter']
+                ),
+                help="Filter by lender classification type"
+            )
+            st.session_state.advanced_filters['lender_type_filter'] = lender_type_filter
+        
+        st.markdown("---")
         
         # Business Rules & Thresholds
         st.markdown("##### ⚙️ Business Rules & Thresholds")
@@ -713,17 +729,17 @@ def main():
                 original_count = len(preview_companies)
                 
                 # Apply basic filters first
-                if selected_states:
-                    preview_companies = [c for c in preview_companies if any(state in c.get('states_licensed', []) for state in selected_states)]
+                if st.session_state.advanced_filters['selected_states']:
+                    preview_companies = [c for c in preview_companies if any(state in c.get('states_licensed', []) for state in st.session_state.advanced_filters['selected_states'])]
                 
-                if lender_type_filter != "All Types":
+                if st.session_state.advanced_filters['lender_type_filter'] != "All Types":
                     lender_map = {
                         "Unsecured Personal (TARGET)": "unsecured_personal",
                         "Mortgage (EXCLUDE)": "mortgage", 
                         "Mixed": "mixed",
                         "Unknown": "unknown"
                     }
-                    target_type = lender_map.get(lender_type_filter)
+                    target_type = lender_map.get(st.session_state.advanced_filters['lender_type_filter'])
                     if target_type:
                         preview_companies = [c for c in preview_companies if c.get('lender_type') == target_type]
                 
@@ -731,18 +747,18 @@ def main():
                 preview_companies = apply_advanced_filters(preview_companies, st.session_state.advanced_filters)
                 
                 after_basic = len(st.session_state.search_results['companies'])
-                if selected_states or lender_type_filter != "All Types":
+                if st.session_state.advanced_filters['selected_states'] or st.session_state.advanced_filters['lender_type_filter'] != "All Types":
                     temp_companies = st.session_state.search_results['companies'].copy()
-                    if selected_states:
-                        temp_companies = [c for c in temp_companies if any(state in c.get('states_licensed', []) for state in selected_states)]
-                    if lender_type_filter != "All Types":
+                    if st.session_state.advanced_filters['selected_states']:
+                        temp_companies = [c for c in temp_companies if any(state in c.get('states_licensed', []) for state in st.session_state.advanced_filters['selected_states'])]
+                    if st.session_state.advanced_filters['lender_type_filter'] != "All Types":
                         lender_map = {
                             "Unsecured Personal (TARGET)": "unsecured_personal",
                             "Mortgage (EXCLUDE)": "mortgage", 
                             "Mixed": "mixed",
                             "Unknown": "unknown"
                         }
-                        target_type = lender_map.get(lender_type_filter)
+                        target_type = lender_map.get(st.session_state.advanced_filters['lender_type_filter'])
                         if target_type:
                             temp_companies = [c for c in temp_companies if c.get('lender_type') == target_type]
                     after_basic = len(temp_companies)
@@ -763,6 +779,8 @@ def main():
         # Reset Filters
         if st.button("🔄 Reset All Advanced Filters"):
             st.session_state.advanced_filters = {
+                'selected_states': [],
+                'lender_type_filter': 'All Types',
                 'min_licenses': 1,
                 'max_licenses': 1000,
                 'min_states': 1,
@@ -801,17 +819,17 @@ def main():
         original_count = len(companies)  # Store original count before filtering
         
         # Apply filters
-        if selected_states:
-            companies = [c for c in companies if any(state in c.get('states_licensed', []) for state in selected_states)]
+        if st.session_state.advanced_filters['selected_states']:
+            companies = [c for c in companies if any(state in c.get('states_licensed', []) for state in st.session_state.advanced_filters['selected_states'])]
         
-        if lender_type_filter != "All Types":
+        if st.session_state.advanced_filters['lender_type_filter'] != "All Types":
             lender_map = {
                 "Unsecured Personal (TARGET)": "unsecured_personal",
                 "Mortgage (EXCLUDE)": "mortgage", 
                 "Mixed": "mixed",
                 "Unknown": "unknown"
             }
-            target_type = lender_map.get(lender_type_filter)
+            target_type = lender_map.get(st.session_state.advanced_filters['lender_type_filter'])
             if target_type:
                 companies = [c for c in companies if c.get('lender_type') == target_type]
         
@@ -915,7 +933,7 @@ def main():
                             st.metric("Results/Second", f"{results_per_sec:,.0f}")
         
         # Always show total database context for transparency
-        filters_applied = bool(selected_states or lender_type_filter != "All Types")
+        filters_applied = bool(st.session_state.advanced_filters['selected_states'] or st.session_state.advanced_filters['lender_type_filter'] != "All Types")
         advanced_filters_applied = any([
             st.session_state.advanced_filters.get('min_licenses', 1) > 1,
             st.session_state.advanced_filters.get('max_licenses', 1000) < 1000,
