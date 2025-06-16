@@ -612,6 +612,12 @@ def main():
                 'has_contact_info': 'Any'
             }
         
+        # Ensure all required keys exist (migration for existing sessions)
+        if 'selected_states' not in st.session_state.advanced_filters:
+            st.session_state.advanced_filters['selected_states'] = []
+        if 'lender_type_filter' not in st.session_state.advanced_filters:
+            st.session_state.advanced_filters['lender_type_filter'] = 'All Types'
+        
         # Primary Filters Section
         st.markdown("##### 🎯 Primary Filters")
         
