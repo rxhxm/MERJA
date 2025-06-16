@@ -399,87 +399,65 @@ def format_license_summary(company: Dict[str, Any]) -> str:
     
     return summary
 
-def apply_advanced_filters(companies: List[Dict], advanced_filters: Dict) -> List[Dict]:
-    """Apply advanced filtering criteria to companies list"""
-    if not advanced_filters:
+def apply_advanced_filters(companies: List[Dict[str, Any]], advanced_filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Apply advanced filtering criteria to companies"""
+    if not companies:
         return companies
     
-    filtered_companies = []
+    filtered_companies = companies.copy()
     
-    for company in companies:
-        # Skip if company doesn't meet basic criteria
-        if not company:
-            continue
-            
-        # Get company data
-        states_licensed = company.get('states_licensed', [])
-        license_types = company.get('license_types', []) or []
-        total_licenses = len(license_types)
-        total_states = len(states_licensed)
-        
-        # Apply license count filters
-        if total_licenses < advanced_filters.get('min_licenses', 1):
-            continue
-        if total_licenses > advanced_filters.get('max_licenses', 1000):
-            continue
-            
-        # Apply state count filters
-        if total_states < advanced_filters.get('min_states', 1):
-            continue
-        if total_states > advanced_filters.get('max_states', 50):
-            continue
-        
-        # Apply custom classification if enabled
-        if advanced_filters.get('use_custom_classification', False):
-            custom_target_licenses = advanced_filters.get('custom_target_licenses', [])
-            custom_exclude_licenses = advanced_filters.get('custom_exclude_licenses', [])
-            
-            # Count target and exclude licenses based on custom rules
-            target_license_count = 0
-            exclude_license_count = 0
-            
-            for license_type in license_types:
-                if any(target in license_type for target in custom_target_licenses):
-                    target_license_count += 1
-                if any(exclude in license_type for exclude in custom_exclude_licenses):
-                    exclude_license_count += 1
-            
-            # Apply target license minimum
-            if target_license_count < advanced_filters.get('min_target_licenses', 0):
-                continue
-                
-            # Apply exclude license maximum
-            if exclude_license_count > advanced_filters.get('max_exclude_licenses', 1000):
-                continue
-        
-        # Apply contact information filters
-        contact_req = advanced_filters.get('has_contact_info', 'Any')
-        has_email = bool(company.get('email'))
-        has_phone = bool(company.get('phone'))
-        
-        if contact_req == 'Email Required' and not has_email:
-            continue
-        elif contact_req == 'Phone Required' and not has_phone:
-            continue
-        elif contact_req == 'Both Required' and not (has_email and has_phone):
-            continue
-        
-        # Apply business structure filters
-        business_structures = advanced_filters.get('business_structures', [])
-        if business_structures:
-            company_structure = company.get('business_structure', '')
-            if not any(structure.lower() in company_structure.lower() for structure in business_structures):
-                continue
-        
-        # Apply federal regulator filters
-        federal_regulators = advanced_filters.get('federal_regulators', [])
-        if federal_regulators:
-            company_regulator = company.get('federal_regulator', '')
-            if not any(regulator.lower() in company_regulator.lower() for regulator in federal_regulators):
-                continue
-        
-        # If we get here, company passed all filters
-        filtered_companies.append(company)
+    # Apply license count filters
+    min_licenses = advanced_filters.get('min_licenses', 1)
+    max_licenses = advanced_filters.get('max_licenses', 1000)
+    if min_licenses > 1 or max_licenses < 1000:
+        filtered_companies = [
+            c for c in filtered_companies 
+            if min_licenses <= len(c.get('license_types', [])) <= max_licenses
+        ]
+    
+    # Apply states count filters
+    min_states = advanced_filters.get('min_states', 1)
+    max_states = advanced_filters.get('max_states', 50)
+    if min_states > 1 or max_states < 50:
+        filtered_companies = [
+            c for c in filtered_companies 
+            if min_states <= len(c.get('states_licensed', [])) <= max_states
+        ]
+    
+    # Apply business structure filter
+    business_structures = advanced_filters.get('business_structures', [])
+    if business_structures:
+        filtered_companies = [
+            c for c in filtered_companies 
+            if c.get('business_structure') in business_structures
+        ]
+    
+    # Apply federal regulator filter
+    federal_regulators = advanced_filters.get('federal_regulators', [])
+    if federal_regulators:
+        filtered_companies = [
+            c for c in filtered_companies 
+            if c.get('federal_regulator') in federal_regulators
+        ]
+    
+    # Apply contact information filter
+    contact_req = advanced_filters.get('has_contact_info', 'Any')
+    if contact_req != 'Any':
+        if contact_req == 'Email Required':
+            filtered_companies = [
+                c for c in filtered_companies 
+                if c.get('email_address')
+            ]
+        elif contact_req == 'Phone Required':
+            filtered_companies = [
+                c for c in filtered_companies 
+                if c.get('phone_number')
+            ]
+        elif contact_req == 'Both Required':
+            filtered_companies = [
+                c for c in filtered_companies 
+                if c.get('email_address') and c.get('phone_number')
+            ]
     
     return filtered_companies
 
@@ -631,125 +609,19 @@ def main():
     
     # Advanced Filters Section
     with st.expander("🔧 Advanced Filters & Custom Rules", expanded=False):
-        st.markdown("**Customize your filtering criteria and redefine lender classifications**")
+        st.markdown("**Customize your filtering criteria with business rules and thresholds**")
         
         # Initialize session state for advanced filters
         if 'advanced_filters' not in st.session_state:
             st.session_state.advanced_filters = {
-                'use_custom_classification': False,
-                'custom_target_licenses': [],
-                'custom_exclude_licenses': [],
                 'min_licenses': 1,
                 'max_licenses': 1000,
                 'min_states': 1,
                 'max_states': 50,
-                'min_target_licenses': 0,
-                'max_exclude_licenses': 1000,
                 'business_structures': [],
                 'federal_regulators': [],
-                'has_contact_info': 'Any',
-                'profile_name': 'Custom'
+                'has_contact_info': 'Any'
             }
-        
-        # Filter Profiles
-        st.markdown("##### 📋 Filter Profiles")
-        col_profile1, col_profile2, col_profile3 = st.columns([2, 1, 1])
-        
-        with col_profile1:
-            profile_options = [
-                "Default (Current System)",
-                "Conservative Targeting", 
-                "Aggressive Prospecting",
-                "Mortgage Focused",
-                "Personal Loan Only",
-                "Multi-State Operators",
-                "Custom Profile"
-            ]
-            selected_profile = st.selectbox("Choose a filter profile:", profile_options, key="filter_profile")
-        
-        with col_profile2:
-            if st.button("📥 Load Profile", use_container_width=True):
-                # Load predefined profiles
-                if selected_profile == "Conservative Targeting":
-                    st.session_state.advanced_filters.update({
-                        'use_custom_classification': True,
-                        'min_licenses': 3,
-                        'min_states': 2,
-                        'min_target_licenses': 1,
-                        'max_exclude_licenses': 0,
-                        'has_contact_info': 'Required'
-                    })
-                elif selected_profile == "Aggressive Prospecting":
-                    st.session_state.advanced_filters.update({
-                        'use_custom_classification': True,
-                        'min_licenses': 1,
-                        'min_states': 1,
-                        'min_target_licenses': 0,
-                        'max_exclude_licenses': 1000,
-                        'has_contact_info': 'Any'
-                    })
-                elif selected_profile == "Personal Loan Only":
-                    st.session_state.advanced_filters.update({
-                        'use_custom_classification': True,
-                        'min_target_licenses': 1,
-                        'max_exclude_licenses': 0
-                    })
-                elif selected_profile == "Multi-State Operators":
-                    st.session_state.advanced_filters.update({
-                        'min_states': 5,
-                        'min_licenses': 5
-                    })
-                st.rerun()
-        
-        with col_profile3:
-            if st.button("💾 Save Profile", use_container_width=True):
-                st.success("Profile saved! (Feature coming soon)")
-        
-        st.markdown("---")
-        
-        # Custom License Classification
-        st.markdown("##### 🎯 Custom License Classification")
-        
-        use_custom = st.checkbox(
-            "Override default license classification", 
-            value=st.session_state.advanced_filters['use_custom_classification'],
-            help="Define your own rules for what constitutes TARGET vs EXCLUDE licenses"
-        )
-        st.session_state.advanced_filters['use_custom_classification'] = use_custom
-        
-        if use_custom:
-            col_target, col_exclude = st.columns(2)
-            
-            # Get all available license types from the classifier
-            all_license_types = list(set(
-                list(LenderClassifier.UNSECURED_PERSONAL_LICENSES) + 
-                list(LenderClassifier.MORTGAGE_LICENSES) + 
-                ["Collection Agency License", "Consumer Credit License", "Debt Collection License", 
-                 "Money Transmitter License", "Check Casher License", "Payday Loan License",
-                 "Small Loan License", "Sales Finance License", "Credit Services Organization"]
-            ))
-            
-            with col_target:
-                st.markdown("**🎯 TARGET License Types:**")
-                custom_target = st.multiselect(
-                    "Select license types that qualify as TARGET:",
-                    all_license_types,
-                    default=st.session_state.advanced_filters['custom_target_licenses'],
-                    help="Companies with these licenses will be classified as TARGET lenders"
-                )
-                st.session_state.advanced_filters['custom_target_licenses'] = custom_target
-            
-            with col_exclude:
-                st.markdown("**❌ EXCLUDE License Types:**")
-                custom_exclude = st.multiselect(
-                    "Select license types that qualify as EXCLUDE:",
-                    all_license_types,
-                    default=st.session_state.advanced_filters['custom_exclude_licenses'],
-                    help="Companies with these licenses will be classified as EXCLUDE lenders"
-                )
-                st.session_state.advanced_filters['custom_exclude_licenses'] = custom_exclude
-        
-        st.markdown("---")
         
         # Business Rules & Thresholds
         st.markdown("##### ⚙️ Business Rules & Thresholds")
@@ -792,23 +664,7 @@ def main():
             st.session_state.advanced_filters['max_states'] = max_states
         
         with col_rules2:
-            st.markdown("**🎯 Classification Rules:**")
-            
-            min_target = st.number_input(
-                "Minimum TARGET licenses:",
-                min_value=0, max_value=50,
-                value=st.session_state.advanced_filters['min_target_licenses'],
-                help="Companies must have at least this many TARGET licenses"
-            )
-            st.session_state.advanced_filters['min_target_licenses'] = min_target
-            
-            max_exclude = st.number_input(
-                "Maximum EXCLUDE licenses:",
-                min_value=0, max_value=1000,
-                value=st.session_state.advanced_filters['max_exclude_licenses'],
-                help="Companies must have no more than this many EXCLUDE licenses"
-            )
-            st.session_state.advanced_filters['max_exclude_licenses'] = max_exclude
+            st.markdown("**📞 Contact Requirements:**")
             
             contact_req = st.selectbox(
                 "Contact information requirement:",
@@ -907,19 +763,13 @@ def main():
         # Reset Filters
         if st.button("🔄 Reset All Advanced Filters"):
             st.session_state.advanced_filters = {
-                'use_custom_classification': False,
-                'custom_target_licenses': [],
-                'custom_exclude_licenses': [],
                 'min_licenses': 1,
                 'max_licenses': 1000,
                 'min_states': 1,
                 'max_states': 50,
-                'min_target_licenses': 0,
-                'max_exclude_licenses': 1000,
                 'business_structures': [],
                 'federal_regulators': [],
-                'has_contact_info': 'Any',
-                'profile_name': 'Custom'
+                'has_contact_info': 'Any'
             }
             st.rerun()
     
@@ -980,13 +830,10 @@ def main():
         # Always show total database context for transparency
         filters_applied = bool(selected_states or lender_type_filter != "All Types")
         advanced_filters_applied = any([
-            st.session_state.advanced_filters.get('use_custom_classification', False),
             st.session_state.advanced_filters.get('min_licenses', 1) > 1,
             st.session_state.advanced_filters.get('max_licenses', 1000) < 1000,
             st.session_state.advanced_filters.get('min_states', 1) > 1,
             st.session_state.advanced_filters.get('max_states', 50) < 50,
-            st.session_state.advanced_filters.get('min_target_licenses', 0) > 0,
-            st.session_state.advanced_filters.get('max_exclude_licenses', 1000) < 1000,
             st.session_state.advanced_filters.get('business_structures', []),
             st.session_state.advanced_filters.get('federal_regulators', []),
             st.session_state.advanced_filters.get('has_contact_info', 'Any') != 'Any'
