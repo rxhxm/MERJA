@@ -2,11 +2,12 @@
 """
 MERJA - NMLS Lender Search & Analysis Tool
 A streamlit application for searching and analyzing NMLS database with advanced licensing details and AI enrichment.
-Last updated: 2025-01-19 - Force deployment refresh with session state fix
+Last updated: 2025-01-19 - Enrichment section always visible with proper availability status
 
 *** THIS IS THE WORKING ENRICHMENT VERSION - ALL THREADING AND DATABASE ISSUES FIXED ***
 *** ENRICHMENT SERVICE FULLY FUNCTIONAL WITH PROPER ERROR HANDLING AND CONTEXT MANAGEMENT ***
 *** NO MORE SCRIPTRUNCONTEXT ERRORS OR DATABASE TIMEOUTS - PRODUCTION READY ***
+*** ENRICHMENT SECTION NOW ALWAYS VISIBLE WITH CLEAR STATUS INDICATORS ***
 """
 
 from unified_search import (
@@ -707,226 +708,228 @@ def main():
                 - Be patient - the API is doing deep research!
                 """)
             
-            if ENRICHMENT_AVAILABLE:
-                # Company selection for enrichment
-                st.markdown("#### Select Companies to Enrich")
-                enrichment_options = []
-                for i, company in enumerate(companies):
-                    company_name = company['company_name']
-                    nmls_id = company['nmls_id']
-                    lender_type = company.get('lender_type', 'unknown')
-                    states_count = len(company.get('states_licensed', []))
-                    
-                    # Create display string with key info
-                    type_emoji = "🎯" if lender_type == 'unsecured_personal' else "❌" if lender_type == 'mortgage' else "⚠️" if lender_type == 'mixed' else "❓"
-                    display_str = f"{type_emoji} {company_name} (NMLS: {nmls_id}) - {states_count} states"
-                    enrichment_options.append((display_str, i))
-                
-                # Multi-select for companies
-                selected_company_indices = st.multiselect(
-                    "Choose companies to enrich (select multiple):",
-                    options=[opt[1] for opt in enrichment_options],
-                    format_func=lambda i: enrichment_options[i][0],
-                    help="Select companies you want to enrich with additional business data and contacts"
-                )
-                
-                # Enrichment controls
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    if selected_company_indices:
-                        count = len(selected_company_indices)
-                        estimated_time = count * 8  # 8 minutes per company (extra safe)
-                        if count > 2:
-                            st.warning(f"⚠️ {count} companies selected. This will take ~{estimated_time:.0f} minutes. The SixtyFour API does extensive research - consider selecting 1-2 companies for faster results.")
-                        else:
-                            st.info(f"Selected {count} companies for enrichment (~{estimated_time:.0f} minutes)")
-                            st.caption("⏱️ Each company takes ~8 minutes due to extensive AI research by the SixtyFour API")
-                
-                with col2:
-                    enrich_button = st.button(
-                        "🚀 Start Enrichment",
-                        disabled=not selected_company_indices or st.session_state.enrichment_running,
-                        use_container_width=True,
-                        type="primary"
-                    )
-                
-                # Enrichment processing
-                if enrich_button and selected_company_indices:
-                    st.session_state.enrichment_running = True
-                    
-                    selected_companies = [companies[i] for i in selected_company_indices]
-                    
-                    # Create enrichment service
-                    try:
-                        enrichment_service = create_enrichment_service()
-                        
-                        if not enrichment_service:
-                            st.error("❌ Enrichment service unavailable. Please check API key configuration.")
-                            st.info("💡 Make sure SIXTYFOUR_API_KEY is set in your Streamlit secrets or environment variables.")
-                            st.session_state.enrichment_running = False
-                        else:
-                            st.info("✅ Enrichment service initialized successfully")
-                    except Exception as e:
-                        st.error(f"❌ Failed to create enrichment service: {type(e).__name__}: {str(e)}")
-                        st.session_state.enrichment_running = False
-                        enrichment_service = None
-                    
-                    if enrichment_service:
-                        # Progress tracking
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        
-                        def simple_progress_callback(completed, total, current_company):
-                            progress = completed / total
-                            progress_bar.progress(progress)
-                            status_text.text(f"🔄 Enriching: {current_company} ({completed}/{total})")
-                        
-                        try:
-                            with st.spinner("Starting enrichment process..."):
-                                status_text.text("Initializing enrichment service...")
-                                
-                                # Run simplified enrichment
-                                enriched_df, contacts_df = run_async(
-                                    enrichment_service.enrich_companies_batch(
-                                        selected_companies,
-                                        progress_callback=simple_progress_callback
-                                    )
-                                )
-                                
-                                # Store results in session state
-                                st.session_state.enriched_results = {
-                                    'companies': enriched_df,
-                                    'contacts': contacts_df,
-                                    'timestamp': datetime.now()
-                                }
-                                
-                                progress_bar.progress(1.0)
-                                status_text.text("✅ Enrichment completed successfully!")
-                                
-                        except Exception as e:
-                            import traceback
-                            error_details = f"{type(e).__name__}: {str(e)}"
-                            full_traceback = traceback.format_exc()
-                            
-                            logger.error(f"Enrichment failed: {error_details}")
-                            logger.error(f"Full traceback: {full_traceback}")
-                            
-                            # Show user-friendly error message
-                            st.error(f"❌ Enrichment failed: {error_details}")
-                            status_text.text("❌ Enrichment failed")
-                            
-                            # Show detailed error information in expandable section
-                            with st.expander("🔍 Error Details (Click to expand)", expanded=False):
-                                st.code(f"Error Type: {type(e).__name__}")
-                                st.code(f"Error Message: {str(e)}")
-                                st.text("Full Traceback:")
-                                st.code(full_traceback)
-                                
-                                # Add troubleshooting tips
-                                st.markdown("**💡 Troubleshooting Tips:**")
-                                if "timeout" in str(e).lower():
-                                    st.markdown("- This appears to be a timeout error. The SixtyFour API may be taking longer than expected.")
-                                    st.markdown("- Try selecting fewer companies or retry with a single company.")
-                                elif "api" in str(e).lower():
-                                    st.markdown("- This appears to be an API-related error.")
-                                    st.markdown("- Check your SixtyFour API key configuration.")
-                                    st.markdown("- Verify your internet connection.")
-                                else:
-                                    st.markdown("- Try restarting the Streamlit app.")
-                                    st.markdown("- Check the logs for more detailed error information.")
-                                    st.markdown("- If the issue persists, contact support with the error details above.")
-                        finally:
-                            st.session_state.enrichment_running = False
-                
-                # Display enrichment results
-                if st.session_state.enriched_results:
-                    st.markdown("---")
-                    st.markdown("#### 📊 Enrichment Results")
-                    
-                    enriched_data = st.session_state.enriched_results
-                    enriched_df = enriched_data['companies']
-                    contacts_df = enriched_data['contacts']
-                    timestamp = enriched_data['timestamp']
-                    
-                    # Results summary
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Companies Enriched", len(enriched_df))
-                    with col2:
-                        qualified_count = len(enriched_df[enriched_df.get('qualified', False) == True]) if 'qualified' in enriched_df.columns else 0
-                        st.metric("Qualified Leads", qualified_count)
-                    with col3:
-                        total_contacts = len(contacts_df)
-                        st.metric("Contacts Found", total_contacts)
-                    with col4:
-                        avg_time = enriched_df['processing_time'].mean() if 'processing_time' in enriched_df.columns else 0
-                        st.metric("Avg Time (s)", f"{avg_time:.1f}")
-                    
-                    # Simple tabs for results
-                    tab1, tab2 = st.tabs(["📈 Company Data", "👥 Contacts"])
-                    
-                    with tab1:
-                        st.markdown("**Enriched Companies**")
-                        
-                        if not enriched_df.empty:
-                            # Display simplified data
-                            display_columns = ['company_name', 'nmls_id', 'website', 'industry', 'employees', 'personal_loans', 'qualified']
-                            available_columns = [col for col in display_columns if col in enriched_df.columns]
-                            
-                            if available_columns:
-                                display_df = enriched_df[available_columns].copy()
-                                
-                                # Format columns
-                                if 'personal_loans' in display_df.columns:
-                                    display_df['Personal Loans'] = display_df['personal_loans'].apply(
-                                        lambda x: "✅ Yes" if str(x).lower().startswith('yes') else "❌ No" if str(x).lower().startswith('no') else "❓ Unknown"
-                                    )
-                                    display_df = display_df.drop('personal_loans', axis=1)
-                                
-                                if 'qualified' in display_df.columns:
-                                    display_df['Qualified'] = display_df['qualified'].apply(
-                                        lambda x: "🎯 YES" if x else "❌ NO"
-                                    )
-                                    display_df = display_df.drop('qualified', axis=1)
-                                
-                                # Rename columns
-                                column_renames = {
-                                    'company_name': 'Company',
-                                    'nmls_id': 'NMLS ID',
-                                    'website': 'Website',
-                                    'industry': 'Industry',
-                                    'employees': 'Employees'
-                                }
-                                
-                                display_df = display_df.rename(columns=column_renames)
-                                st.dataframe(display_df, use_container_width=True)
-                            else:
-                                st.warning("No enrichment data to display")
-                        else:
-                            st.info("No companies were successfully enriched")
-                    
-                    with tab2:
-                        st.markdown("**Contact Information**")
-                        
-                        if not contacts_df.empty:
-                            st.dataframe(contacts_df, use_container_width=True)
-                            
-                            # Export contacts
-                            if st.button("📧 Download Contacts CSV"):
-                                csv = contacts_df.to_csv(index=False)
-                                st.download_button(
-                                    label="Download Contacts",
-                                    data=csv,
-                                    file_name=f"contacts_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv"
-                                )
-                        else:
-                            st.info("No contacts found")
-            
-            else:
+            # Show enrichment availability status
+            if not ENRICHMENT_AVAILABLE:
                 st.warning("⚠️ Enrichment service is not available. Please check that the enrichment dependencies are installed and the API key is configured.")
                 st.info("To enable enrichment, ensure the SixtyFour API key is configured in your Streamlit secrets.")
+                st.markdown("**Note:** The enrichment section is visible but disabled until the service is properly configured.")
+            
+            # Company selection for enrichment (always show, but disable if not available)
+            st.markdown("#### Select Companies to Enrich")
+            enrichment_options = []
+            for i, company in enumerate(companies):
+                company_name = company['company_name']
+                nmls_id = company['nmls_id']
+                lender_type = company.get('lender_type', 'unknown')
+                states_count = len(company.get('states_licensed', []))
+                
+                # Create display string with key info
+                type_emoji = "🎯" if lender_type == 'unsecured_personal' else "❌" if lender_type == 'mortgage' else "⚠️" if lender_type == 'mixed' else "❓"
+                display_str = f"{type_emoji} {company_name} (NMLS: {nmls_id}) - {states_count} states"
+                enrichment_options.append((display_str, i))
+            
+            # Multi-select for companies
+            selected_company_indices = st.multiselect(
+                "Choose companies to enrich (select multiple):",
+                options=[opt[1] for opt in enrichment_options],
+                format_func=lambda i: enrichment_options[i][0],
+                help="Select companies you want to enrich with additional business data and contacts",
+                disabled=not ENRICHMENT_AVAILABLE
+            )
+            
+            # Enrichment controls
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                if selected_company_indices:
+                    count = len(selected_company_indices)
+                    estimated_time = count * 8  # 8 minutes per company (extra safe)
+                    if count > 2:
+                        st.warning(f"⚠️ {count} companies selected. This will take ~{estimated_time:.0f} minutes. The SixtyFour API does extensive research - consider selecting 1-2 companies for faster results.")
+                    else:
+                        st.info(f"Selected {count} companies for enrichment (~{estimated_time:.0f} minutes)")
+                        st.caption("⏱️ Each company takes ~8 minutes due to extensive AI research by the SixtyFour API")
+            
+            with col2:
+                enrich_button = st.button(
+                    "🚀 Start Enrichment",
+                    disabled=not selected_company_indices or st.session_state.enrichment_running or not ENRICHMENT_AVAILABLE,
+                    use_container_width=True,
+                    type="primary"
+                )
+            
+            # Enrichment processing (only if available)
+            if ENRICHMENT_AVAILABLE and enrich_button and selected_company_indices:
+                st.session_state.enrichment_running = True
+                
+                selected_companies = [companies[i] for i in selected_company_indices]
+                
+                # Create enrichment service
+                try:
+                    enrichment_service = create_enrichment_service()
+                    
+                    if not enrichment_service:
+                        st.error("❌ Enrichment service unavailable. Please check API key configuration.")
+                        st.info("💡 Make sure SIXTYFOUR_API_KEY is set in your Streamlit secrets or environment variables.")
+                        st.session_state.enrichment_running = False
+                    else:
+                        st.info("✅ Enrichment service initialized successfully")
+                except Exception as e:
+                    st.error(f"❌ Failed to create enrichment service: {type(e).__name__}: {str(e)}")
+                    st.session_state.enrichment_running = False
+                    enrichment_service = None
+                
+                if enrichment_service:
+                    # Progress tracking
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    def simple_progress_callback(completed, total, current_company):
+                        progress = completed / total
+                        progress_bar.progress(progress)
+                        status_text.text(f"🔄 Enriching: {current_company} ({completed}/{total})")
+                    
+                    try:
+                        with st.spinner("Starting enrichment process..."):
+                            status_text.text("Initializing enrichment service...")
+                            
+                            # Run simplified enrichment
+                            enriched_df, contacts_df = run_async(
+                                enrichment_service.enrich_companies_batch(
+                                    selected_companies,
+                                    progress_callback=simple_progress_callback
+                                )
+                            )
+                            
+                            # Store results in session state
+                            st.session_state.enriched_results = {
+                                'companies': enriched_df,
+                                'contacts': contacts_df,
+                                'timestamp': datetime.now()
+                            }
+                            
+                            progress_bar.progress(1.0)
+                            status_text.text("✅ Enrichment completed successfully!")
+                            
+                    except Exception as e:
+                        import traceback
+                        error_details = f"{type(e).__name__}: {str(e)}"
+                        full_traceback = traceback.format_exc()
+                        
+                        logger.error(f"Enrichment failed: {error_details}")
+                        logger.error(f"Full traceback: {full_traceback}")
+                        
+                        # Show user-friendly error message
+                        st.error(f"❌ Enrichment failed: {error_details}")
+                        status_text.text("❌ Enrichment failed")
+                        
+                        # Show detailed error information in expandable section
+                        with st.expander("🔍 Error Details (Click to expand)", expanded=False):
+                            st.code(f"Error Type: {type(e).__name__}")
+                            st.code(f"Error Message: {str(e)}")
+                            st.text("Full Traceback:")
+                            st.code(full_traceback)
+                            
+                            # Add troubleshooting tips
+                            st.markdown("**💡 Troubleshooting Tips:**")
+                            if "timeout" in str(e).lower():
+                                st.markdown("- This appears to be a timeout error. The SixtyFour API may be taking longer than expected.")
+                                st.markdown("- Try selecting fewer companies or retry with a single company.")
+                            elif "api" in str(e).lower():
+                                st.markdown("- This appears to be an API-related error.")
+                                st.markdown("- Check your SixtyFour API key configuration.")
+                                st.markdown("- Verify your internet connection.")
+                            else:
+                                st.markdown("- Try restarting the Streamlit app.")
+                                st.markdown("- Check the logs for more detailed error information.")
+                                st.markdown("- If the issue persists, contact support with the error details above.")
+                    finally:
+                        st.session_state.enrichment_running = False
+            
+            # Display enrichment results
+            if st.session_state.enriched_results:
+                st.markdown("---")
+                st.markdown("#### 📊 Enrichment Results")
+                
+                enriched_data = st.session_state.enriched_results
+                enriched_df = enriched_data['companies']
+                contacts_df = enriched_data['contacts']
+                timestamp = enriched_data['timestamp']
+                
+                # Results summary
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Companies Enriched", len(enriched_df))
+                with col2:
+                    qualified_count = len(enriched_df[enriched_df.get('qualified', False) == True]) if 'qualified' in enriched_df.columns else 0
+                    st.metric("Qualified Leads", qualified_count)
+                with col3:
+                    total_contacts = len(contacts_df)
+                    st.metric("Contacts Found", total_contacts)
+                with col4:
+                    avg_time = enriched_df['processing_time'].mean() if 'processing_time' in enriched_df.columns else 0
+                    st.metric("Avg Time (s)", f"{avg_time:.1f}")
+                
+                # Simple tabs for results
+                tab1, tab2 = st.tabs(["📈 Company Data", "👥 Contacts"])
+                
+                with tab1:
+                    st.markdown("**Enriched Companies**")
+                    
+                    if not enriched_df.empty:
+                        # Display simplified data
+                        display_columns = ['company_name', 'nmls_id', 'website', 'industry', 'employees', 'personal_loans', 'qualified']
+                        available_columns = [col for col in display_columns if col in enriched_df.columns]
+                        
+                        if available_columns:
+                            display_df = enriched_df[available_columns].copy()
+                            
+                            # Format columns
+                            if 'personal_loans' in display_df.columns:
+                                display_df['Personal Loans'] = display_df['personal_loans'].apply(
+                                    lambda x: "✅ Yes" if str(x).lower().startswith('yes') else "❌ No" if str(x).lower().startswith('no') else "❓ Unknown"
+                                )
+                                display_df = display_df.drop('personal_loans', axis=1)
+                            
+                            if 'qualified' in display_df.columns:
+                                display_df['Qualified'] = display_df['qualified'].apply(
+                                    lambda x: "🎯 YES" if x else "❌ NO"
+                                )
+                                display_df = display_df.drop('qualified', axis=1)
+                            
+                            # Rename columns
+                            column_renames = {
+                                'company_name': 'Company',
+                                'nmls_id': 'NMLS ID',
+                                'website': 'Website',
+                                'industry': 'Industry',
+                                'employees': 'Employees'
+                            }
+                            
+                            display_df = display_df.rename(columns=column_renames)
+                            st.dataframe(display_df, use_container_width=True)
+                        else:
+                            st.warning("No enrichment data to display")
+                    else:
+                        st.info("No companies were successfully enriched")
+                
+                with tab2:
+                    st.markdown("**Contact Information**")
+                    
+                    if not contacts_df.empty:
+                        st.dataframe(contacts_df, use_container_width=True)
+                        
+                        # Export contacts
+                        if st.button("📧 Download Contacts CSV"):
+                            csv = contacts_df.to_csv(index=False)
+                            st.download_button(
+                                label="Download Contacts",
+                                data=csv,
+                                file_name=f"contacts_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv"
+                            )
+                    else:
+                        st.info("No contacts found")
         else:
             st.info("No companies match the current filters.")
 
