@@ -585,7 +585,6 @@ def main():
                     # Company basic info with website link
                     col_info1, col_info2, col_info3 = st.columns(3)
                     with col_info1:
-                        st.markdown(f"**NMLS ID:** {selected_company['nmls_id']}")
                         if selected_company.get('phone'):
                             st.markdown(f"**Phone:** {selected_company['phone']}")
                     with col_info2:
@@ -682,27 +681,7 @@ def main():
             # Add enrichment section after license analysis
             st.markdown("---")
             st.markdown("### 🚀 Company Enrichment")
-            st.markdown("Enrich selected companies with additional business intelligence using AI-powered data gathering.")
-            
             # Add helpful note about API behavior
-            with st.expander("ℹ️ About Enrichment Process", expanded=False):
-                st.markdown("""
-                **What this does:**
-                - Uses SixtyFour AI to research each company in real-time
-                - Finds website, industry, employee count, and personal loan offerings
-                - Searches for up to 2 key contacts per company
-                
-                **Expected timeline:**
-                - Each company takes ~8 minutes to research thoroughly
-                - The API does extensive web scraping and LinkedIn research
-                - Failed companies are logged and can be retried individually
-                
-                **Tips for best results:**
-                - Start with 1 company to test (8 minutes)
-                - Companies with common names may take longer
-                - All results are saved even if some companies fail
-                - Be patient - the API is doing deep research!
-                """)
             
             # Show enrichment availability status
             if not ENRICHMENT_AVAILABLE:
@@ -711,7 +690,6 @@ def main():
                 st.markdown("**Note:** The enrichment section is visible but disabled until the service is properly configured.")
             
             # Company selection for enrichment (always show, but disable if not available)
-            st.markdown("#### Select Companies to Enrich")
             enrichment_options = []
             for i, company in enumerate(companies):
                 company_name = company['company_name']
