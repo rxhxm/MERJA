@@ -1221,6 +1221,215 @@ def main():
             # Add enrichment section after license analysis
             st.markdown("---")
             st.markdown("### 🚀 Company Enrichment")
+            
+            # Initialize custom enrichment fields in session state
+            if 'custom_enrichment_fields' not in st.session_state:
+                st.session_state.custom_enrichment_fields = {
+                    'company_fields': {
+                        "website": "Company website URL", 
+                        "company_linkedin": "Company LinkedIn profile URL",
+                        "industry": "Primary industry",
+                        "employees": "Number of employees",
+                        "personal_loans": "Does this company offer personal loans? Answer Yes or No"
+                    },
+                    'people_fields': {
+                        "name": "Full name",
+                        "title": "Job title", 
+                        "linkedin": "LinkedIn profile URL of the person",
+                        "email": "Email address"
+                    }
+                }
+            
+            # Custom Enrichment Fields Configuration
+            with st.expander("🔧 Custom Enrichment Fields Configuration", expanded=False):
+                st.markdown("**Customize what information to gather during enrichment**")
+                st.info("💡 Add custom fields like Facebook pages, Twitter profiles, specific business questions, or any other data you want the AI to research.")
+                
+                # Preset Templates
+                st.markdown("##### 📋 Quick Templates")
+                col_template1, col_template2, col_template3, col_template4 = st.columns(4)
+                
+                with col_template1:
+                    if st.button("📱 Social Media Pack", use_container_width=True):
+                        st.session_state.custom_enrichment_fields['company_fields'].update({
+                            "facebook_page": "Company Facebook page URL",
+                            "twitter_profile": "Company Twitter/X profile URL", 
+                            "instagram_account": "Company Instagram account URL",
+                            "youtube_channel": "Company YouTube channel URL"
+                        })
+                        st.rerun()
+                
+                with col_template2:
+                    if st.button("📞 Contact Pack", use_container_width=True):
+                        st.session_state.custom_enrichment_fields['company_fields'].update({
+                            "phone_number": "Main company phone number",
+                            "support_email": "Customer support email address",
+                            "sales_email": "Sales contact email address",
+                            "physical_address": "Company headquarters address"
+                        })
+                        st.session_state.custom_enrichment_fields['people_fields'].update({
+                            "phone": "Direct phone number",
+                            "mobile": "Mobile phone number"
+                        })
+                        st.rerun()
+                
+                with col_template3:
+                    if st.button("💼 Business Intel", use_container_width=True):
+                        st.session_state.custom_enrichment_fields['company_fields'].update({
+                            "revenue_estimate": "Estimated annual revenue",
+                            "funding_status": "Recent funding or investment status",
+                            "key_partnerships": "Major business partnerships",
+                            "competitive_position": "Position vs competitors"
+                        })
+                        st.rerun()
+                
+                with col_template4:
+                    if st.button("🎯 Lending Focus", use_container_width=True):
+                        st.session_state.custom_enrichment_fields['company_fields'].update({
+                            "loan_products": "Specific loan products offered",
+                            "target_customers": "Primary customer segments",
+                            "lending_volume": "Estimated lending volume",
+                            "technology_stack": "Lending technology and platforms used"
+                        })
+                        st.rerun()
+                
+                st.markdown("---")
+                
+                # Tabs for Company vs People fields
+                tab_company, tab_people = st.tabs(["🏢 Company Fields", "👥 People Fields"])
+                
+                with tab_company:
+                    st.markdown("**Configure what company information to research:**")
+                    
+                    # Display current company fields
+                    company_fields = st.session_state.custom_enrichment_fields['company_fields']
+                    
+                    # Edit existing fields
+                    fields_to_remove = []
+                    for field_key, field_desc in company_fields.items():
+                        col_field, col_desc, col_action = st.columns([2, 4, 1])
+                        
+                        with col_field:
+                            new_key = st.text_input(f"Field Name", value=field_key, key=f"company_key_{field_key}")
+                        
+                        with col_desc:
+                            new_desc = st.text_input(f"Description", value=field_desc, key=f"company_desc_{field_key}")
+                        
+                        with col_action:
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("🗑️", key=f"company_remove_{field_key}", help="Remove field"):
+                                fields_to_remove.append(field_key)
+                        
+                        # Update field if changed
+                        if new_key != field_key or new_desc != field_desc:
+                            if field_key in st.session_state.custom_enrichment_fields['company_fields']:
+                                del st.session_state.custom_enrichment_fields['company_fields'][field_key]
+                            if new_key.strip():  # Only add if not empty
+                                st.session_state.custom_enrichment_fields['company_fields'][new_key] = new_desc
+                    
+                    # Remove fields marked for deletion
+                    for field_key in fields_to_remove:
+                        if field_key in st.session_state.custom_enrichment_fields['company_fields']:
+                            del st.session_state.custom_enrichment_fields['company_fields'][field_key]
+                        st.rerun()
+                    
+                    # Add new company field
+                    st.markdown("**➕ Add New Company Field:**")
+                    col_new_key, col_new_desc, col_new_add = st.columns([2, 4, 1])
+                    
+                    with col_new_key:
+                        new_company_field = st.text_input("New field name", placeholder="e.g., facebook_page", key="new_company_field")
+                    
+                    with col_new_desc:
+                        new_company_desc = st.text_input("Field description", placeholder="e.g., Company Facebook page URL", key="new_company_desc")
+                    
+                    with col_new_add:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("➕ Add", key="add_company_field"):
+                            if new_company_field.strip() and new_company_desc.strip():
+                                st.session_state.custom_enrichment_fields['company_fields'][new_company_field] = new_company_desc
+                                st.rerun()
+                
+                with tab_people:
+                    st.markdown("**Configure what people information to research:**")
+                    
+                    # Display current people fields
+                    people_fields = st.session_state.custom_enrichment_fields['people_fields']
+                    
+                    # Edit existing fields
+                    people_fields_to_remove = []
+                    for field_key, field_desc in people_fields.items():
+                        col_field, col_desc, col_action = st.columns([2, 4, 1])
+                        
+                        with col_field:
+                            new_key = st.text_input(f"Field Name", value=field_key, key=f"people_key_{field_key}")
+                        
+                        with col_desc:
+                            new_desc = st.text_input(f"Description", value=field_desc, key=f"people_desc_{field_key}")
+                        
+                        with col_action:
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("🗑️", key=f"people_remove_{field_key}", help="Remove field"):
+                                people_fields_to_remove.append(field_key)
+                        
+                        # Update field if changed
+                        if new_key != field_key or new_desc != field_desc:
+                            if field_key in st.session_state.custom_enrichment_fields['people_fields']:
+                                del st.session_state.custom_enrichment_fields['people_fields'][field_key]
+                            if new_key.strip():  # Only add if not empty
+                                st.session_state.custom_enrichment_fields['people_fields'][new_key] = new_desc
+                    
+                    # Remove fields marked for deletion
+                    for field_key in people_fields_to_remove:
+                        if field_key in st.session_state.custom_enrichment_fields['people_fields']:
+                            del st.session_state.custom_enrichment_fields['people_fields'][field_key]
+                        st.rerun()
+                    
+                    # Add new people field
+                    st.markdown("**➕ Add New People Field:**")
+                    col_new_key, col_new_desc, col_new_add = st.columns([2, 4, 1])
+                    
+                    with col_new_key:
+                        new_people_field = st.text_input("New field name", placeholder="e.g., twitter_handle", key="new_people_field")
+                    
+                    with col_new_desc:
+                        new_people_desc = st.text_input("Field description", placeholder="e.g., Personal Twitter handle", key="new_people_desc")
+                    
+                    with col_new_add:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("➕ Add", key="add_people_field"):
+                            if new_people_field.strip() and new_people_desc.strip():
+                                st.session_state.custom_enrichment_fields['people_fields'][new_people_field] = new_people_desc
+                                st.rerun()
+                
+                # Reset to defaults
+                st.markdown("---")
+                col_reset, col_summary = st.columns([1, 2])
+                
+                with col_reset:
+                    if st.button("🔄 Reset to Defaults", use_container_width=True):
+                        st.session_state.custom_enrichment_fields = {
+                            'company_fields': {
+                                "website": "Company website URL", 
+                                "company_linkedin": "Company LinkedIn profile URL",
+                                "industry": "Primary industry",
+                                "employees": "Number of employees",
+                                "personal_loans": "Does this company offer personal loans? Answer Yes or No"
+                            },
+                            'people_fields': {
+                                "name": "Full name",
+                                "title": "Job title", 
+                                "linkedin": "LinkedIn profile URL of the person",
+                                "email": "Email address"
+                            }
+                        }
+                        st.rerun()
+                
+                with col_summary:
+                    company_count = len(st.session_state.custom_enrichment_fields['company_fields'])
+                    people_count = len(st.session_state.custom_enrichment_fields['people_fields'])
+                    st.info(f"📊 Current configuration: **{company_count}** company fields, **{people_count}** people fields")
+            
             # Add helpful note about API behavior
             
             # Show enrichment availability status
@@ -1311,7 +1520,9 @@ def main():
                             enriched_df, contacts_df = run_async(
                                 enrichment_service.enrich_companies_batch(
                                     selected_companies,
-                                    progress_callback=simple_progress_callback
+                                    progress_callback=simple_progress_callback,
+                                    custom_company_fields=st.session_state.custom_enrichment_fields['company_fields'],
+                                    custom_people_fields=st.session_state.custom_enrichment_fields['people_fields']
                                 )
                             )
                             
@@ -1391,44 +1602,95 @@ def main():
                     st.markdown("**Enriched Companies**")
                     
                     if not enriched_df.empty:
-                        # Display simplified data
-                        display_columns = ['company_name', 'nmls_id', 'website', 'company_linkedin', 'industry', 'employees', 'personal_loans', 'qualified']
+                        # Get all available columns dynamically
+                        base_columns = ['company_name', 'nmls_id']
+                        enriched_columns = []
+                        
+                        # Add custom company fields that were enriched
+                        for field_name in st.session_state.custom_enrichment_fields['company_fields'].keys():
+                            if field_name in enriched_df.columns:
+                                enriched_columns.append(field_name)
+                        
+                        # Add status columns
+                        status_columns = ['qualified', 'enrichment_status']
+                        
+                        # Combine all columns
+                        display_columns = base_columns + enriched_columns + status_columns
                         available_columns = [col for col in display_columns if col in enriched_df.columns]
                         
                         if available_columns:
                             display_df = enriched_df[available_columns].copy()
                             
-                            # Format LinkedIn links
+                            # Format special columns
                             if 'company_linkedin' in display_df.columns:
                                 display_df['Company LinkedIn'] = display_df['company_linkedin'].apply(
                                     lambda x: f"[🔗 LinkedIn]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
                                 )
                                 display_df = display_df.drop('company_linkedin', axis=1)
                             
-                            # Format columns
+                            # Format website links
+                            if 'website' in display_df.columns:
+                                display_df['Website'] = display_df['website'].apply(
+                                    lambda x: f"[🌐 Website]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
+                                )
+                                display_df = display_df.drop('website', axis=1)
+                            
+                            # Format social media links
+                            social_fields = ['facebook_page', 'twitter_profile', 'instagram_account', 'youtube_channel']
+                            for field in social_fields:
+                                if field in display_df.columns:
+                                    field_emoji = {"facebook_page": "📘", "twitter_profile": "🐦", "instagram_account": "📸", "youtube_channel": "📺"}
+                                    emoji = field_emoji.get(field, "🔗")
+                                    display_name = field.replace('_', ' ').title()
+                                    display_df[display_name] = display_df[field].apply(
+                                        lambda x: f"[{emoji} {display_name}]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
+                                    )
+                                    display_df = display_df.drop(field, axis=1)
+                            
+                            # Format personal loans field
                             if 'personal_loans' in display_df.columns:
                                 display_df['Personal Loans'] = display_df['personal_loans'].apply(
                                     lambda x: "✅ Yes" if str(x).lower().startswith('yes') else "❌ No" if str(x).lower().startswith('no') else "❓ Unknown"
                                 )
                                 display_df = display_df.drop('personal_loans', axis=1)
                             
+                            # Format qualified field
                             if 'qualified' in display_df.columns:
                                 display_df['Qualified'] = display_df['qualified'].apply(
                                     lambda x: "🎯 YES" if x else "❌ NO"
                                 )
                                 display_df = display_df.drop('qualified', axis=1)
                             
-                            # Rename columns
+                            # Format enrichment status
+                            if 'enrichment_status' in display_df.columns:
+                                display_df['Status'] = display_df['enrichment_status'].apply(
+                                    lambda x: "✅ Success" if x == 'Success' else "❌ Failed"
+                                )
+                                display_df = display_df.drop('enrichment_status', axis=1)
+                            
+                            # Rename columns for better display
                             column_renames = {
                                 'company_name': 'Company',
                                 'nmls_id': 'NMLS ID',
-                                'website': 'Website',
                                 'industry': 'Industry',
                                 'employees': 'Employees'
                             }
                             
                             display_df = display_df.rename(columns=column_renames)
                             st.dataframe(display_df, use_container_width=True)
+                            
+                            # Show field summary
+                            st.markdown("---")
+                            st.markdown("**📊 Enrichment Summary:**")
+                            col_summary1, col_summary2 = st.columns(2)
+                            
+                            with col_summary1:
+                                company_fields_used = len([f for f in st.session_state.custom_enrichment_fields['company_fields'].keys() if f in enriched_df.columns])
+                                st.info(f"**Company Fields Enriched:** {company_fields_used}/{len(st.session_state.custom_enrichment_fields['company_fields'])}")
+                            
+                            with col_summary2:
+                                people_fields_used = len(st.session_state.custom_enrichment_fields['people_fields'])
+                                st.info(f"**People Fields Configured:** {people_fields_used}")
                         else:
                             st.warning("No enrichment data to display")
                     else:
@@ -1438,25 +1700,73 @@ def main():
                     st.markdown("**Contact Information**")
                     
                     if not contacts_df.empty:
-                        # Format LinkedIn links in contacts
-                        display_contacts_df = contacts_df.copy()
-                        if 'linkedin' in display_contacts_df.columns:
-                            display_contacts_df['LinkedIn'] = display_contacts_df['linkedin'].apply(
-                                lambda x: f"[🔗 Profile]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
-                            )
-                            display_contacts_df = display_contacts_df.drop('linkedin', axis=1)
+                        # Get all available contact columns dynamically
+                        base_contact_columns = ['company_name', 'nmls_id']
                         
-                        # Rename columns for better display
-                        column_renames = {
-                            'company_name': 'Company',
-                            'nmls_id': 'NMLS ID',
-                            'name': 'Name',
-                            'title': 'Title',
-                            'email': 'Email'
-                        }
-                        display_contacts_df = display_contacts_df.rename(columns=column_renames)
+                        # Add all people fields that were configured
+                        people_field_columns = []
+                        for field_name in st.session_state.custom_enrichment_fields['people_fields'].keys():
+                            if field_name in contacts_df.columns:
+                                people_field_columns.append(field_name)
                         
-                        st.dataframe(display_contacts_df, use_container_width=True)
+                        # Combine columns
+                        contact_display_columns = base_contact_columns + people_field_columns
+                        available_contact_columns = [col for col in contact_display_columns if col in contacts_df.columns]
+                        
+                        if available_contact_columns:
+                            display_contacts_df = contacts_df[available_contact_columns].copy()
+                            
+                            # Format LinkedIn links in contacts
+                            if 'linkedin' in display_contacts_df.columns:
+                                display_contacts_df['LinkedIn'] = display_contacts_df['linkedin'].apply(
+                                    lambda x: f"[🔗 Profile]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
+                                )
+                                display_contacts_df = display_contacts_df.drop('linkedin', axis=1)
+                            
+                            # Format other social media fields for contacts
+                            contact_social_fields = ['twitter_handle', 'facebook_profile', 'instagram_handle']
+                            for field in contact_social_fields:
+                                if field in display_contacts_df.columns:
+                                    field_emoji = {"twitter_handle": "🐦", "facebook_profile": "📘", "instagram_handle": "📸"}
+                                    emoji = field_emoji.get(field, "🔗")
+                                    display_name = field.replace('_', ' ').title()
+                                    display_contacts_df[display_name] = display_contacts_df[field].apply(
+                                        lambda x: f"[{emoji} {display_name}]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
+                                    )
+                                    display_contacts_df = display_contacts_df.drop(field, axis=1)
+                            
+                            # Rename columns for better display
+                            contact_column_renames = {
+                                'company_name': 'Company',
+                                'nmls_id': 'NMLS ID',
+                                'name': 'Name',
+                                'title': 'Title',
+                                'email': 'Email',
+                                'phone': 'Phone',
+                                'mobile': 'Mobile'
+                            }
+                            display_contacts_df = display_contacts_df.rename(columns=contact_column_renames)
+                            
+                            st.dataframe(display_contacts_df, use_container_width=True)
+                            
+                            # Contact summary
+                            st.markdown("---")
+                            st.markdown("**👥 Contact Summary:**")
+                            col_contact1, col_contact2, col_contact3 = st.columns(3)
+                            
+                            with col_contact1:
+                                total_contacts = len(contacts_df)
+                                st.metric("Total Contacts", total_contacts)
+                            
+                            with col_contact2:
+                                contacts_with_email = len(contacts_df[contacts_df.get('email', '').notna() & (contacts_df.get('email', '') != '')])
+                                st.metric("With Email", contacts_with_email)
+                            
+                            with col_contact3:
+                                contacts_with_linkedin = len(contacts_df[contacts_df.get('linkedin', '').notna() & (contacts_df.get('linkedin', '') != '')])
+                                st.metric("With LinkedIn", contacts_with_linkedin)
+                        else:
+                            st.warning("No contact data to display")
                         
                         # Export contacts
                         if st.button("📧 Download Contacts CSV"):

@@ -29,7 +29,9 @@ class EnrichmentService:
         self, 
         client: httpx.AsyncClient, 
         semaphore: asyncio.Semaphore,
-        company_data: Dict[str, Any]
+        company_data: Dict[str, Any],
+        custom_company_fields: Optional[Dict[str, str]] = None,
+        custom_people_fields: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """Enrich a single company with basic information"""
         async with semaphore:
@@ -39,8 +41,8 @@ class EnrichmentService:
             # Simple description
             description = f"Financial services company: {company_name}"
             
-            # Basic enrichment structure
-            company_struct = {
+            # Use custom fields if provided, otherwise use defaults
+            company_struct = custom_company_fields or {
                 "website": "Company website URL", 
                 "company_linkedin": "Company LinkedIn profile URL",
                 "industry": "Primary industry",
@@ -48,7 +50,7 @@ class EnrichmentService:
                 "personal_loans": "Does this company offer personal loans? Answer Yes or No"
             }
             
-            people_struct = {
+            people_struct = custom_people_fields or {
                 "name": "Full name",
                 "title": "Job title", 
                 "linkedin": "LinkedIn profile URL of the person",
@@ -131,7 +133,9 @@ class EnrichmentService:
     async def enrich_companies_batch(
         self, 
         companies: List[Dict[str, Any]], 
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        custom_company_fields: Optional[Dict[str, str]] = None,
+        custom_people_fields: Optional[Dict[str, str]] = None
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Enrich multiple companies"""
         if not companies:
@@ -147,7 +151,13 @@ class EnrichmentService:
             # Create tasks
             tasks = []
             for company in companies:
-                task = self.enrich_single_company(client, semaphore, company)
+                task = self.enrich_single_company(
+                    client, 
+                    semaphore, 
+                    company,
+                    custom_company_fields,
+                    custom_people_fields
+                )
                 tasks.append(task)
             
             # Process with progress
@@ -159,16 +169,28 @@ class EnrichmentService:
                     progress_callback(i + 1, len(companies), result.get('company_name', 'Unknown'))
         
         # Process results
-        return self._process_results(results, companies)
+        return self._process_results(results, companies, custom_company_fields)
     
     def _process_results(
         self, 
         results: List[Dict[str, Any]], 
-        original_companies: List[Dict[str, Any]]
+        original_companies: List[Dict[str, Any]],
+        custom_company_fields: Optional[Dict[str, str]] = None
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Process enrichment results into simple dataframes"""
         enriched_companies = []
         all_contacts = []
+        
+        # Get field names for dynamic processing
+        default_company_fields = {
+            "website": "Company website URL", 
+            "company_linkedin": "Company LinkedIn profile URL",
+            "industry": "Primary industry",
+            "employees": "Number of employees",
+            "personal_loans": "Does this company offer personal loans? Answer Yes or No"
+        }
+        
+        company_fields_to_process = custom_company_fields or default_company_fields
         
         for idx, result in enumerate(results):
             # Get original company data
@@ -190,34 +212,36 @@ class EnrichmentService:
             api_data = result.get('data', {})
             structured_data = api_data.get('structured_data', {})
 
-            # Add enriched fields
-            company_record.update({
-                'website': structured_data.get('website', ''),
-                'company_linkedin': structured_data.get('company_linkedin', ''),
-                'industry': structured_data.get('industry', ''),
-                'personal_loans': structured_data.get('personal_loans', ''),
-                'employees': self._parse_employees(structured_data.get('employees', ''))
-            })
+            # Add enriched fields dynamically based on custom fields
+            for field_name in company_fields_to_process.keys():
+                field_value = structured_data.get(field_name, '')
+                
+                # Special handling for employees field
+                if field_name == 'employees':
+                    field_value = self._parse_employees(field_value)
+                
+                company_record[field_name] = field_value
 
-            # Simple qualification
-            personal_loans = structured_data.get('personal_loans', '').lower()
-            company_record['qualified'] = 'yes' in personal_loans
+            # Simple qualification (check if personal_loans field exists and contains 'yes')
+            personal_loans_value = structured_data.get('personal_loans', '').lower()
+            company_record['qualified'] = 'yes' in personal_loans_value
 
             enriched_companies.append(company_record)
 
-            # Extract contacts with LinkedIn profiles
+            # Extract contacts with all available fields
             leads = structured_data.get('leads', [])
             if isinstance(leads, list):
                 for lead in leads:
                     if isinstance(lead, dict):
                         contact_record = {
                             'company_name': result['company_name'],
-                            'nmls_id': result['nmls_id'],
-                            'name': lead.get('name', ''),
-                            'title': lead.get('title', ''),
-                            'linkedin': lead.get('linkedin', ''),
-                            'email': lead.get('email', '')
+                            'nmls_id': result['nmls_id']
                         }
+                        
+                        # Add all lead fields dynamically
+                        for field_name, field_value in lead.items():
+                            contact_record[field_name] = field_value
+                        
                         all_contacts.append(contact_record)
 
         # Create DataFrames
