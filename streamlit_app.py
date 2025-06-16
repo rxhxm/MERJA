@@ -404,14 +404,10 @@ def main():
     
     st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
     
-    # Main search interface
-    st.header("🔍 Enhanced AI Search")
     
     # Initialize session state for search query
     if 'search_query' not in st.session_state:
         st.session_state['search_query'] = ""
-    
-    st.header("NMLS Lender Search")
     st.subheader("🎯 Search & Filter")
     
     # Search input

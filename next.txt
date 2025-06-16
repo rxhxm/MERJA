@@ -1,0 +1,10 @@
+Removing the two names above it
+Change enrichment time
+Remove enrichment process
+Make it give me the entire number of companies and the subset of how many it find
+Make it find the linkedins in API search
+
+
+Parallelize the API calls
+Snowflake
+Full database
