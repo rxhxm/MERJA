@@ -851,16 +851,12 @@ def main():
                     confidence = query_analysis.get('confidence', 0)
                     st.metric("AI Confidence", f"{confidence:.1%}")
                 
-                # SQL Query Section
-                st.markdown("---")
-                st.markdown("### 🗄️ Database Query Details")
-                
                 # Plain English Explanation
                 if 'sql_explanation' in query_analysis:
                     st.markdown("#### 📝 What We Searched For:")
                     st.markdown(query_analysis['sql_explanation'])
                 
-                # Technical SQL Details - Make this expandable and closed by default
+                # Technical SQL Details - Make this expandable but closed by default
                 with st.expander("⚙️ Technical SQL Query", expanded=False):
                     sql_query = st.session_state.search_results.get('sql_query')
                     sql_params = st.session_state.search_results.get('sql_params')
@@ -881,6 +877,8 @@ def main():
                                 else:
                                     param_display.append(f"${i}: '{param}'")
                             st.code("\n".join(param_display), language="text")
+                    else:
+                        st.info("No SQL query available")
                 
                 # Filters Applied
                 st.markdown("---")
