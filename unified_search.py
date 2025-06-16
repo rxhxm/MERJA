@@ -203,6 +203,9 @@ class SearchResponse(BaseModel):
     # Enhanced fields
     query_analysis: Optional[Dict[str, Any]] = None
     business_intelligence: Optional[Dict[str, Any]] = None
+    # SQL transparency fields
+    sql_query: Optional[str] = None
+    sql_params: Optional[List[Any]] = None
 
 
 @dataclass
@@ -1129,7 +1132,9 @@ class UnifiedSearchAPI:
             page_size=page_size,
             total_pages=(total_count + page_size - 1) // page_size,
             filters_applied=search_filters.dict(exclude_unset=True),
-            search_time_ms=search_time_ms
+            search_time_ms=search_time_ms,
+            sql_query=search_query,
+            sql_params=search_params
         )
 
         # Add AI analysis if available
@@ -1139,7 +1144,8 @@ class UnifiedSearchAPI:
                 "intent": analysis.intent.value,
                 "confidence": analysis.confidence,
                 "explanation": analysis.explanation,
-                "business_critical_flags": analysis.business_critical_flags
+                "business_critical_flags": analysis.business_critical_flags,
+                "sql_explanation": self.generate_sql_explanation(search_filters, search_query, search_params)
             }
 
             response.business_intelligence = self._calculate_result_stats(
@@ -1300,6 +1306,85 @@ class UnifiedSearchAPI:
 
         return recommendations
 
+    @staticmethod
+    def generate_sql_explanation(filters: SearchFilters, sql_query: str, sql_params: List[Any]) -> str:
+        """Generate a plain English explanation of what the SQL query does"""
+        explanations = []
+        
+        # Base explanation
+        explanations.append("🔍 **Database Query Explanation:**")
+        explanations.append("We searched the NMLS database for companies by:")
+        
+        # Text search explanation
+        if filters.query:
+            explanations.append(f"• Looking for companies with '{filters.query}' in their name, trade names, or addresses")
+        
+        # State filtering explanation
+        if filters.states:
+            if len(filters.states) == 1:
+                explanations.append(f"• Filtering to companies licensed in {filters.states[0]}")
+            else:
+                state_list = ", ".join(filters.states[:-1]) + f" and {filters.states[-1]}"
+                explanations.append(f"• Filtering to companies licensed in {state_list}")
+        
+        # License type explanation
+        if filters.license_types:
+            if len(filters.license_types) == 1:
+                explanations.append(f"• Looking for companies with '{filters.license_types[0]}' licenses")
+            else:
+                license_list = ", ".join(filters.license_types)
+                explanations.append(f"• Looking for companies with these license types: {license_list}")
+        
+        # Business structure explanation
+        if filters.business_structures:
+            if len(filters.business_structures) == 1:
+                explanations.append(f"• Filtering to {filters.business_structures[0]} entities")
+            else:
+                structure_list = ", ".join(filters.business_structures)
+                explanations.append(f"• Filtering to these business structures: {structure_list}")
+        
+        # Contact info explanation
+        if filters.has_email is True:
+            explanations.append("• Only including companies with valid email addresses")
+        elif filters.has_email is False:
+            explanations.append("• Only including companies without email addresses")
+            
+        if filters.has_website is True:
+            explanations.append("• Only including companies with websites")
+        elif filters.has_website is False:
+            explanations.append("• Only including companies without websites")
+        
+        # License count explanation
+        if filters.min_licenses is not None:
+            explanations.append(f"• Only including companies with at least {filters.min_licenses} licenses")
+        if filters.max_licenses is not None:
+            explanations.append(f"• Only including companies with no more than {filters.max_licenses} licenses")
+        
+        # Active licenses explanation
+        if filters.active_licenses_only:
+            explanations.append("• Only considering active licenses (not expired or inactive)")
+        
+        # Date range explanation
+        if filters.licensed_after:
+            explanations.append(f"• Only including companies licensed after {filters.licensed_after}")
+        if filters.licensed_before:
+            explanations.append(f"• Only including companies licensed before {filters.licensed_before}")
+        
+        # Federal registration explanation
+        if filters.has_federal_registration is True:
+            explanations.append("• Only including companies with federal regulatory oversight")
+        elif filters.has_federal_registration is False:
+            explanations.append("• Only including companies without federal regulatory oversight")
+        
+        # Add technical note
+        explanations.append("")
+        explanations.append("📊 **Technical Details:**")
+        explanations.append("• The query searches across companies, licenses, and addresses tables")
+        explanations.append("• Results are joined to show comprehensive company information")
+        explanations.append("• License types and states are aggregated to show all licenses per company")
+        
+        return "\n".join(explanations)
+
 # ============================================================================
 # STREAMLIT INTEGRATION FUNCTIONS
 # ============================================================================
@@ -1344,7 +1429,9 @@ async def run_unified_search(
             "filters_applied": response.filters_applied,
             "search_time_ms": response.search_time_ms,
             "query_analysis": response.query_analysis,
-            "business_intelligence": response.business_intelligence
+            "business_intelligence": response.business_intelligence,
+            "sql_query": response.sql_query,
+            "sql_params": response.sql_params
         }
         
         return result
@@ -1362,6 +1449,8 @@ async def run_unified_search(
             "search_time_ms": 0,
             "query_analysis": None,
             "business_intelligence": None,
+            "sql_query": None,
+            "sql_params": None,
             "error": f"Database connection failed: {str(db_error)}"
         }
     except Exception as e:
@@ -1376,6 +1465,8 @@ async def run_unified_search(
             "search_time_ms": 0,
             "query_analysis": None,
             "business_intelligence": None,
+            "sql_query": None,
+            "sql_params": None,
             "error": f"Search failed: {str(e)}"
         }
     finally:

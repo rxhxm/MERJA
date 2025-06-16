@@ -827,6 +827,102 @@ def main():
         # Summary metrics
         st.markdown("---")
         
+        # Query Transparency Section
+        if st.session_state.search_results and st.session_state.search_results.get('query_analysis'):
+            with st.expander("🔍 Query Transparency - How Your Search Worked", expanded=False):
+                query_analysis = st.session_state.search_results['query_analysis']
+                
+                st.markdown("### 🧠 Natural Language Understanding")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Your Query:**")
+                    st.code(query_analysis.get('original_query', 'N/A'), language="text")
+                    
+                    st.markdown("**AI Interpretation:**")
+                    st.info(query_analysis.get('explanation', 'No explanation available'))
+                
+                with col2:
+                    st.markdown("**Search Intent:**")
+                    intent = query_analysis.get('intent', 'unknown').replace('_', ' ').title()
+                    st.success(f"🎯 {intent}")
+                    
+                    st.markdown("**Confidence Level:**")
+                    confidence = query_analysis.get('confidence', 0)
+                    st.metric("AI Confidence", f"{confidence:.1%}")
+                
+                # SQL Query Section
+                st.markdown("---")
+                st.markdown("### 🗄️ Database Query Details")
+                
+                # Plain English Explanation
+                if 'sql_explanation' in query_analysis:
+                    st.markdown("#### 📝 What We Searched For:")
+                    st.markdown(query_analysis['sql_explanation'])
+                
+                # Technical SQL Details
+                st.markdown("---")
+                st.markdown("#### ⚙️ Technical SQL Query")
+                
+                sql_query = st.session_state.search_results.get('sql_query')
+                sql_params = st.session_state.search_results.get('sql_params')
+                
+                if sql_query:
+                    # Format SQL for better readability
+                    formatted_sql = sql_query.replace('SELECT', '\nSELECT').replace('FROM', '\nFROM').replace('WHERE', '\nWHERE').replace('ORDER BY', '\nORDER BY').replace('LIMIT', '\nLIMIT')
+                    
+                    st.markdown("**SQL Query:**")
+                    st.code(formatted_sql, language="sql")
+                    
+                    if sql_params:
+                        st.markdown("**Query Parameters:**")
+                        param_display = []
+                        for i, param in enumerate(sql_params, 1):
+                            if isinstance(param, list):
+                                param_display.append(f"${i}: {param}")
+                            else:
+                                param_display.append(f"${i}: '{param}'")
+                        st.code("\n".join(param_display), language="text")
+                
+                # Filters Applied
+                st.markdown("---")
+                st.markdown("#### 🔧 Filters Applied")
+                filters_applied = st.session_state.search_results.get('filters_applied', {})
+                
+                if filters_applied:
+                    filter_items = []
+                    for key, value in filters_applied.items():
+                        if value is not None and value != [] and value != "":
+                            if isinstance(value, list):
+                                filter_items.append(f"• **{key.replace('_', ' ').title()}:** {', '.join(map(str, value))}")
+                            elif isinstance(value, bool):
+                                filter_items.append(f"• **{key.replace('_', ' ').title()}:** {'Yes' if value else 'No'}")
+                            else:
+                                filter_items.append(f"• **{key.replace('_', ' ').title()}:** {value}")
+                    
+                    if filter_items:
+                        st.markdown("\n".join(filter_items))
+                    else:
+                        st.info("No specific filters applied - searched all companies")
+                else:
+                    st.info("No filters applied - searched all companies")
+                
+                # Performance Metrics
+                search_time = st.session_state.search_results.get('search_time_ms', 0)
+                if search_time > 0:
+                    st.markdown("---")
+                    st.markdown("#### ⚡ Performance")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Search Time", f"{search_time:.0f}ms")
+                    with col2:
+                        total_count = st.session_state.search_results.get('total_count', 0)
+                        st.metric("Total Results", f"{total_count:,}")
+                    with col3:
+                        if search_time > 0:
+                            results_per_sec = (total_count / search_time) * 1000
+                            st.metric("Results/Second", f"{results_per_sec:,.0f}")
+        
         # Always show total database context for transparency
         filters_applied = bool(selected_states or lender_type_filter != "All Types")
         advanced_filters_applied = any([
