@@ -497,6 +497,7 @@ def main():
     if st.session_state.search_results:
         result = st.session_state.search_results
         companies = result['companies']
+        original_count = len(companies)  # Store original count before filtering
         
         # Apply filters
         if selected_states:
@@ -513,11 +514,24 @@ def main():
             if target_type:
                 companies = [c for c in companies if c.get('lender_type') == target_type]
         
+        filtered_count = len(companies)  # Count after filtering
+        
         # Summary metrics
         st.markdown("---")
+        
+        # Show filtering status if filters are applied
+        filters_applied = bool(selected_states or lender_type_filter != "All Types")
+        if filters_applied and filtered_count != original_count:
+            st.info(f"📊 Showing **{filtered_count}** results out of **{original_count}** total found (filters applied)")
+        else:
+            st.info(f"📊 Showing **{filtered_count}** results")
+        
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Total Found", len(companies))
+            if filters_applied and filtered_count != original_count:
+                st.metric("Filtered Results", filtered_count, delta=f"{filtered_count - original_count} from total")
+            else:
+                st.metric("Total Found", filtered_count)
         with col2:
             target_count = sum(1 for c in companies if c.get('lender_type') == 'unsecured_personal')
             st.metric("🎯 Target Lenders", target_count)
@@ -530,7 +544,10 @@ def main():
         
         # Results table
         if companies:
-            st.subheader(f"📋 Lenders Found ({len(companies)} results)")
+            if filters_applied and filtered_count != original_count:
+                st.subheader(f"📋 Lenders Found ({filtered_count} of {original_count} results)")
+            else:
+                st.subheader(f"📋 Lenders Found ({filtered_count} results)")
             
             # Create display data
             display_data = []
