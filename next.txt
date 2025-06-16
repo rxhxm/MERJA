@@ -12,3 +12,28 @@ Search fields he can make changes
 Parallelize the API calls
 Snowflake
 Full database
+
+
+
+Available Fields from NMLS Data:
+Business Information:
+Toll-Free Number
+Fax Number
+Mailing Address
+Street Address - Physical location
+Other Trade Names - Current alternative business names (like "1st Family Mortgage", "My City Mortgage", etc.)
+Prior Other Trade Names - Historical trade names
+Prior Legal Names - Previous legal company names
+Formed In - State/country where company was formed (e.g., "Alabama, United States")
+Date Formed - Exact formation date (e.g., "03/28/2000")
+Stock Symbol - If publicly traded (most show "None")
+Regulatory & Compliance:
+Sponsored MLOs - Number of Mortgage Loan Originators sponsored
+Regulatory Actions - Whether company has regulatory actions (Yes/No with link)
+Federal Regulator - If federally regulated
+Branch Locations - Number of active/inactive branches with link to view all
+License Details (Enhanced):
+License Numbers - Specific license numbers for each state
+Original Issue Date - When each license was first issued
+Renewed Through - License expiration dates
+License Status - Active, Inactive, Revoked, etc.

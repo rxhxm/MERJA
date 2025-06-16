@@ -558,7 +558,7 @@ def main():
         
         # Results table
         if companies:
-            st.subheader(f"📋 Lenders Found ({filtered_count} of {original_count} results)")
+            st.subheader(f"📋 Lenders Found")
             
             # Create display data
             display_data = []
@@ -601,7 +601,7 @@ def main():
                     st.markdown(f"#### {selected_company['company_name']} - Complete License Analysis")
                     
                     # Company basic info with website link
-                    col_info1, col_info2, col_info3, col_info4 = st.columns(4)
+                    col_info1, col_info2, col_info3 = st.columns(3)
                     with col_info1:
                         if selected_company.get('phone'):
                             st.markdown(f"**Phone:** {selected_company['phone']}")
@@ -623,13 +623,6 @@ def main():
                             st.markdown(f"**Website:** [🌐 {display_url}]({full_url})")
                         else:
                             st.markdown("**Website:** Not available")
-                    with col_info4:
-                        # Company LinkedIn link - clickable if available
-                        company_linkedin = selected_company.get('company_linkedin')
-                        if company_linkedin:
-                            st.markdown(f"**LinkedIn:** [🔗 Company Page]({company_linkedin})")
-                        else:
-                            st.markdown("**LinkedIn:** Not available")
                     
                     st.markdown("---")
                     
