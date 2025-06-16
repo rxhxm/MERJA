@@ -856,8 +856,11 @@ def main():
                     st.markdown("#### 📝 What We Searched For:")
                     st.markdown(query_analysis['sql_explanation'])
                 
-                # Technical SQL Details - Make this expandable but closed by default
-                with st.expander("⚙️ Technical SQL Query", expanded=False):
+                # Technical SQL Details - Use checkbox instead of nested expander
+                st.markdown("---")
+                show_sql = st.checkbox("⚙️ Show Technical SQL Query", value=False)
+                
+                if show_sql:
                     sql_query = st.session_state.search_results.get('sql_query')
                     sql_params = st.session_state.search_results.get('sql_params')
                     
