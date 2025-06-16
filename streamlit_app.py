@@ -8,6 +8,7 @@ Last updated: 2025-01-19 - Enrichment section always visible with proper availab
 *** ENRICHMENT SERVICE FULLY FUNCTIONAL WITH PROPER ERROR HANDLING AND CONTEXT MANAGEMENT ***
 *** NO MORE SCRIPTRUNCONTEXT ERRORS OR DATABASE TIMEOUTS - PRODUCTION READY ***
 *** ENRICHMENT SECTION NOW ALWAYS VISIBLE WITH CLEAR STATUS INDICATORS ***
+*** CHRIS VERSION - States and Lender Type filters moved to Advanced section ***
 """
 
 from unified_search import (
@@ -377,16 +378,16 @@ def format_license_summary(company: Dict[str, Any]) -> str:
     """Format license summary for display"""
     license_types = company.get('license_types', [])
     states_licensed = company.get('states_licensed', [])
-        
-        if not license_types:
+    
+    if not license_types:
         return "No license information available"
     
     # Group by license type
     license_counts = {}
     for license_type in license_types:
         license_counts[license_type] = license_counts.get(license_type, 0) + 1
-        
-        summary_parts = []
+    
+    summary_parts = []
     for license_type, count in license_counts.items():
         if count > 1:
             summary_parts.append(f"{license_type} ({count})")
@@ -624,8 +625,8 @@ def main():
         col_primary1, col_primary2 = st.columns(2)
         
         with col_primary1:
-        selected_states = st.multiselect(
-            "📍 States Licensed In:",
+            selected_states = st.multiselect(
+                "📍 States Licensed In:",
                 ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
                 default=st.session_state.advanced_filters['selected_states'],
                 help="Filter companies by states where they are licensed"
@@ -633,8 +634,8 @@ def main():
             st.session_state.advanced_filters['selected_states'] = selected_states
         
         with col_primary2:
-        lender_type_filter = st.selectbox(
-            "🏦 Lender Type:", 
+            lender_type_filter = st.selectbox(
+                "🏦 Lender Type:", 
                 ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
                 index=["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"].index(
                     st.session_state.advanced_filters['lender_type_filter']
@@ -1060,7 +1061,7 @@ def main():
                             st.markdown("**🏛️ Corporate Structure:**")
                             if comprehensive_details.get('business_structure'):
                                 st.markdown(f"• **Structure:** {comprehensive_details['business_structure']}")
-                        else:
+                            else:
                                 st.markdown("• **Structure:** Not available")
                             
                             if comprehensive_details.get('federal_regulator'):
