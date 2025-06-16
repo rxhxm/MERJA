@@ -1,8 +1,12 @@
-Removing the two names above it
-Change enrichment time
-Remove enrichment process
-Make it give me the entire number of companies and the subset of how many it find
+- Removing the two names above it
+- Change enrichment time
+- Remove enrichment process
+- Make it give me the entire number of companies and the subset of how many it find
+- Added to groupchat so I can clarify
+Clarify the changes
 Make it find the linkedins in API search
+LLM query transparency
+Search fields he can make changes
 
 
 Parallelize the API calls

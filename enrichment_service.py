@@ -42,6 +42,7 @@ class EnrichmentService:
             # Basic enrichment structure
             company_struct = {
                 "website": "Company website URL", 
+                "company_linkedin": "Company LinkedIn profile URL",
                 "industry": "Primary industry",
                 "employees": "Number of employees",
                 "personal_loans": "Does this company offer personal loans? Answer Yes or No"
@@ -50,6 +51,7 @@ class EnrichmentService:
             people_struct = {
                 "name": "Full name",
                 "title": "Job title", 
+                "linkedin": "LinkedIn profile URL of the person",
                 "email": "Email address"
             }
             
@@ -191,6 +193,7 @@ class EnrichmentService:
             # Add enriched fields
             company_record.update({
                 'website': structured_data.get('website', ''),
+                'company_linkedin': structured_data.get('company_linkedin', ''),
                 'industry': structured_data.get('industry', ''),
                 'personal_loans': structured_data.get('personal_loans', ''),
                 'employees': self._parse_employees(structured_data.get('employees', ''))
@@ -200,21 +203,22 @@ class EnrichmentService:
             personal_loans = structured_data.get('personal_loans', '').lower()
             company_record['qualified'] = 'yes' in personal_loans
 
-            # Process contacts
-            contacts = structured_data.get('leads', [])
-            for contact in contacts:
-                if isinstance(contact, dict):
-                    contact_record = {
-                        'company': result['company_name'],
-                        'nmls_id': result.get('nmls_id', ''),
-                        'name': contact.get('name', ''),
-                        'title': contact.get('title', ''),
-                        'email': contact.get('email', '')
-                    }
-                    all_contacts.append(contact_record)
-                    
-            company_record['contacts_found'] = len(contacts)
             enriched_companies.append(company_record)
+
+            # Extract contacts with LinkedIn profiles
+            leads = structured_data.get('leads', [])
+            if isinstance(leads, list):
+                for lead in leads:
+                    if isinstance(lead, dict):
+                        contact_record = {
+                            'company_name': result['company_name'],
+                            'nmls_id': result['nmls_id'],
+                            'name': lead.get('name', ''),
+                            'title': lead.get('title', ''),
+                            'linkedin': lead.get('linkedin', ''),
+                            'email': lead.get('email', '')
+                        }
+                        all_contacts.append(contact_record)
 
         # Create DataFrames
         companies_df = pd.DataFrame(enriched_companies)

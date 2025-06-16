@@ -575,6 +575,7 @@ def main():
                     'NMLS ID': company['nmls_id'],
                     'Company Name': company['company_name'],
                     'Lender Type': format_lender_type(lender_type, license_types),
+                    'LinkedIn': f"[🔗 LinkedIn]({company.get('company_linkedin', '')})" if company.get('company_linkedin') else '❌',
                     'States Licensed': states_str,
                     'Total States': len(states_licensed),
                     'Contact Info': '✅' if (company.get('phone') and company.get('email')) else '📧' if company.get('email') else '📞' if company.get('phone') else '❌'
@@ -600,7 +601,7 @@ def main():
                     st.markdown(f"#### {selected_company['company_name']} - Complete License Analysis")
                     
                     # Company basic info with website link
-                    col_info1, col_info2, col_info3 = st.columns(3)
+                    col_info1, col_info2, col_info3, col_info4 = st.columns(4)
                     with col_info1:
                         if selected_company.get('phone'):
                             st.markdown(f"**Phone:** {selected_company['phone']}")
@@ -622,6 +623,13 @@ def main():
                             st.markdown(f"**Website:** [🌐 {display_url}]({full_url})")
                         else:
                             st.markdown("**Website:** Not available")
+                    with col_info4:
+                        # Company LinkedIn link - clickable if available
+                        company_linkedin = selected_company.get('company_linkedin')
+                        if company_linkedin:
+                            st.markdown(f"**LinkedIn:** [🔗 Company Page]({company_linkedin})")
+                        else:
+                            st.markdown("**LinkedIn:** Not available")
                     
                     st.markdown("---")
                     
@@ -869,11 +877,18 @@ def main():
                     
                     if not enriched_df.empty:
                         # Display simplified data
-                        display_columns = ['company_name', 'nmls_id', 'website', 'industry', 'employees', 'personal_loans', 'qualified']
+                        display_columns = ['company_name', 'nmls_id', 'website', 'company_linkedin', 'industry', 'employees', 'personal_loans', 'qualified']
                         available_columns = [col for col in display_columns if col in enriched_df.columns]
                         
                         if available_columns:
                             display_df = enriched_df[available_columns].copy()
+                            
+                            # Format LinkedIn links
+                            if 'company_linkedin' in display_df.columns:
+                                display_df['Company LinkedIn'] = display_df['company_linkedin'].apply(
+                                    lambda x: f"[🔗 LinkedIn]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
+                                )
+                                display_df = display_df.drop('company_linkedin', axis=1)
                             
                             # Format columns
                             if 'personal_loans' in display_df.columns:
@@ -908,7 +923,25 @@ def main():
                     st.markdown("**Contact Information**")
                     
                     if not contacts_df.empty:
-                        st.dataframe(contacts_df, use_container_width=True)
+                        # Format LinkedIn links in contacts
+                        display_contacts_df = contacts_df.copy()
+                        if 'linkedin' in display_contacts_df.columns:
+                            display_contacts_df['LinkedIn'] = display_contacts_df['linkedin'].apply(
+                                lambda x: f"[🔗 Profile]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
+                            )
+                            display_contacts_df = display_contacts_df.drop('linkedin', axis=1)
+                        
+                        # Rename columns for better display
+                        column_renames = {
+                            'company_name': 'Company',
+                            'nmls_id': 'NMLS ID',
+                            'name': 'Name',
+                            'title': 'Title',
+                            'email': 'Email'
+                        }
+                        display_contacts_df = display_contacts_df.rename(columns=column_renames)
+                        
+                        st.dataframe(display_contacts_df, use_container_width=True)
                         
                         # Export contacts
                         if st.button("📧 Download Contacts CSV"):
