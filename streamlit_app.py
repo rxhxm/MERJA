@@ -409,6 +409,79 @@ def format_license_summary(company: Dict[str, Any]) -> str:
         logger.error(f"Error formatting license summary: {e}")
         return "License details unavailable"
 
+async def get_comprehensive_company_details(nmls_id: str) -> Dict[str, Any]:
+    """Get comprehensive company details including business identity, corporate info, and detailed licenses"""
+    pool = await get_or_create_pool()
+    if not pool:
+        return {}
+
+    try:
+        async with pool.acquire() as conn:
+            # Get company details with all fields
+            company_row = await conn.fetchrow("""
+                SELECT 
+                    c.company_name,
+                    c.nmls_id,
+                    c.phone,
+                    c.email,
+                    c.website,
+                    c.business_structure,
+                    c.trade_names,
+                    c.federal_regulator
+                FROM companies c
+                WHERE c.nmls_id = $1
+            """, nmls_id)
+            
+            if not company_row:
+                return {}
+            
+            # Get detailed license information
+            license_rows = await conn.fetch("""
+                SELECT 
+                    l.license_type,
+                    l.license_number,
+                    l.regulator,
+                    l.status,
+                    l.active,
+                    l.original_issue_date,
+                    l.renewed_through,
+                    l.authorized_to_conduct_business
+                FROM licenses l
+                JOIN companies c ON l.company_id = c.id
+                WHERE c.nmls_id = $1
+                ORDER BY l.license_type, l.regulator
+            """, nmls_id)
+            
+            # Process company data
+            company_details = dict(company_row)
+            
+            # Process licenses
+            licenses = []
+            for row in license_rows:
+                license_data = dict(row)
+                # Extract state from regulator
+                license_data['state'] = extract_state_from_regulator(row['regulator'] or '')
+                licenses.append(license_data)
+            
+            company_details['licenses'] = licenses
+            
+            # Calculate license statistics
+            total_licenses = len(licenses)
+            active_licenses = len([l for l in licenses if l['active']])
+            license_types = list(set([l['license_type'] for l in licenses if l['license_type']]))
+            
+            company_details['license_stats'] = {
+                'total_licenses': total_licenses,
+                'active_licenses': active_licenses,
+                'license_types': license_types
+            }
+            
+            return company_details
+            
+    except Exception as e:
+        logger.error(f"Error fetching comprehensive company details for {nmls_id}: {e}")
+        return {}
+
 def main():
     """Main application"""
     # Register cleanup function
@@ -599,34 +672,83 @@ def main():
                 if selected_company:
                     st.markdown(f"#### {selected_company['company_name']} - Complete License Analysis")
                     
-                    # Company basic info with website link
-                    col_info1, col_info2, col_info3 = st.columns(3)
-                    with col_info1:
-                        if selected_company.get('phone'):
-                            st.markdown(f"**Phone:** {selected_company['phone']}")
-                    with col_info2:
-                        if selected_company.get('email'):
-                            st.markdown(f"**Email:** {selected_company['email']}")
-                        if selected_company.get('business_structure'):
-                            st.markdown(f"**Structure:** {selected_company['business_structure']}")
-                    with col_info3:
-                        # Website link - clickable if available
-                        website = selected_company.get('website')
-                        if website:
-                            # Clean up website URL for display
-                            display_url = website
-                            if not website.startswith(('http://', 'https://')):
-                                full_url = f"https://{website}"
+                    # Get comprehensive company details
+                    with st.spinner("Loading comprehensive company details..."):
+                        comprehensive_details = run_async(get_comprehensive_company_details(nmls_id))
+                    
+                    if comprehensive_details:
+                        # Business Identity & Corporate Information Section
+                        st.markdown("##### 🏢 Business Identity & Corporate Information")
+                        
+                        col_corp1, col_corp2, col_corp3 = st.columns(3)
+                        
+                        with col_corp1:
+                            st.markdown("**📞 Contact Information:**")
+                            if comprehensive_details.get('phone'):
+                                st.markdown(f"• **Phone:** {comprehensive_details['phone']}")
+                            if comprehensive_details.get('email'):
+                                st.markdown(f"• **Email:** {comprehensive_details['email']}")
+                            
+                            # Website link - clickable if available
+                            website = comprehensive_details.get('website')
+                            if website:
+                                # Clean up website URL for display
+                                display_url = website
+                                if not website.startswith(('http://', 'https://')):
+                                    full_url = f"https://{website}"
+                                else:
+                                    full_url = website
+                                st.markdown(f"• **Website:** [🌐 {display_url}]({full_url})")
                             else:
-                                full_url = website
-                            st.markdown(f"**Website:** [🌐 {display_url}]({full_url})")
-                        else:
-                            st.markdown("**Website:** Not available")
+                                st.markdown("• **Website:** Not available")
+                        
+                        with col_corp2:
+                            st.markdown("**🏛️ Corporate Structure:**")
+                            if comprehensive_details.get('business_structure'):
+                                st.markdown(f"• **Structure:** {comprehensive_details['business_structure']}")
+                            else:
+                                st.markdown("• **Structure:** Not available")
+                            
+                            if comprehensive_details.get('federal_regulator'):
+                                st.markdown(f"• **Federal Regulator:** {comprehensive_details['federal_regulator']}")
+                            else:
+                                st.markdown("• **Federal Regulator:** Not available")
+                        
+                        with col_corp3:
+                            st.markdown("**🏷️ Trade Names:**")
+                            trade_names = comprehensive_details.get('trade_names')
+                            if trade_names and isinstance(trade_names, list) and len(trade_names) > 0:
+                                # Filter out empty strings and None values
+                                valid_trade_names = [name for name in trade_names if name and str(name).strip()]
+                                if valid_trade_names:
+                                    for i, name in enumerate(valid_trade_names, 1):
+                                        st.markdown(f"• **{i}.** {name}")
+                                else:
+                                    st.markdown("• No trade names available")
+                            else:
+                                st.markdown("• No trade names available")
+                        
+                        # License Statistics Overview
+                        st.markdown("##### 📊 License Overview")
+                        license_stats = comprehensive_details.get('license_stats', {})
+                        
+                        col_stats1, col_stats2, col_stats3, col_stats4 = st.columns(4)
+                        with col_stats1:
+                            st.metric("Total Licenses", license_stats.get('total_licenses', 0))
+                        with col_stats2:
+                            st.metric("Active Licenses", license_stats.get('active_licenses', 0))
+                        with col_stats3:
+                            unique_types = len(license_stats.get('license_types', []))
+                            st.metric("License Types", unique_types)
+                        with col_stats4:
+                            licenses = comprehensive_details.get('licenses', [])
+                            unique_states = len(set([l['state'] for l in licenses if l['state']]))
+                            st.metric("States Licensed", unique_states)
+                        
+                        st.markdown("---")
                     
-                    st.markdown("---")
-                    
-                    # Get detailed license state breakdown
-                    with st.spinner("Loading detailed license breakdown..."):
+                    # Get detailed license state breakdown for categorization
+                    with st.spinner("Loading license categorization..."):
                         license_state_breakdown = run_async(get_license_state_breakdown(nmls_id))
                     
                     license_types = selected_company.get('license_types', [])
@@ -642,6 +764,7 @@ def main():
                     # Get state breakdown by category
                     category_states = get_license_category_state_breakdown(license_state_breakdown)
                     
+                    st.markdown("##### 🎯 License Classification Analysis")
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
@@ -694,6 +817,51 @@ def main():
                         st.warning("⚠️ **CLASSIFIED AS: MIXED** - Has both personal loan and mortgage licenses")
                     else:
                         st.info("❓ **CLASSIFIED AS: UNKNOWN** - License types couldn't be definitively categorized")
+                    
+                    # Detailed License Information Table
+                    if comprehensive_details and comprehensive_details.get('licenses'):
+                        st.markdown("---")
+                        st.markdown("##### 📋 Detailed License Information")
+                        
+                        licenses = comprehensive_details['licenses']
+                        
+                        # Create detailed license table
+                        license_table_data = []
+                        for license_info in licenses:
+                            # Format dates
+                            issue_date = license_info.get('original_issue_date')
+                            renewed_date = license_info.get('renewed_through')
+                            
+                            issue_date_str = issue_date.strftime('%Y-%m-%d') if issue_date else 'N/A'
+                            renewed_date_str = renewed_date.strftime('%Y-%m-%d') if renewed_date else 'N/A'
+                            
+                            # Status with emoji
+                            status = license_info.get('status', 'Unknown')
+                            active = license_info.get('active', False)
+                            status_display = f"✅ {status}" if active else f"❌ {status}"
+                            
+                            # Authorized to conduct business
+                            authorized = license_info.get('authorized_to_conduct_business')
+                            authorized_display = "✅ Yes" if authorized else "❌ No" if authorized is False else "❓ Unknown"
+                            
+                            license_table_data.append({
+                                'License Type': license_info.get('license_type', 'Unknown'),
+                                'License Number': license_info.get('license_number', 'N/A'),
+                                'State': license_info.get('state', 'Unknown'),
+                                'Regulator': license_info.get('regulator', 'Unknown'),
+                                'Status': status_display,
+                                'Issue Date': issue_date_str,
+                                'Renewed Through': renewed_date_str,
+                                'Authorized': authorized_display
+                            })
+                        
+                        if license_table_data:
+                            license_df = pd.DataFrame(license_table_data)
+                            st.dataframe(license_df, use_container_width=True)
+                        else:
+                            st.info("No detailed license information available")
+                    else:
+                        st.info("Unable to load detailed license information")
 
             # Add enrichment section after license analysis
             st.markdown("---")
