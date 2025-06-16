@@ -121,29 +121,6 @@ async def close_db_pool():
         finally:
             _db_pool = None
 
-def get_db_connection():
-    """Get a synchronous database connection for simple queries"""
-    try:
-        import sqlite3
-        # For development, use SQLite. In production, this would connect to PostgreSQL
-        DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL'))
-        
-        if DATABASE_URL and 'postgresql' in DATABASE_URL:
-            # Production PostgreSQL connection
-            import psycopg2
-            return psycopg2.connect(DATABASE_URL)
-        else:
-            # Development SQLite connection
-            db_path = "nmls_data.db"
-            if not os.path.exists(db_path):
-                st.error("Database file not found. Please ensure the NMLS database is properly set up.")
-                return None
-            return sqlite3.connect(db_path)
-            
-    except Exception as e:
-        st.error(f"Database connection error: {str(e)}")
-        return None
-
 # Simple CSS
 st.markdown("""
 <style>
@@ -162,6 +139,71 @@ st.markdown("""
     .lender-type-mixed { color: #ffc107; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
+
+def run_async(coro):
+    """Production-grade async runner for Streamlit with proper context handling"""
+    # Get current Streamlit context
+    ctx = get_script_run_ctx()
+    
+    def run_in_thread():
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            # Add Streamlit context to this thread if available
+            if ctx:
+                current_thread = threading.current_thread()
+                add_script_run_ctx(current_thread, ctx)
+            
+            # Run the coroutine
+            result = loop.run_until_complete(coro)
+            return result
+            
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Async execution error: {error_msg}")
+            import traceback
+            full_traceback = traceback.format_exc()
+            logger.error(f"Full traceback: {full_traceback}")
+            # Re-raise with full context
+            raise Exception(f"Async operation failed: {error_msg}") from e
+            
+        finally:
+            try:
+                # Clean up pending tasks
+                pending = asyncio.all_tasks(loop)
+                if pending:
+                    for task in pending:
+                        task.cancel()
+                    # Wait for cancellation to complete
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                
+                # Close the loop
+                loop.close()
+                
+            except Exception as cleanup_error:
+                logger.warning(f"Cleanup error (non-critical): {cleanup_error}")
+
+    # Use ThreadPoolExecutor with timeout
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run_in_thread)
+        try:
+            # Increased timeout for enrichment operations
+            result = future.result(timeout=1800)  # 30 minutes
+            return result
+            
+        except concurrent.futures.TimeoutError:
+            error_msg = "Operation timed out after 30 minutes"
+            logger.error(error_msg)
+            raise TimeoutError(error_msg)
+            
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Thread execution error: {error_msg}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            raise e
 
 async def get_total_database_count() -> int:
     """Get total number of companies in the database"""
@@ -332,482 +374,187 @@ def format_lender_type(lender_type: str, license_types: List[str]) -> str:
     return type_map.get(lender_type, '❓ Unknown')
 
 def format_license_summary(company: Dict[str, Any]) -> str:
-    """Format license summary for a company"""
-    try:
-        nmls_id = company.get('nmls_id', '')
-        if not nmls_id:
-            return "License details unavailable"
-        
-        # Use existing data as fallback
+    """Format license summary for display"""
+    license_types = company.get('license_types', [])
+    states_licensed = company.get('states_licensed', [])
+    
+    if not license_types:
+        return "No license information available"
+    
+    # Group by license type
+    license_counts = {}
+    for license_type in license_types:
+        license_counts[license_type] = license_counts.get(license_type, 0) + 1
+    
+    summary_parts = []
+    for license_type, count in license_counts.items():
+        if count > 1:
+            summary_parts.append(f"{license_type} ({count})")
+        else:
+            summary_parts.append(license_type)
+    
+    summary = "; ".join(summary_parts)
+    if len(states_licensed) > 0:
+        summary += f" | Licensed in {len(states_licensed)} states"
+    
+    return summary
+
+def apply_advanced_filters(companies: List[Dict], advanced_filters: Dict) -> List[Dict]:
+    """Apply advanced filtering criteria to companies list"""
+    if not advanced_filters:
+        return companies
+    
+    filtered_companies = []
+    
+    for company in companies:
+        # Skip if company doesn't meet basic criteria
+        if not company:
+            continue
+            
+        # Get company data
+        states_licensed = company.get('states_licensed', [])
         license_types = company.get('license_types', []) or []
-        states_licensed = company.get('states_licensed', []) or []
+        total_licenses = len(license_types)
+        total_states = len(states_licensed)
         
-        if not license_types:
-            return "License details unavailable"
+        # Apply license count filters
+        if total_licenses < advanced_filters.get('min_licenses', 1):
+            continue
+        if total_licenses > advanced_filters.get('max_licenses', 1000):
+            continue
+            
+        # Apply state count filters
+        if total_states < advanced_filters.get('min_states', 1):
+            continue
+        if total_states > advanced_filters.get('max_states', 50):
+            continue
         
-        target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
-        exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
-        other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
+        # Apply custom classification if enabled
+        if advanced_filters.get('use_custom_classification', False):
+            custom_target_licenses = advanced_filters.get('custom_target_licenses', [])
+            custom_exclude_licenses = advanced_filters.get('custom_exclude_licenses', [])
+            
+            # Count target and exclude licenses based on custom rules
+            target_license_count = 0
+            exclude_license_count = 0
+            
+            for license_type in license_types:
+                if any(target in license_type for target in custom_target_licenses):
+                    target_license_count += 1
+                if any(exclude in license_type for exclude in custom_exclude_licenses):
+                    exclude_license_count += 1
+            
+            # Apply target license minimum
+            if target_license_count < advanced_filters.get('min_target_licenses', 0):
+                continue
+                
+            # Apply exclude license maximum
+            if exclude_license_count > advanced_filters.get('max_exclude_licenses', 1000):
+                continue
         
-        summary_parts = []
-        states_str = ", ".join(sorted(states_licensed)) if states_licensed else "Unknown"
+        # Apply contact information filters
+        contact_req = advanced_filters.get('has_contact_info', 'Any')
+        has_email = bool(company.get('email'))
+        has_phone = bool(company.get('phone'))
         
-        if target_licenses:
-            summary_parts.append(f"🎯 {len(target_licenses)} personal ({states_str})")
+        if contact_req == 'Email Required' and not has_email:
+            continue
+        elif contact_req == 'Phone Required' and not has_phone:
+            continue
+        elif contact_req == 'Both Required' and not (has_email and has_phone):
+            continue
         
-        if exclude_licenses:
-            summary_parts.append(f"❌ {len(exclude_licenses)} mortgage ({states_str})")
+        # Apply business structure filters
+        business_structures = advanced_filters.get('business_structures', [])
+        if business_structures:
+            company_structure = company.get('business_structure', '')
+            if not any(structure.lower() in company_structure.lower() for structure in business_structures):
+                continue
         
-        if other_licenses:
-            summary_parts.append(f"ℹ️ {len(other_licenses)} other ({states_str})")
+        # Apply federal regulator filters
+        federal_regulators = advanced_filters.get('federal_regulators', [])
+        if federal_regulators:
+            company_regulator = company.get('federal_regulator', '')
+            if not any(regulator.lower() in company_regulator.lower() for regulator in federal_regulators):
+                continue
         
-        return " | ".join(summary_parts) if summary_parts else "License details unavailable"
-        
-    except Exception as e:
-        logger.error(f"Error formatting license summary: {e}")
-        return "License details unavailable"
+        # If we get here, company passed all filters
+        filtered_companies.append(company)
+    
+    return filtered_companies
 
-def search_nmls_database(query, selected_states=None, lender_type_filter="All Types"):
-    """Search the NMLS database with filters"""
+async def get_comprehensive_company_details(nmls_id: str) -> Dict[str, Any]:
+    """Get comprehensive company details including business identity, corporate info, and detailed licenses"""
+    pool = await get_or_create_pool()
+    if not pool:
+        return {}
+
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Base query
-        base_query = """
-        SELECT DISTINCT c.nmls_id, c.legal_name, c.trade_names, c.business_structure,
-               c.phone, c.email, c.website, c.address, c.city, c.state, c.zip_code,
-               c.federal_regulator
-        FROM companies c
-        LEFT JOIN licenses l ON c.nmls_id = l.nmls_id
-        WHERE (c.legal_name LIKE ? OR c.trade_names LIKE ?)
-        """
-        
-        params = [f"%{query}%", f"%{query}%"]
-        
-        # Add state filter if specified
-        if selected_states:
-            state_placeholders = ','.join(['?' for _ in selected_states])
-            base_query += f" AND l.state IN ({state_placeholders})"
-            params.extend(selected_states)
-        
-        cursor.execute(base_query, params)
-        companies = cursor.fetchall()
-        
-        # Convert to dictionaries
-        company_columns = [desc[0] for desc in cursor.description]
-        results = []
-        
-        for company in companies:
-            company_dict = dict(zip(company_columns, company))
+        async with pool.acquire() as conn:
+            # Get company details with all fields
+            company_row = await conn.fetchrow("""
+                SELECT 
+                    c.company_name,
+                    c.nmls_id,
+                    c.phone,
+                    c.email,
+                    c.website,
+                    c.business_structure,
+                    c.trade_names,
+                    c.federal_regulator
+                FROM companies c
+                WHERE c.nmls_id = $1
+            """, nmls_id)
             
-            # Get licenses for this company
-            license_query = """
-            SELECT license_number, license_type, state, status, 
-                   issue_date, renewal_date, authorization
-            FROM licenses 
-            WHERE nmls_id = ?
-            """
+            if not company_row:
+                return {}
             
-            cursor.execute(license_query, (company_dict['nmls_id'],))
-            licenses_data = cursor.fetchall()
+            # Get detailed license information
+            license_rows = await conn.fetch("""
+                SELECT 
+                    l.license_type,
+                    l.license_number,
+                    l.regulator,
+                    l.status,
+                    l.active,
+                    l.original_issue_date,
+                    l.renewed_through,
+                    l.authorized_to_conduct_business
+                FROM licenses l
+                JOIN companies c ON l.company_id = c.id
+                WHERE c.nmls_id = $1
+                ORDER BY l.license_type, l.regulator
+            """, nmls_id)
             
-            # Convert licenses to list of dictionaries
-            license_columns = [desc[0] for desc in cursor.description]
-            licenses = [dict(zip(license_columns, license)) for license in licenses_data]
+            # Process company data
+            company_details = dict(company_row)
             
-            company_dict['licenses'] = licenses
-            results.append(company_dict)
-        
-        conn.close()
-        return results
-        
+            # Process licenses
+            licenses = []
+            for row in license_rows:
+                license_data = dict(row)
+                # Extract state from regulator
+                license_data['state'] = extract_state_from_regulator(row['regulator'] or '')
+                licenses.append(license_data)
+            
+            company_details['licenses'] = licenses
+            
+            # Calculate license statistics
+            total_licenses = len(licenses)
+            active_licenses = len([l for l in licenses if l['active']])
+            license_types = list(set([l['license_type'] for l in licenses if l['license_type']]))
+            
+            company_details['license_stats'] = {
+                'total_licenses': total_licenses,
+                'active_licenses': active_licenses,
+                'license_types': license_types
+            }
+            
+            return company_details
+            
     except Exception as e:
-        st.error(f"Database search error: {str(e)}")
-        return []
-
-def get_comprehensive_company_details(nmls_id: str) -> Dict[str, Any]:
-    """Get comprehensive company and license details from database"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get company details with all available fields
-        company_query = """
-        SELECT 
-            nmls_id, legal_name, trade_names, business_structure,
-            phone, email, website, address, city, state, zip_code,
-            federal_regulator, created_at, updated_at
-        FROM companies 
-        WHERE nmls_id = ?
-        """
-        
-        cursor.execute(company_query, (nmls_id,))
-        company_data = cursor.fetchone()
-        
-        if not company_data:
-            return None
-        
-        # Convert to dictionary
-        company_columns = [desc[0] for desc in cursor.description]
-        company_dict = dict(zip(company_columns, company_data))
-        
-        # Get all licenses for this company
-        license_query = """
-        SELECT 
-            license_number, license_type, state, status, 
-            issue_date, renewal_date, authorization
-        FROM licenses 
-        WHERE nmls_id = ?
-        ORDER BY state, license_type
-        """
-        
-        cursor.execute(license_query, (nmls_id,))
-        licenses_data = cursor.fetchall()
-        
-        # Convert licenses to list of dictionaries
-        license_columns = [desc[0] for desc in cursor.description]
-        licenses = [dict(zip(license_columns, license)) for license in licenses_data]
-        
-        # Add licenses to company data
-        company_dict['licenses'] = licenses
-        
-        conn.close()
-        return company_dict
-        
-    except Exception as e:
-        st.error(f"Error fetching company details: {str(e)}")
-        return None
-
-def apply_advanced_filters(results, advanced_filters):
-    """Apply advanced filtering rules to search results"""
-    filtered_results = []
-    
-    for result in results:
-        # Skip if doesn't meet minimum requirements
-        total_licenses = len(result.get('licenses', []))
-        if total_licenses < advanced_filters['min_licenses']:
-            continue
-        
-        # Count unique states
-        states = set()
-        for license_info in result.get('licenses', []):
-            if license_info.get('state'):
-                states.add(license_info['state'])
-        
-        if len(states) < advanced_filters['min_states']:
-            continue
-        
-        # Check mortgage ratio
-        mortgage_licenses = 0
-        for license_info in result.get('licenses', []):
-            license_type = license_info.get('license_type', '')
-            if any(mortgage_term in license_type.lower() for mortgage_term in ['mortgage', 'home loan']):
-                mortgage_licenses += 1
-        
-        mortgage_ratio = mortgage_licenses / total_licenses if total_licenses > 0 else 0
-        if mortgage_ratio > advanced_filters['max_mortgage_ratio']:
-            continue
-        
-        # Check business structure requirements
-        business_structure = result.get('business_structure', '')
-        
-        if advanced_filters['required_business_structures']:
-            if not any(req_struct.lower() in business_structure.lower() 
-                      for req_struct in advanced_filters['required_business_structures']):
-                continue
-        
-        if advanced_filters['exclude_business_structures']:
-            if any(excl_struct.lower() in business_structure.lower() 
-                  for excl_struct in advanced_filters['exclude_business_structures']):
-                continue
-        
-        # Check contact requirements
-        contact_requirements = advanced_filters.get('contact_requirements', [])
-        if 'Must have phone' in contact_requirements and not result.get('phone'):
-            continue
-        if 'Must have email' in contact_requirements and not result.get('email'):
-            continue
-        if 'Must have website' in contact_requirements and not result.get('website'):
-            continue
-        
-        # Check license status filter
-        license_status_filter = advanced_filters.get('license_status_filter', 'Any Status')
-        if license_status_filter == 'Active Only':
-            active_licenses = [l for l in result.get('licenses', []) 
-                             if l.get('status', '').lower() == 'active']
-            if not active_licenses:
-                continue
-        
-        # Check company size filter
-        company_size_filter = advanced_filters.get('company_size_filter', 'Any Size')
-        if company_size_filter == 'Small (1-5 licenses)' and total_licenses > 5:
-            continue
-        elif company_size_filter == 'Medium (6-15 licenses)' and (total_licenses < 6 or total_licenses > 15):
-            continue
-        elif company_size_filter == 'Large (16+ licenses)' and total_licenses < 16:
-            continue
-        
-        filtered_results.append(result)
-    
-    return filtered_results
-
-def create_custom_classifier(advanced_filters):
-    """Create a custom classifier based on advanced filter settings"""
-    class CustomLenderClassifier:
-        def __init__(self, target_licenses, exclude_licenses):
-            self.target_licenses = set(target_licenses)
-            self.exclude_licenses = set(exclude_licenses)
-        
-        def classify_lender(self, company_data):
-            """Classify a lender based on custom rules"""
-            licenses = company_data.get('licenses', [])
-            if not licenses:
-                return 'Other'
-            
-            license_types = [license.get('license_type', '') for license in licenses]
-            
-            # Check for target licenses
-            has_target = any(license_type in self.target_licenses for license_type in license_types)
-            
-            # Check for exclude licenses
-            has_exclude = any(license_type in self.exclude_licenses for license_type in license_types)
-            
-            if has_target and has_exclude:
-                return 'Mixed'
-            elif has_target:
-                return 'TARGET'
-            elif has_exclude:
-                return 'EXCLUDE'
-            else:
-                return 'Other'
-    
-    return CustomLenderClassifier(
-        advanced_filters['target_licenses'],
-        advanced_filters['exclude_licenses']
-    )
-
-def display_results_table(results):
-    """Display search results in a formatted table"""
-    if not results:
-        st.warning("No results to display.")
-        return
-    
-    # Prepare data for display
-    display_data = []
-    for result in results:
-        # Count licenses and states
-        licenses = result.get('licenses', [])
-        total_licenses = len(licenses)
-        states = set(license.get('state', '') for license in licenses if license.get('state'))
-        states_count = len(states)
-        
-        # Get classification emoji
-        classification = result.get('classification', 'Other')
-        if classification == 'TARGET':
-            class_emoji = '🎯'
-        elif classification == 'EXCLUDE':
-            class_emoji = '❌'
-        elif classification == 'Mixed':
-            class_emoji = '🔄'
-        else:
-            class_emoji = '❓'
-        
-        display_data.append({
-            'Company': result.get('legal_name', 'N/A'),
-            'NMLS ID': result.get('nmls_id', 'N/A'),
-            'Classification': f"{class_emoji} {classification}",
-            'Total Licenses': total_licenses,
-            'States': states_count,
-            'Phone': result.get('phone', 'N/A'),
-            'Website': result.get('website', 'N/A')
-        })
-    
-    # Display as dataframe
-    df = pd.DataFrame(display_data)
-    st.dataframe(df, use_container_width=True)
-
-def display_comprehensive_company_analysis(company_details):
-    """Display comprehensive company analysis with all available information"""
-    st.markdown("#### 🏢 Company Analysis")
-    
-    # Business Identity & Corporate Information
-    st.markdown("##### 📋 Business Identity & Corporate Information")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Contact Information:**")
-        if company_details.get('phone'):
-            st.write(f"📞 **Phone:** {company_details['phone']}")
-        if company_details.get('email'):
-            st.write(f"📧 **Email:** {company_details['email']}")
-        if company_details.get('website'):
-            website = company_details['website']
-            if not website.startswith(('http://', 'https://')):
-                website = f"https://{website}"
-            st.write(f"🌐 **Website:** [{company_details['website']}]({website})")
-        
-        # Address
-        address_parts = []
-        if company_details.get('address'):
-            address_parts.append(company_details['address'])
-        if company_details.get('city'):
-            address_parts.append(company_details['city'])
-        if company_details.get('state'):
-            address_parts.append(company_details['state'])
-        if company_details.get('zip_code'):
-            address_parts.append(company_details['zip_code'])
-        
-        if address_parts:
-            st.write(f"📍 **Address:** {', '.join(address_parts)}")
-    
-    with col2:
-        st.markdown("**Corporate Structure:**")
-        if company_details.get('business_structure'):
-            st.write(f"🏗️ **Business Structure:** {company_details['business_structure']}")
-        
-        if company_details.get('trade_names'):
-            trade_names = company_details['trade_names'].split(',') if company_details['trade_names'] else []
-            if trade_names:
-                st.write("🏷️ **Other Trade Names:**")
-                for name in trade_names[:5]:  # Show first 5
-                    st.write(f"  • {name.strip()}")
-                if len(trade_names) > 5:
-                    st.write(f"  • ... and {len(trade_names) - 5} more")
-        
-        if company_details.get('federal_regulator'):
-            st.write(f"🏛️ **Federal Regulator:** {company_details['federal_regulator']}")
-    
-    # License Overview
-    licenses = company_details.get('licenses', [])
-    if licenses:
-        st.markdown("---")
-        st.markdown("##### 📊 License Overview")
-        
-        # Calculate metrics
-        total_licenses = len(licenses)
-        active_licenses = len([l for l in licenses if l.get('status', '').lower() == 'active'])
-        states = set(l.get('state', '') for l in licenses if l.get('state'))
-        license_types = set(l.get('license_type', '') for l in licenses if l.get('license_type'))
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Licenses", total_licenses)
-        with col2:
-            st.metric("Active Licenses", active_licenses)
-        with col3:
-            st.metric("License Types", len(license_types))
-        with col4:
-            st.metric("States Licensed", len(states))
-        
-        # Enhanced License Classification Analysis
-        st.markdown("##### 🎯 Enhanced License Classification Analysis")
-        
-        # Classify licenses
-        target_licenses = []
-        exclude_licenses = []
-        other_licenses = []
-        
-        for license_info in licenses:
-            license_type = license_info.get('license_type', '')
-            if license_type in LenderClassifier.UNSECURED_PERSONAL_LICENSES:
-                target_licenses.append(license_info)
-            elif license_type in LenderClassifier.MORTGAGE_LICENSES:
-                exclude_licenses.append(license_info)
-            else:
-                other_licenses.append(license_info)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("**🎯 TARGET Licenses:**")
-            if target_licenses:
-                target_types = {}
-                for license_info in target_licenses:
-                    license_type = license_info.get('license_type', 'Unknown')
-                    target_types[license_type] = target_types.get(license_type, 0) + 1
-                
-                for license_type, count in target_types.items():
-                    st.write(f"• {license_type}: {count}")
-            else:
-                st.write("None found")
-        
-        with col2:
-            st.markdown("**❌ EXCLUDE Licenses:**")
-            if exclude_licenses:
-                exclude_types = {}
-                for license_info in exclude_licenses:
-                    license_type = license_info.get('license_type', 'Unknown')
-                    exclude_types[license_type] = exclude_types.get(license_type, 0) + 1
-                
-                for license_type, count in exclude_types.items():
-                    st.write(f"• {license_type}: {count}")
-            else:
-                st.write("None found")
-        
-        with col3:
-            st.markdown("**❓ Other Licenses:**")
-            if other_licenses:
-                other_types = {}
-                for license_info in other_licenses:
-                    license_type = license_info.get('license_type', 'Unknown')
-                    other_types[license_type] = other_types.get(license_type, 0) + 1
-                
-                for license_type, count in other_types.items():
-                    st.write(f"• {license_type}: {count}")
-            else:
-                st.write("None found")
-        
-        # Detailed License Information Table
-        st.markdown("---")
-        st.markdown("##### 📋 Detailed License Information")
-        
-        # Prepare license data for table
-        license_data = []
-        for license_info in licenses:
-            status = license_info.get('status', 'Unknown')
-            status_emoji = '✅' if status.lower() == 'active' else '⚠️' if status.lower() == 'inactive' else '❓'
-            
-            license_data.append({
-                'License Number': license_info.get('license_number', 'N/A'),
-                'Type': license_info.get('license_type', 'N/A'),
-                'State': license_info.get('state', 'N/A'),
-                'Issue Date': license_info.get('issue_date', 'N/A'),
-                'Renewal Date': license_info.get('renewal_date', 'N/A'),
-                'Status': f"{status_emoji} {status}",
-                'Authorization': license_info.get('authorization', 'N/A')
-            })
-        
-        # Display license table
-        if license_data:
-            df_licenses = pd.DataFrame(license_data)
-            st.dataframe(df_licenses, use_container_width=True)
-        
-        # Summary insights
-        st.markdown("---")
-        st.markdown("##### 💡 Analysis Summary")
-        
-        # Calculate ratios
-        target_ratio = len(target_licenses) / total_licenses if total_licenses > 0 else 0
-        exclude_ratio = len(exclude_licenses) / total_licenses if total_licenses > 0 else 0
-        
-        if target_ratio > 0.7:
-            st.success(f"🎯 **HIGH TARGET POTENTIAL** - {target_ratio:.0%} of licenses are unsecured personal lending")
-        elif target_ratio > 0.3:
-            st.warning(f"🔄 **MIXED LENDER** - {target_ratio:.0%} target licenses, {exclude_ratio:.0%} mortgage licenses")
-        elif exclude_ratio > 0.5:
-            st.error(f"❌ **MORTGAGE FOCUSED** - {exclude_ratio:.0%} of licenses are mortgage-related")
-        else:
-            st.info(f"❓ **OTHER LENDER TYPE** - Specialized in other financial services")
-        
-        # Geographic presence
-        if len(states) >= 10:
-            st.info(f"🌎 **NATIONAL PRESENCE** - Licensed in {len(states)} states")
-        elif len(states) >= 5:
-            st.info(f"🗺️ **REGIONAL PRESENCE** - Licensed in {len(states)} states")
-        else:
-            st.info(f"📍 **LOCAL/STATE PRESENCE** - Licensed in {len(states)} state(s)")
+        logger.error(f"Error fetching comprehensive company details for {nmls_id}: {e}")
+        return {}
 
 def main():
     """Main application"""
@@ -883,365 +630,319 @@ def main():
             ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"])
     
     # Advanced Filters Section
-    st.markdown("---")
-    with st.expander("🔧 Advanced Filters & Custom Classification", expanded=False):
-        st.markdown("**Customize your search criteria and redefine lender classifications**")
+    with st.expander("🔧 Advanced Filters & Custom Rules", expanded=False):
+        st.markdown("**Customize your filtering criteria and redefine lender classifications**")
+        
+        # Initialize session state for advanced filters
+        if 'advanced_filters' not in st.session_state:
+            st.session_state.advanced_filters = {
+                'use_custom_classification': False,
+                'custom_target_licenses': [],
+                'custom_exclude_licenses': [],
+                'min_licenses': 1,
+                'max_licenses': 1000,
+                'min_states': 1,
+                'max_states': 50,
+                'min_target_licenses': 0,
+                'max_exclude_licenses': 1000,
+                'business_structures': [],
+                'federal_regulators': [],
+                'has_contact_info': 'Any',
+                'profile_name': 'Custom'
+            }
         
         # Filter Profiles
         st.markdown("##### 📋 Filter Profiles")
         col_profile1, col_profile2, col_profile3 = st.columns([2, 1, 1])
         
         with col_profile1:
-            # Initialize session state for profiles
-            if 'filter_profiles' not in st.session_state:
-                st.session_state.filter_profiles = {
-                    "Default": {
-                        "target_licenses": list(LenderClassifier.UNSECURED_PERSONAL_LICENSES),
-                        "exclude_licenses": list(LenderClassifier.MORTGAGE_LICENSES),
-                        "min_licenses": 1,
-                        "min_states": 1,
-                        "max_mortgage_ratio": 1.0,
-                        "required_business_structures": [],
-                        "exclude_business_structures": []
-                    },
-                    "Conservative Targeting": {
-                        "target_licenses": ["Personal Loan License", "Consumer Credit License", "Installment Loan License"],
-                        "exclude_licenses": list(LenderClassifier.MORTGAGE_LICENSES),
-                        "min_licenses": 3,
-                        "min_states": 2,
-                        "max_mortgage_ratio": 0.3,
-                        "required_business_structures": [],
-                        "exclude_business_structures": []
-                    },
-                    "Aggressive Prospecting": {
-                        "target_licenses": list(LenderClassifier.UNSECURED_PERSONAL_LICENSES) + ["Money Transmitter License", "Check Casher License"],
-                        "exclude_licenses": ["Mortgage Broker License", "Mortgage Lender License"],
-                        "min_licenses": 1,
-                        "min_states": 1,
-                        "max_mortgage_ratio": 0.8,
-                        "required_business_structures": [],
-                        "exclude_business_structures": []
-                    }
-                }
-            
-            if 'current_profile' not in st.session_state:
-                st.session_state.current_profile = "Default"
-            
-            selected_profile = st.selectbox(
-                "Choose Filter Profile:",
-                options=list(st.session_state.filter_profiles.keys()),
-                index=list(st.session_state.filter_profiles.keys()).index(st.session_state.current_profile),
-                help="Select a pre-configured filter profile or create your own custom settings below"
-            )
-            
-            if selected_profile != st.session_state.current_profile:
-                st.session_state.current_profile = selected_profile
-                st.rerun()
+            profile_options = [
+                "Default (Current System)",
+                "Conservative Targeting", 
+                "Aggressive Prospecting",
+                "Mortgage Focused",
+                "Personal Loan Only",
+                "Multi-State Operators",
+                "Custom Profile"
+            ]
+            selected_profile = st.selectbox("Choose a filter profile:", profile_options, key="filter_profile")
         
         with col_profile2:
-            if st.button("💾 Save Profile", help="Save current settings as a new profile"):
-                st.session_state.show_save_dialog = True
+            if st.button("📥 Load Profile", use_container_width=True):
+                # Load predefined profiles
+                if selected_profile == "Conservative Targeting":
+                    st.session_state.advanced_filters.update({
+                        'use_custom_classification': True,
+                        'min_licenses': 3,
+                        'min_states': 2,
+                        'min_target_licenses': 1,
+                        'max_exclude_licenses': 0,
+                        'has_contact_info': 'Required'
+                    })
+                elif selected_profile == "Aggressive Prospecting":
+                    st.session_state.advanced_filters.update({
+                        'use_custom_classification': True,
+                        'min_licenses': 1,
+                        'min_states': 1,
+                        'min_target_licenses': 0,
+                        'max_exclude_licenses': 1000,
+                        'has_contact_info': 'Any'
+                    })
+                elif selected_profile == "Personal Loan Only":
+                    st.session_state.advanced_filters.update({
+                        'use_custom_classification': True,
+                        'min_target_licenses': 1,
+                        'max_exclude_licenses': 0
+                    })
+                elif selected_profile == "Multi-State Operators":
+                    st.session_state.advanced_filters.update({
+                        'min_states': 5,
+                        'min_licenses': 5
+                    })
+                st.rerun()
         
         with col_profile3:
-            if st.button("🗑️ Delete Profile", help="Delete the selected profile", disabled=selected_profile == "Default"):
-                if selected_profile in st.session_state.filter_profiles and selected_profile != "Default":
-                    del st.session_state.filter_profiles[selected_profile]
-                    st.session_state.current_profile = "Default"
-                    st.rerun()
-        
-        # Save Profile Dialog
-        if st.session_state.get('show_save_dialog', False):
-            new_profile_name = st.text_input("Profile Name:", placeholder="Enter profile name...")
-            col_save1, col_save2 = st.columns(2)
-            with col_save1:
-                if st.button("✅ Save") and new_profile_name:
-                    # Get current settings and save as new profile
-                    current_settings = st.session_state.filter_profiles[selected_profile].copy()
-                    st.session_state.filter_profiles[new_profile_name] = current_settings
-                    st.session_state.current_profile = new_profile_name
-                    st.session_state.show_save_dialog = False
-                    st.success(f"Profile '{new_profile_name}' saved!")
-                    st.rerun()
-            with col_save2:
-                if st.button("❌ Cancel"):
-                    st.session_state.show_save_dialog = False
-                    st.rerun()
-        
-        # Get current profile settings
-        current_settings = st.session_state.filter_profiles[selected_profile]
+            if st.button("💾 Save Profile", use_container_width=True):
+                st.success("Profile saved! (Feature coming soon)")
         
         st.markdown("---")
         
         # Custom License Classification
         st.markdown("##### 🎯 Custom License Classification")
-        st.markdown("**Define which license types should be considered TARGET vs EXCLUDE:**")
         
-        col_target, col_exclude = st.columns(2)
+        use_custom = st.checkbox(
+            "Override default license classification", 
+            value=st.session_state.advanced_filters['use_custom_classification'],
+            help="Define your own rules for what constitutes TARGET vs EXCLUDE licenses"
+        )
+        st.session_state.advanced_filters['use_custom_classification'] = use_custom
         
-        # Get all unique license types from the database for selection
-        all_license_types = [
-            "Personal Loan License", "Consumer Credit License", "Installment Loan License",
-            "Payday Loan License", "Small Loan License", "Deferred Deposit License",
-            "Mortgage Broker License", "Mortgage Lender License", "Mortgage Servicer License",
-            "Money Transmitter License", "Check Casher License", "Debt Collection License",
-            "Credit Repair License", "Auto Finance License", "Sales Finance License"
-        ]
+        if use_custom:
+            col_target, col_exclude = st.columns(2)
+            
+            # Get all available license types from the classifier
+            all_license_types = list(set(
+                list(LenderClassifier.UNSECURED_PERSONAL_LICENSES) + 
+                list(LenderClassifier.MORTGAGE_LICENSES) + 
+                ["Collection Agency License", "Consumer Credit License", "Debt Collection License", 
+                 "Money Transmitter License", "Check Casher License", "Payday Loan License",
+                 "Small Loan License", "Sales Finance License", "Credit Services Organization"]
+            ))
+            
+            with col_target:
+                st.markdown("**🎯 TARGET License Types:**")
+                custom_target = st.multiselect(
+                    "Select license types that qualify as TARGET:",
+                    all_license_types,
+                    default=st.session_state.advanced_filters['custom_target_licenses'],
+                    help="Companies with these licenses will be classified as TARGET lenders"
+                )
+                st.session_state.advanced_filters['custom_target_licenses'] = custom_target
+            
+            with col_exclude:
+                st.markdown("**❌ EXCLUDE License Types:**")
+                custom_exclude = st.multiselect(
+                    "Select license types that qualify as EXCLUDE:",
+                    all_license_types,
+                    default=st.session_state.advanced_filters['custom_exclude_licenses'],
+                    help="Companies with these licenses will be classified as EXCLUDE lenders"
+                )
+                st.session_state.advanced_filters['custom_exclude_licenses'] = custom_exclude
         
-        with col_target:
-            st.markdown("**🎯 TARGET License Types:**")
-            target_licenses = st.multiselect(
-                "Select license types that qualify as TARGET lenders:",
-                options=all_license_types,
-                default=current_settings["target_licenses"],
-                help="Companies with these licenses will be classified as TARGET lenders",
-                key="target_licenses_select"
-            )
-        
-        with col_exclude:
-            st.markdown("**❌ EXCLUDE License Types:**")
-            exclude_licenses = st.multiselect(
-                "Select license types that should be EXCLUDED:",
-                options=all_license_types,
-                default=current_settings["exclude_licenses"],
-                help="Companies with these licenses will be classified as EXCLUDE (unless overridden by rules below)",
-                key="exclude_licenses_select"
-            )
-        
-        # Business Rules Builder
         st.markdown("---")
+        
+        # Business Rules & Thresholds
         st.markdown("##### ⚙️ Business Rules & Thresholds")
         
-        col_rules1, col_rules2, col_rules3 = st.columns(3)
+        col_rules1, col_rules2 = st.columns(2)
         
         with col_rules1:
             st.markdown("**📊 License Requirements:**")
+            
             min_licenses = st.number_input(
-                "Minimum Total Licenses:",
-                min_value=1,
-                max_value=50,
-                value=current_settings["min_licenses"],
+                "Minimum total licenses:",
+                min_value=1, max_value=100, 
+                value=st.session_state.advanced_filters['min_licenses'],
                 help="Companies must have at least this many licenses"
             )
+            st.session_state.advanced_filters['min_licenses'] = min_licenses
+            
+            max_licenses = st.number_input(
+                "Maximum total licenses:",
+                min_value=1, max_value=1000,
+                value=st.session_state.advanced_filters['max_licenses'],
+                help="Companies must have no more than this many licenses"
+            )
+            st.session_state.advanced_filters['max_licenses'] = max_licenses
             
             min_states = st.number_input(
-                "Minimum States Licensed:",
-                min_value=1,
-                max_value=51,
-                value=current_settings["min_states"],
+                "Minimum states licensed:",
+                min_value=1, max_value=50,
+                value=st.session_state.advanced_filters['min_states'],
                 help="Companies must be licensed in at least this many states"
             )
+            st.session_state.advanced_filters['min_states'] = min_states
+            
+            max_states = st.number_input(
+                "Maximum states licensed:",
+                min_value=1, max_value=50,
+                value=st.session_state.advanced_filters['max_states'],
+                help="Companies must be licensed in no more than this many states"
+            )
+            st.session_state.advanced_filters['max_states'] = max_states
         
         with col_rules2:
-            st.markdown("**⚖️ Mortgage Ratio Control:**")
-            max_mortgage_ratio = st.slider(
-                "Max Mortgage License Ratio:",
-                min_value=0.0,
-                max_value=1.0,
-                value=current_settings["max_mortgage_ratio"],
-                step=0.1,
-                help="Maximum ratio of mortgage licenses to total licenses (0.0 = no mortgage licenses allowed, 1.0 = any ratio allowed)"
-            )
+            st.markdown("**🎯 Classification Rules:**")
             
-            st.caption(f"Example: If set to 0.3, companies with >30% mortgage licenses will be excluded")
+            min_target = st.number_input(
+                "Minimum TARGET licenses:",
+                min_value=0, max_value=50,
+                value=st.session_state.advanced_filters['min_target_licenses'],
+                help="Companies must have at least this many TARGET licenses"
+            )
+            st.session_state.advanced_filters['min_target_licenses'] = min_target
+            
+            max_exclude = st.number_input(
+                "Maximum EXCLUDE licenses:",
+                min_value=0, max_value=1000,
+                value=st.session_state.advanced_filters['max_exclude_licenses'],
+                help="Companies must have no more than this many EXCLUDE licenses"
+            )
+            st.session_state.advanced_filters['max_exclude_licenses'] = max_exclude
+            
+            contact_req = st.selectbox(
+                "Contact information requirement:",
+                ["Any", "Email Required", "Phone Required", "Both Required"],
+                index=["Any", "Email Required", "Phone Required", "Both Required"].index(
+                    st.session_state.advanced_filters['has_contact_info']
+                ),
+                help="Filter companies based on available contact information"
+            )
+            st.session_state.advanced_filters['has_contact_info'] = contact_req
         
-        with col_rules3:
-            st.markdown("**🏢 Business Structure Filters:**")
-            business_structures = ["Corporation", "LLC", "Partnership", "Sole Proprietorship", "Bank", "Credit Union"]
-            
-            required_structures = st.multiselect(
-                "Required Business Structures:",
-                options=business_structures,
-                default=current_settings["required_business_structures"],
-                help="Only include companies with these business structures (leave empty for any)"
-            )
-            
-            exclude_structures = st.multiselect(
-                "Exclude Business Structures:",
-                options=business_structures,
-                default=current_settings["exclude_business_structures"],
-                help="Exclude companies with these business structures"
-            )
-        
-        # Advanced Search Criteria
         st.markdown("---")
-        st.markdown("##### 🔍 Advanced Search Criteria")
         
-        col_search1, col_search2 = st.columns(2)
+        # Additional Filters
+        st.markdown("##### 🏢 Additional Business Filters")
         
-        with col_search1:
-            contact_requirements = st.multiselect(
-                "Contact Information Requirements:",
-                options=["Must have phone", "Must have email", "Must have website"],
-                help="Only include companies that have the selected contact information"
+        col_biz1, col_biz2 = st.columns(2)
+        
+        with col_biz1:
+            business_structures = st.multiselect(
+                "Business Structure:",
+                ["Corporation", "LLC", "Partnership", "Sole Proprietorship", "Limited Partnership", "Other"],
+                default=st.session_state.advanced_filters['business_structures'],
+                help="Filter by business entity type"
             )
-            
-            license_status_filter = st.selectbox(
-                "License Status Filter:",
-                options=["Any Status", "Active Only", "Include Inactive"],
-                help="Filter by license status"
-            )
+            st.session_state.advanced_filters['business_structures'] = business_structures
         
-        with col_search2:
-            date_range_filter = st.selectbox(
-                "License Date Filter:",
-                options=["Any Date", "Licensed in last 1 year", "Licensed in last 2 years", "Licensed in last 5 years"],
-                help="Filter by when licenses were issued"
+        with col_biz2:
+            federal_regulators = st.multiselect(
+                "Federal Regulator:",
+                ["FDIC", "OCC", "Federal Reserve", "NCUA", "CFPB", "Other"],
+                default=st.session_state.advanced_filters['federal_regulators'],
+                help="Filter by federal regulatory oversight"
             )
-            
-            company_size_filter = st.selectbox(
-                "Company Size (by license count):",
-                options=["Any Size", "Small (1-5 licenses)", "Medium (6-15 licenses)", "Large (16+ licenses)"],
-                help="Filter by company size based on number of licenses"
-            )
+            st.session_state.advanced_filters['federal_regulators'] = federal_regulators
         
-        # Update current profile settings
-        st.session_state.filter_profiles[selected_profile].update({
-            "target_licenses": target_licenses,
-            "exclude_licenses": exclude_licenses,
-            "min_licenses": min_licenses,
-            "min_states": min_states,
-            "max_mortgage_ratio": max_mortgage_ratio,
-            "required_business_structures": required_structures,
-            "exclude_business_structures": exclude_structures
-        })
-        
-        # Preview Section
+        # Filter Preview
         st.markdown("---")
         st.markdown("##### 👀 Filter Preview")
         
-        col_preview1, col_preview2 = st.columns(2)
+        if st.button("🔍 Preview Filter Results", use_container_width=True):
+            if st.session_state.search_results:
+                preview_companies = st.session_state.search_results['companies'].copy()
+                
+                # Apply advanced filters for preview
+                original_count = len(preview_companies)
+                
+                # Apply basic filters first
+                if selected_states:
+                    preview_companies = [c for c in preview_companies if any(state in c.get('states_licensed', []) for state in selected_states)]
+                
+                if lender_type_filter != "All Types":
+                    lender_map = {
+                        "Unsecured Personal (TARGET)": "unsecured_personal",
+                        "Mortgage (EXCLUDE)": "mortgage", 
+                        "Mixed": "mixed",
+                        "Unknown": "unknown"
+                    }
+                    target_type = lender_map.get(lender_type_filter)
+                    if target_type:
+                        preview_companies = [c for c in preview_companies if c.get('lender_type') == target_type]
+                
+                # Apply advanced filters
+                preview_companies = apply_advanced_filters(preview_companies, st.session_state.advanced_filters)
+                
+                after_basic = len(st.session_state.search_results['companies'])
+                if selected_states or lender_type_filter != "All Types":
+                    temp_companies = st.session_state.search_results['companies'].copy()
+                    if selected_states:
+                        temp_companies = [c for c in temp_companies if any(state in c.get('states_licensed', []) for state in selected_states)]
+                    if lender_type_filter != "All Types":
+                        lender_map = {
+                            "Unsecured Personal (TARGET)": "unsecured_personal",
+                            "Mortgage (EXCLUDE)": "mortgage", 
+                            "Mixed": "mixed",
+                            "Unknown": "unknown"
+                        }
+                        target_type = lender_map.get(lender_type_filter)
+                        if target_type:
+                            temp_companies = [c for c in temp_companies if c.get('lender_type') == target_type]
+                    after_basic = len(temp_companies)
+                
+                st.success(f"🔍 **Filter Preview Results:**")
+                st.info(f"• **{original_count}** companies from search results")
+                if after_basic != original_count:
+                    st.info(f"• **{after_basic}** companies after basic filters")
+                st.info(f"• **{len(preview_companies)}** companies after advanced filters")
+                
+                if len(preview_companies) < after_basic:
+                    st.warning(f"⚠️ Advanced filters removed **{after_basic - len(preview_companies)}** additional companies")
+                elif len(preview_companies) == after_basic:
+                    st.success("✅ Advanced filters don't change the results - all companies pass")
+            else:
+                st.warning("Please run a search first to preview filter results")
         
-        with col_preview1:
-            st.markdown("**Current Classification Rules:**")
-            st.info(f"🎯 TARGET: {len(target_licenses)} license types selected")
-            st.info(f"❌ EXCLUDE: {len(exclude_licenses)} license types selected")
-            st.info(f"📊 Min {min_licenses} licenses, {min_states} states")
-            st.info(f"⚖️ Max {max_mortgage_ratio:.0%} mortgage ratio")
-        
-        with col_preview2:
-            if st.button("🔄 Apply Advanced Filters", type="primary"):
-                st.session_state.advanced_filters_applied = {
-                    "target_licenses": target_licenses,
-                    "exclude_licenses": exclude_licenses,
-                    "min_licenses": min_licenses,
-                    "min_states": min_states,
-                    "max_mortgage_ratio": max_mortgage_ratio,
-                    "required_business_structures": required_structures,
-                    "exclude_business_structures": exclude_structures,
-                    "contact_requirements": contact_requirements,
-                    "license_status_filter": license_status_filter,
-                    "date_range_filter": date_range_filter,
-                    "company_size_filter": company_size_filter
-                }
-                st.success("✅ Advanced filters applied! Run a search to see results.")
-        
-        # Reset to defaults
-        if st.button("🔄 Reset to Default Classification"):
-            st.session_state.current_profile = "Default"
-            if 'advanced_filters_applied' in st.session_state:
-                del st.session_state.advanced_filters_applied
-            st.success("✅ Reset to default classification rules!")
+        # Reset Filters
+        if st.button("🔄 Reset All Advanced Filters"):
+            st.session_state.advanced_filters = {
+                'use_custom_classification': False,
+                'custom_target_licenses': [],
+                'custom_exclude_licenses': [],
+                'min_licenses': 1,
+                'max_licenses': 1000,
+                'min_states': 1,
+                'max_states': 50,
+                'min_target_licenses': 0,
+                'max_exclude_licenses': 1000,
+                'business_structures': [],
+                'federal_regulators': [],
+                'has_contact_info': 'Any',
+                'profile_name': 'Custom'
+            }
             st.rerun()
     
     # Perform search
     if search_clicked and query:
-        with st.spinner("🔍 Searching NMLS database..."):
+        st.session_state.last_query = query
+        with st.spinner("🔍 Searching database..."):
             try:
-                # Check if advanced filters are applied
-                advanced_filters = st.session_state.get('advanced_filters_applied', None)
-                
-                if advanced_filters:
-                    st.info("🔧 Using Advanced Filters & Custom Classification Rules")
-                
-                # Search the database
-                results = search_nmls_database(query, selected_states, lender_type_filter)
-                
-                if results:
-                    st.success(f"✅ Found {len(results)} companies matching your search criteria")
-                    
-                    # Apply advanced filters if they exist
-                    if advanced_filters:
-                        results = apply_advanced_filters(results, advanced_filters)
-                        st.info(f"🔧 After advanced filtering: {len(results)} companies remain")
-                    
-                    # Create a custom classifier if advanced filters are applied
-                    if advanced_filters:
-                        classifier = create_custom_classifier(advanced_filters)
-                    else:
-                        classifier = LenderClassifier()
-                    
-                    # Classify results
-                    classified_results = []
-                    for result in results:
-                        classification = classifier.classify_lender(result)
-                        result['classification'] = classification
-                        classified_results.append(result)
-                    
-                    # Count classifications
-                    target_count = sum(1 for r in classified_results if r['classification'] == 'TARGET')
-                    exclude_count = sum(1 for r in classified_results if r['classification'] == 'EXCLUDE')
-                    mixed_count = sum(1 for r in classified_results if r['classification'] == 'Mixed')
-                    other_count = sum(1 for r in classified_results if r['classification'] == 'Other')
-                    
-                    # Display classification summary
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("🎯 TARGET", target_count, help="Unsecured personal lenders")
-                    with col2:
-                        st.metric("❌ EXCLUDE", exclude_count, help="Mortgage-focused lenders")
-                    with col3:
-                        st.metric("🔄 Mixed", mixed_count, help="Both personal and mortgage")
-                    with col4:
-                        st.metric("❓ Other", other_count, help="Other license types")
-                    
-                    # Filter results based on lender type selection
-                    if lender_type_filter != "All Types":
-                        if lender_type_filter == "Unsecured Personal (TARGET)":
-                            classified_results = [r for r in classified_results if r['classification'] == 'TARGET']
-                        elif lender_type_filter == "Mortgage (EXCLUDE)":
-                            classified_results = [r for r in classified_results if r['classification'] == 'EXCLUDE']
-                        elif lender_type_filter == "Mixed":
-                            classified_results = [r for r in classified_results if r['classification'] == 'Mixed']
-                        elif lender_type_filter == "Unknown":
-                            classified_results = [r for r in classified_results if r['classification'] == 'Other']
-                    
-                    if classified_results:
-                        # Display results table
-                        display_results_table(classified_results)
-                        
-                        # Detailed analysis section
-                        st.markdown("---")
-                        st.markdown("### 📊 Detailed License Analysis")
-                        
-                        # Company selection for detailed analysis
-                        company_options = [f"{result['legal_name']} (NMLS ID: {result['nmls_id']})" 
-                                         for result in classified_results]
-                        
-                        selected_company_display = st.selectbox(
-                            "Select a company for detailed analysis:",
-                            options=company_options,
-                            help="Choose a company to see comprehensive license and business information"
-                        )
-                        
-                        if selected_company_display:
-                            # Extract NMLS ID from selection
-                            nmls_id = selected_company_display.split("NMLS ID: ")[1].split(")")[0]
-                            
-                            # Get comprehensive company details
-                            company_details = get_comprehensive_company_details(nmls_id)
-                            
-                            if company_details:
-                                display_comprehensive_company_analysis(company_details)
-                            else:
-                                st.error("Could not retrieve detailed information for this company.")
-                    else:
-                        st.warning("No companies match the selected lender type filter.")
+                result = run_async(search_companies(query))
+                if result and 'error' in result:
+                    st.error(f"❌ Search failed: {result['error']}")
+                    st.info("💡 This may be a database connection issue. Please try again or contact support.")
+                elif result and result['companies']:
+                    st.session_state.search_results = result
+                    st.success(f"✅ Found {len(result['companies'])} results!")
                 else:
-                    st.warning("No results found. Try adjusting your search terms or filters.")
-                    
+                    st.error("❌ No results found. Try a different search.")
+                    # Show debug info if no results
+                    if result:
+                        st.info(f"Debug: Total count: {result.get('total_count', 0)}, Filters: {result.get('filters_applied', {})}")
             except Exception as e:
-                st.error(f"Search error: {str(e)}")
-                st.error("Please check your search terms and try again.")
+                st.error(f"❌ Search failed: {str(e)}")
+                st.info("💡 This may be a database connection issue. Please try again or contact support.")
     
     # Display results
     if st.session_state.search_results:
@@ -1264,7 +965,11 @@ def main():
             if target_type:
                 companies = [c for c in companies if c.get('lender_type') == target_type]
         
-        filtered_count = len(companies)  # Count after filtering
+        # Apply advanced filters if any are set
+        basic_filtered_count = len(companies)
+        companies = apply_advanced_filters(companies, st.session_state.advanced_filters)
+        
+        filtered_count = len(companies)  # Count after all filtering
         
         # Use constant total database count
         total_db_count = 13971
@@ -1274,8 +979,32 @@ def main():
         
         # Always show total database context for transparency
         filters_applied = bool(selected_states or lender_type_filter != "All Types")
-        if filters_applied and filtered_count != original_count:
-            st.info(f"📊 Showing **{filtered_count}** companies found out of **{total_db_count:,}** total companies in database (filters applied)")
+        advanced_filters_applied = any([
+            st.session_state.advanced_filters.get('use_custom_classification', False),
+            st.session_state.advanced_filters.get('min_licenses', 1) > 1,
+            st.session_state.advanced_filters.get('max_licenses', 1000) < 1000,
+            st.session_state.advanced_filters.get('min_states', 1) > 1,
+            st.session_state.advanced_filters.get('max_states', 50) < 50,
+            st.session_state.advanced_filters.get('min_target_licenses', 0) > 0,
+            st.session_state.advanced_filters.get('max_exclude_licenses', 1000) < 1000,
+            st.session_state.advanced_filters.get('business_structures', []),
+            st.session_state.advanced_filters.get('federal_regulators', []),
+            st.session_state.advanced_filters.get('has_contact_info', 'Any') != 'Any'
+        ])
+        
+        if filters_applied or advanced_filters_applied:
+            filter_info = []
+            if filters_applied:
+                filter_info.append("basic filters")
+            if advanced_filters_applied:
+                filter_info.append("advanced filters")
+            filter_text = " + ".join(filter_info)
+            
+            if basic_filtered_count != filtered_count and advanced_filters_applied:
+                st.info(f"📊 Showing **{filtered_count}** companies out of **{total_db_count:,}** total companies in database ({filter_text} applied)")
+                st.caption(f"🔍 Filter breakdown: {original_count} → {basic_filtered_count} (basic) → {filtered_count} (advanced)")
+            else:
+                st.info(f"📊 Showing **{filtered_count}** companies out of **{total_db_count:,}** total companies in database ({filter_text} applied)")
         else:
             st.info(f"📊 Showing **{filtered_count}** companies found out of **{total_db_count:,}** total companies in database")
         
@@ -1341,12 +1070,194 @@ def main():
                     
                     # Get comprehensive company details
                     with st.spinner("Loading comprehensive company details..."):
-                        comprehensive_details = get_comprehensive_company_details(nmls_id)
+                        comprehensive_details = run_async(get_comprehensive_company_details(nmls_id))
                     
                     if comprehensive_details:
-                        display_comprehensive_company_analysis(comprehensive_details)
+                        # Business Identity & Corporate Information Section
+                        st.markdown("##### 🏢 Business Identity & Corporate Information")
+                        
+                        col_corp1, col_corp2, col_corp3 = st.columns(3)
+                        
+                        with col_corp1:
+                            st.markdown("**📞 Contact Information:**")
+                            if comprehensive_details.get('phone'):
+                                st.markdown(f"• **Phone:** {comprehensive_details['phone']}")
+                            if comprehensive_details.get('email'):
+                                st.markdown(f"• **Email:** {comprehensive_details['email']}")
+                            
+                            # Website link - clickable if available
+                            website = comprehensive_details.get('website')
+                            if website:
+                                # Clean up website URL for display
+                                display_url = website
+                                if not website.startswith(('http://', 'https://')):
+                                    full_url = f"https://{website}"
+                                else:
+                                    full_url = website
+                                st.markdown(f"• **Website:** [🌐 {display_url}]({full_url})")
+                            else:
+                                st.markdown("• **Website:** Not available")
+                        
+                        with col_corp2:
+                            st.markdown("**🏛️ Corporate Structure:**")
+                            if comprehensive_details.get('business_structure'):
+                                st.markdown(f"• **Structure:** {comprehensive_details['business_structure']}")
+                            else:
+                                st.markdown("• **Structure:** Not available")
+                            
+                            if comprehensive_details.get('federal_regulator'):
+                                st.markdown(f"• **Federal Regulator:** {comprehensive_details['federal_regulator']}")
+                            else:
+                                st.markdown("• **Federal Regulator:** Not available")
+                        
+                        with col_corp3:
+                            st.markdown("**🏷️ Trade Names:**")
+                            trade_names = comprehensive_details.get('trade_names')
+                            if trade_names and isinstance(trade_names, list) and len(trade_names) > 0:
+                                # Filter out empty strings and None values
+                                valid_trade_names = [name for name in trade_names if name and str(name).strip()]
+                                if valid_trade_names:
+                                    for i, name in enumerate(valid_trade_names, 1):
+                                        st.markdown(f"• **{i}.** {name}")
+                                else:
+                                    st.markdown("• No trade names available")
+                            else:
+                                st.markdown("• No trade names available")
+                        
+                        # License Statistics Overview
+                        st.markdown("##### 📊 License Overview")
+                        license_stats = comprehensive_details.get('license_stats', {})
+                        
+                        col_stats1, col_stats2, col_stats3, col_stats4 = st.columns(4)
+                        with col_stats1:
+                            st.metric("Total Licenses", license_stats.get('total_licenses', 0))
+                        with col_stats2:
+                            st.metric("Active Licenses", license_stats.get('active_licenses', 0))
+                        with col_stats3:
+                            unique_types = len(license_stats.get('license_types', []))
+                            st.metric("License Types", unique_types)
+                        with col_stats4:
+                            licenses = comprehensive_details.get('licenses', [])
+                            unique_states = len(set([l['state'] for l in licenses if l['state']]))
+                            st.metric("States Licensed", unique_states)
+                        
+                        st.markdown("---")
+                    
+                    # Get detailed license state breakdown for categorization
+                    with st.spinner("Loading license categorization..."):
+                        license_state_breakdown = run_async(get_license_state_breakdown(nmls_id))
+                    
+                    license_types = selected_company.get('license_types', [])
+                    if license_types is None:
+                        license_types = []
+                    lender_type = selected_company.get('lender_type', 'unknown')
+                    
+                    # Categorize this company's licenses
+                    target_licenses = [lt for lt in license_types if lt in LenderClassifier.UNSECURED_PERSONAL_LICENSES]
+                    exclude_licenses = [lt for lt in license_types if lt in LenderClassifier.MORTGAGE_LICENSES]
+                    other_licenses = [lt for lt in license_types if lt not in LenderClassifier.UNSECURED_PERSONAL_LICENSES and lt not in LenderClassifier.MORTGAGE_LICENSES]
+                    
+                    # Get state breakdown by category
+                    category_states = get_license_category_state_breakdown(license_state_breakdown)
+                    
+                    st.markdown("##### 🎯 License Classification Analysis")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("**🎯 TARGET Licenses Found:**")
+                        if target_licenses:
+                            st.success(f"✅ {len(target_licenses)} Personal Loan Licenses")
+                            if category_states['target']:
+                                st.info(f"📍 States: {', '.join(category_states['target'])}")
+                            for license_type in target_licenses:
+                                states_for_license = license_state_breakdown.get(license_type, [])
+                                if states_for_license:
+                                    st.write(f"• **{license_type}** ({', '.join(states_for_license)})")
+                                else:
+                                    st.write(f"• **{license_type}** (states unknown)")
+                        else:
+                            st.warning("❌ No TARGET licenses found")
+                    
+                    with col2:
+                        st.markdown("**❌ EXCLUDE Licenses Found:**")
+                        if exclude_licenses:
+                            st.warning(f"⚠️ {len(exclude_licenses)} Mortgage Licenses")
+                            if category_states['exclude']:
+                                st.info(f"📍 States: {', '.join(category_states['exclude'])}")
+                            for license_type in exclude_licenses:
+                                states_for_license = license_state_breakdown.get(license_type, [])
+                                if states_for_license:
+                                    st.write(f"• **{license_type}** ({', '.join(states_for_license)})")
+                                else:
+                                    st.write(f"• **{license_type}** (states unknown)")
+                        else:
+                            st.success("✅ No EXCLUDE licenses found")
+                    
+                    with col3:
+                        st.markdown("**ℹ️ Other Licenses:**")
+                        if other_licenses:
+                            for i, license_type in enumerate(other_licenses, 1):
+                                states_for_license = license_state_breakdown.get(license_type, [])
+                                state_info = f" ({', '.join(states_for_license)})" if states_for_license else ""
+                                st.write(f"{i}. **{license_type}**{state_info}")
+                        else:
+                            st.write("No other licenses found")
+                    
+                    # Overall classification explanation
+                    st.markdown("**📊 Classification Summary:**")
+                    if lender_type == 'unsecured_personal':
+                        st.success("🎯 **CLASSIFIED AS: TARGET LENDER** - Has personal loan licenses without mortgage exclusions")
+                    elif lender_type == 'mortgage':
+                        st.error("❌ **CLASSIFIED AS: EXCLUDE** - Primarily mortgage-focused lender")
+                    elif lender_type == 'mixed':
+                        st.warning("⚠️ **CLASSIFIED AS: MIXED** - Has both personal loan and mortgage licenses")
                     else:
-                        st.error("Could not retrieve detailed information for this company.")
+                        st.info("❓ **CLASSIFIED AS: UNKNOWN** - License types couldn't be definitively categorized")
+                    
+                    # Detailed License Information Table
+                    if comprehensive_details and comprehensive_details.get('licenses'):
+                        st.markdown("---")
+                        st.markdown("##### 📋 Detailed License Information")
+                        
+                        licenses = comprehensive_details['licenses']
+                        
+                        # Create detailed license table
+                        license_table_data = []
+                        for license_info in licenses:
+                            # Format dates
+                            issue_date = license_info.get('original_issue_date')
+                            renewed_date = license_info.get('renewed_through')
+                            
+                            issue_date_str = issue_date.strftime('%Y-%m-%d') if issue_date else 'N/A'
+                            renewed_date_str = renewed_date.strftime('%Y-%m-%d') if renewed_date else 'N/A'
+                            
+                            # Status with emoji
+                            status = license_info.get('status', 'Unknown')
+                            active = license_info.get('active', False)
+                            status_display = f"✅ {status}" if active else f"❌ {status}"
+                            
+                            # Authorized to conduct business
+                            authorized = license_info.get('authorized_to_conduct_business')
+                            authorized_display = "✅ Yes" if authorized else "❌ No" if authorized is False else "❓ Unknown"
+                            
+                            license_table_data.append({
+                                'License Type': license_info.get('license_type', 'Unknown'),
+                                'License Number': license_info.get('license_number', 'N/A'),
+                                'State': license_info.get('state', 'Unknown'),
+                                'Regulator': license_info.get('regulator', 'Unknown'),
+                                'Status': status_display,
+                                'Issue Date': issue_date_str,
+                                'Renewed Through': renewed_date_str,
+                                'Authorized': authorized_display
+                            })
+                        
+                        if license_table_data:
+                            license_df = pd.DataFrame(license_table_data)
+                            st.dataframe(license_df, use_container_width=True)
+                        else:
+                            st.info("No detailed license information available")
+                    else:
+                        st.info("Unable to load detailed license information")
 
             # Add enrichment section after license analysis
             st.markdown("---")
@@ -1613,71 +1524,6 @@ def cleanup_resources():
         logger.info("Resources cleaned up successfully")
     except Exception as e:
         logger.warning(f"Error during cleanup: {e}")
-
-def run_async(coro):
-    """Production-grade async runner for Streamlit with proper context handling"""
-    # Get current Streamlit context
-    ctx = get_script_run_ctx()
-    
-    def run_in_thread():
-        # Create new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # Add Streamlit context to this thread if available
-            if ctx:
-                current_thread = threading.current_thread()
-                add_script_run_ctx(current_thread, ctx)
-            
-            # Run the coroutine
-            result = loop.run_until_complete(coro)
-            return result
-            
-        except Exception as e:
-            error_msg = f"{type(e).__name__}: {str(e)}"
-            logger.error(f"Async execution error: {error_msg}")
-            import traceback
-            full_traceback = traceback.format_exc()
-            logger.error(f"Full traceback: {full_traceback}")
-            # Re-raise with full context
-            raise Exception(f"Async operation failed: {error_msg}") from e
-            
-        finally:
-            try:
-                # Clean up pending tasks
-                pending = asyncio.all_tasks(loop)
-                if pending:
-                    for task in pending:
-                        task.cancel()
-                    # Wait for cancellation to complete
-                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-                
-                # Close the loop
-                loop.close()
-                
-            except Exception as cleanup_error:
-                logger.warning(f"Cleanup error (non-critical): {cleanup_error}")
-
-    # Use ThreadPoolExecutor with timeout
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(run_in_thread)
-        try:
-            # Increased timeout for enrichment operations
-            result = future.result(timeout=1800)  # 30 minutes
-            return result
-            
-        except concurrent.futures.TimeoutError:
-            error_msg = "Operation timed out after 30 minutes"
-            logger.error(error_msg)
-            raise TimeoutError(error_msg)
-            
-        except Exception as e:
-            error_msg = f"{type(e).__name__}: {str(e)}"
-            logger.error(f"Thread execution error: {error_msg}")
-            import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            raise e
 
 if __name__ == "__main__":
     main() 
