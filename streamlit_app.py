@@ -860,29 +860,27 @@ def main():
                     st.markdown("#### 📝 What We Searched For:")
                     st.markdown(query_analysis['sql_explanation'])
                 
-                # Technical SQL Details
-                st.markdown("---")
-                st.markdown("#### ⚙️ Technical SQL Query")
-                
-                sql_query = st.session_state.search_results.get('sql_query')
-                sql_params = st.session_state.search_results.get('sql_params')
-                
-                if sql_query:
-                    # Format SQL for better readability
-                    formatted_sql = sql_query.replace('SELECT', '\nSELECT').replace('FROM', '\nFROM').replace('WHERE', '\nWHERE').replace('ORDER BY', '\nORDER BY').replace('LIMIT', '\nLIMIT')
+                # Technical SQL Details - Make this expandable and closed by default
+                with st.expander("⚙️ Technical SQL Query", expanded=False):
+                    sql_query = st.session_state.search_results.get('sql_query')
+                    sql_params = st.session_state.search_results.get('sql_params')
                     
-                    st.markdown("**SQL Query:**")
-                    st.code(formatted_sql, language="sql")
-                    
-                    if sql_params:
-                        st.markdown("**Query Parameters:**")
-                        param_display = []
-                        for i, param in enumerate(sql_params, 1):
-                            if isinstance(param, list):
-                                param_display.append(f"${i}: {param}")
-                            else:
-                                param_display.append(f"${i}: '{param}'")
-                        st.code("\n".join(param_display), language="text")
+                    if sql_query:
+                        # Format SQL for better readability
+                        formatted_sql = sql_query.replace('SELECT', '\nSELECT').replace('FROM', '\nFROM').replace('WHERE', '\nWHERE').replace('ORDER BY', '\nORDER BY').replace('LIMIT', '\nLIMIT')
+                        
+                        st.markdown("**SQL Query:**")
+                        st.code(formatted_sql, language="sql")
+                        
+                        if sql_params:
+                            st.markdown("**Query Parameters:**")
+                            param_display = []
+                            for i, param in enumerate(sql_params, 1):
+                                if isinstance(param, list):
+                                    param_display.append(f"${i}: {param}")
+                                else:
+                                    param_display.append(f"${i}: '{param}'")
+                            st.code("\n".join(param_display), language="text")
                 
                 # Filters Applied
                 st.markdown("---")
