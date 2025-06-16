@@ -838,18 +838,10 @@ def main():
                 with col1:
                     st.markdown("**Your Query:**")
                     st.code(query_analysis.get('original_query', 'N/A'), language="text")
-                    
-                    st.markdown("**AI Interpretation:**")
-                    st.info(query_analysis.get('explanation', 'No explanation available'))
                 
                 with col2:
-                    st.markdown("**Search Intent:**")
-                    intent = query_analysis.get('intent', 'unknown').replace('_', ' ').title()
-                    st.success(f"🎯 {intent}")
-                    
-                    st.markdown("**Confidence Level:**")
-                    confidence = query_analysis.get('confidence', 0)
-                    st.metric("AI Confidence", f"{confidence:.1%}")
+                    st.markdown("**AI Interpretation:**")
+                    st.info(query_analysis.get('explanation', 'No explanation available'))
                 
                 # Plain English Explanation
                 if 'sql_explanation' in query_analysis:
