@@ -206,6 +206,20 @@ def run_async(coro):
             logger.error(f"Full traceback: {traceback.format_exc()}")
             raise e
 
+async def get_total_database_count() -> int:
+    """Get total number of companies in the database"""
+    pool = await get_or_create_pool()
+    if not pool:
+        return 0
+    
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT COUNT(*) as total FROM companies")
+            return row['total'] if row else 0
+    except Exception as e:
+        logger.error(f"Error getting total database count: {e}")
+        return 0
+
 async def search_companies(query: str, filters: Dict[str, Any] = None) -> Dict[str, Any]:
     """Run search using unified search API"""
     try:
@@ -513,15 +527,18 @@ def main():
         
         filtered_count = len(companies)  # Count after filtering
         
+        # Get total database count for context
+        total_db_count = run_async(get_total_database_count())
+        
         # Summary metrics
         st.markdown("---")
         
-        # Always show total context for transparency
+        # Always show total database context for transparency
         filters_applied = bool(selected_states or lender_type_filter != "All Types")
         if filters_applied and filtered_count != original_count:
-            st.info(f"📊 Showing **{filtered_count}** results out of **{original_count}** total found (filters applied)")
+            st.info(f"📊 Showing **{filtered_count}** companies found out of **{total_db_count:,}** total companies in database (filters applied)")
         else:
-            st.info(f"📊 Showing **{filtered_count}** results out of **{original_count}** total found")
+            st.info(f"📊 Showing **{filtered_count}** companies found out of **{total_db_count:,}** total companies in database")
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
