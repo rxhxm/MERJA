@@ -585,6 +585,113 @@ def main():
                 if selected_company:
                     st.markdown(f"#### {selected_company['company_name']} - Complete License Analysis")
                     
+                    # Company basic info with website link
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    with col_info1:
+                        st.markdown(f"**NMLS ID:** {selected_company['nmls_id']}")
+                        if selected_company.get('phone'):
+                            st.markdown(f"**Phone:** {selected_company['phone']}")
+                    with col_info2:
+                        if selected_company.get('email'):
+                            st.markdown(f"**Email:** {selected_company['email']}")
+                        if selected_company.get('business_structure'):
+                            st.markdown(f"**Structure:** {selected_company['business_structure']}")
+                    with col_info3:
+                        # Website link - clickable if available
+                        website = selected_company.get('website')
+                        if website:
+                            # Clean up website URL for display
+                            display_url = website
+                            if not website.startswith(('http://', 'https://')):
+                                full_url = f"https://{website}"
+                            else:
+                                full_url = website
+                            st.markdown(f"**Website:** [🌐 {display_url}]({full_url})")
+                        else:
+                            st.markdown("**Website:** Not available")
+                        
+                        # Quick enrichment button for this company
+                        if ENRICHMENT_AVAILABLE:
+                            if st.button(f"🚀 Enrich {selected_company['company_name'][:20]}...", 
+                                       key=f"enrich_{nmls_id}",
+                                       help="Get additional business data using SixtyFour AI"):
+                                st.session_state[f'enrich_single_{nmls_id}'] = True
+                    
+                    st.markdown("---")
+                    
+                    # Single company enrichment processing
+                    if ENRICHMENT_AVAILABLE and st.session_state.get(f'enrich_single_{nmls_id}', False):
+                        st.markdown("#### 🔍 AI-Powered Company Intelligence")
+                        
+                        try:
+                            enrichment_service = create_enrichment_service()
+                            if enrichment_service:
+                                with st.spinner(f"🔄 Researching {selected_company['company_name']} with SixtyFour AI..."):
+                                    st.info("⏱️ This typically takes 5-8 minutes for comprehensive research...")
+                                    
+                                    # Run enrichment for single company
+                                    enriched_df, contacts_df = run_async(
+                                        enrichment_service.enrich_companies_batch(
+                                            [selected_company],
+                                            progress_callback=None
+                                        )
+                                    )
+                                    
+                                    if not enriched_df.empty:
+                                        enriched_company = enriched_df.iloc[0]
+                                        
+                                        # Display enriched data in organized sections
+                                        col_enrich1, col_enrich2 = st.columns(2)
+                                        
+                                        with col_enrich1:
+                                            st.markdown("**🏢 Company Intelligence:**")
+                                            if enriched_company.get('website'):
+                                                enriched_website = enriched_company['website']
+                                                if not enriched_website.startswith(('http://', 'https://')):
+                                                    enriched_website = f"https://{enriched_website}"
+                                                st.markdown(f"• **Website:** [🌐 {enriched_company['website']}]({enriched_website})")
+                                            if enriched_company.get('industry'):
+                                                st.markdown(f"• **Industry:** {enriched_company['industry']}")
+                                            if enriched_company.get('employees'):
+                                                st.markdown(f"• **Employees:** {enriched_company['employees']}")
+                                            
+                                        with col_enrich2:
+                                            st.markdown("**🎯 Lending Focus:**")
+                                            personal_loans = enriched_company.get('personal_loans', '')
+                                            if personal_loans:
+                                                if 'yes' in personal_loans.lower():
+                                                    st.success(f"✅ **Personal Loans:** {personal_loans}")
+                                                elif 'no' in personal_loans.lower():
+                                                    st.warning(f"❌ **Personal Loans:** {personal_loans}")
+                                                else:
+                                                    st.info(f"❓ **Personal Loans:** {personal_loans}")
+                                            
+                                            if enriched_company.get('qualified'):
+                                                st.success("🎯 **QUALIFIED LEAD** - Matches target criteria")
+                                            else:
+                                                st.info("ℹ️ Standard lead - review manually")
+                                        
+                                        # Show contacts if found
+                                        if not contacts_df.empty:
+                                            company_contacts = contacts_df[contacts_df['company_name'] == selected_company['company_name']]
+                                            if not company_contacts.empty:
+                                                st.markdown("**👥 Key Contacts Found:**")
+                                                for _, contact in company_contacts.iterrows():
+                                                    st.markdown(f"• **{contact.get('name', 'N/A')}** - {contact.get('title', 'N/A')}")
+                                                    if contact.get('email'):
+                                                        st.markdown(f"  📧 {contact['email']}")
+                                        
+                                        st.success("✅ Enrichment completed successfully!")
+                                    else:
+                                        st.warning("⚠️ No enrichment data returned - company may not have been found")
+                            else:
+                                st.error("❌ Enrichment service unavailable")
+                        except Exception as e:
+                            st.error(f"❌ Enrichment failed: {str(e)}")
+                        finally:
+                            # Reset the enrichment flag
+                            st.session_state[f'enrich_single_{nmls_id}'] = False
+                    
                     # Get detailed license state breakdown
                     with st.spinner("Loading detailed license breakdown..."):
                         license_state_breakdown = run_async(get_license_state_breakdown(nmls_id))
