@@ -519,12 +519,12 @@ def main():
         # Summary metrics
         st.markdown("---")
         
-        # Show filtering status if filters are applied
+        # Always show total context for transparency
         filters_applied = bool(selected_states or lender_type_filter != "All Types")
         if filters_applied and filtered_count != original_count:
             st.info(f"📊 Showing **{filtered_count}** results out of **{original_count}** total found (filters applied)")
         else:
-            st.info(f"📊 Showing **{filtered_count}** results")
+            st.info(f"📊 Showing **{filtered_count}** results out of **{original_count}** total found")
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -544,10 +544,7 @@ def main():
         
         # Results table
         if companies:
-            if filters_applied and filtered_count != original_count:
-                st.subheader(f"📋 Lenders Found ({filtered_count} of {original_count} results)")
-            else:
-                st.subheader(f"📋 Lenders Found ({filtered_count} results)")
+            st.subheader(f"📋 Lenders Found ({filtered_count} of {original_count} results)")
             
             # Create display data
             display_data = []
