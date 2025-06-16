@@ -377,16 +377,16 @@ def format_license_summary(company: Dict[str, Any]) -> str:
     """Format license summary for display"""
     license_types = company.get('license_types', [])
     states_licensed = company.get('states_licensed', [])
-    
-    if not license_types:
+        
+        if not license_types:
         return "No license information available"
     
     # Group by license type
     license_counts = {}
     for license_type in license_types:
         license_counts[license_type] = license_counts.get(license_type, 0) + 1
-    
-    summary_parts = []
+        
+        summary_parts = []
     for license_type, count in license_counts.items():
         if count > 1:
             summary_parts.append(f"{license_type} ({count})")
@@ -529,7 +529,7 @@ async def get_comprehensive_company_details(nmls_id: str) -> Dict[str, Any]:
             }
             
             return company_details
-            
+        
     except Exception as e:
         logger.error(f"Error fetching comprehensive company details for {nmls_id}: {e}")
         return {}
@@ -624,8 +624,8 @@ def main():
         col_primary1, col_primary2 = st.columns(2)
         
         with col_primary1:
-            selected_states = st.multiselect(
-                "📍 States Licensed In:",
+        selected_states = st.multiselect(
+            "📍 States Licensed In:",
                 ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
                 default=st.session_state.advanced_filters['selected_states'],
                 help="Filter companies by states where they are licensed"
@@ -633,8 +633,8 @@ def main():
             st.session_state.advanced_filters['selected_states'] = selected_states
         
         with col_primary2:
-            lender_type_filter = st.selectbox(
-                "🏦 Lender Type:", 
+        lender_type_filter = st.selectbox(
+            "🏦 Lender Type:", 
                 ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
                 index=["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"].index(
                     st.session_state.advanced_filters['lender_type_filter']
@@ -1043,24 +1043,24 @@ def main():
                             if comprehensive_details.get('email'):
                                 st.markdown(f"• **Email:** {comprehensive_details['email']}")
                             
-                            # Website link - clickable if available
+                        # Website link - clickable if available
                             website = comprehensive_details.get('website')
-                            if website:
-                                # Clean up website URL for display
-                                display_url = website
-                                if not website.startswith(('http://', 'https://')):
-                                    full_url = f"https://{website}"
-                                else:
-                                    full_url = website
-                                st.markdown(f"• **Website:** [🌐 {display_url}]({full_url})")
+                        if website:
+                            # Clean up website URL for display
+                            display_url = website
+                            if not website.startswith(('http://', 'https://')):
+                                full_url = f"https://{website}"
                             else:
+                                full_url = website
+                                st.markdown(f"• **Website:** [🌐 {display_url}]({full_url})")
+                        else:
                                 st.markdown("• **Website:** Not available")
                         
                         with col_corp2:
                             st.markdown("**🏛️ Corporate Structure:**")
                             if comprehensive_details.get('business_structure'):
                                 st.markdown(f"• **Structure:** {comprehensive_details['business_structure']}")
-                            else:
+                        else:
                                 st.markdown("• **Structure:** Not available")
                             
                             if comprehensive_details.get('federal_regulator'):
@@ -1098,8 +1098,8 @@ def main():
                             licenses = comprehensive_details.get('licenses', [])
                             unique_states = len(set([l['state'] for l in licenses if l['state']]))
                             st.metric("States Licensed", unique_states)
-                        
-                        st.markdown("---")
+                    
+                    st.markdown("---")
                     
                     # Get detailed license state breakdown for categorization
                     with st.spinner("Loading license categorization..."):
