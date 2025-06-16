@@ -534,6 +534,14 @@ CRITICAL RULES FOR GEOGRAPHIC SEARCHES:
    - "consumer credit lenders" → add license_types: ["Consumer Credit"]
    - "mortgage companies" → add license_types: ["Mortgage"]
 
+3. For LICENSE COUNT queries (large/small lenders, companies with X+ licenses):
+   - "Large lenders" → {{"min_licenses": 10, "query": null}}
+   - "Small lenders" → {{"max_licenses": 5, "query": null}}
+   - "Companies with 10+ licenses" → {{"min_licenses": 10, "query": null}}
+   - "Lenders with 5-20 licenses" → {{"min_licenses": 5, "max_licenses": 20, "query": null}}
+   - "Big companies" → {{"min_licenses": 15, "query": null}}
+   - "Major lenders" → {{"min_licenses": 20, "query": null}}
+
 EXAMPLES:
 - "Banks in California" → {{"states": ["CA"], "query": null, "license_types": null}}
 - "Lenders in Texas" → {{"states": ["TX"], "query": null, "license_types": null}}
@@ -541,6 +549,9 @@ EXAMPLES:
 - "Financial companies in Florida" → {{"states": ["FL"], "query": null, "license_types": null}}
 - "Personal loan companies in NY" → {{"states": ["NY"], "license_types": ["Personal"]}}
 - "Wells Fargo" → {{"query": "Wells Fargo", "states": null, "license_types": null}}
+- "Large lenders with 10+ licenses" → {{"min_licenses": 10, "query": null, "license_types": null}}
+- "Small companies with few licenses" → {{"max_licenses": 3, "query": null, "license_types": null}}
+- "Major financial institutions" → {{"min_licenses": 25, "query": null, "license_types": null}}
 
 STATE MAPPING: california→CA, new york→NY, texas→TX, florida→FL
 
@@ -556,11 +567,15 @@ Return ONLY this JSON structure:
         "query": null,
         "states": ["CA", "NY"],
         "license_types": null,
+        "min_licenses": null,
+        "max_licenses": null,
         "active_licenses_only": true
     }}
 }}
 
-REMEMBER: For geographic searches with generic terms (banks, lenders, financial companies), NEVER add license_types filters. Only filter by states.
+REMEMBER: 
+- For geographic searches with generic terms (banks, lenders, financial companies), NEVER add license_types filters. Only filter by states.
+- For size-based queries (large, small, big, major, X+ licenses), use min_licenses/max_licenses filters, NOT text search.
 """
 
     async def _get_search_context(self) -> Dict:
