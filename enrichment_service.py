@@ -210,15 +210,15 @@ class EnrichmentService:
             if isinstance(leads, list):
                 for lead in leads:
                     if isinstance(lead, dict):
-                    contact_record = {
-                        'company_name': result['company_name'],
+                        contact_record = {
+                            'company_name': result['company_name'],
                             'nmls_id': result['nmls_id'],
                             'name': lead.get('name', ''),
                             'title': lead.get('title', ''),
                             'linkedin': lead.get('linkedin', ''),
                             'email': lead.get('email', '')
-                    }
-                    all_contacts.append(contact_record)
+                        }
+                        all_contacts.append(contact_record)
 
         # Create DataFrames
         companies_df = pd.DataFrame(enriched_companies)

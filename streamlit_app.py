@@ -74,7 +74,6 @@ try:
     ENRICHMENT_AVAILABLE = True
 except ImportError:
     ENRICHMENT_AVAILABLE = False
-    st.warning("⚠️ Enrichment service unavailable. Search functionality will work normally.")
 
 # Database pool setup
 _db_pool = None
