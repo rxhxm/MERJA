@@ -527,8 +527,8 @@ def main():
         
         filtered_count = len(companies)  # Count after filtering
         
-        # Get total database count for context
-        total_db_count = run_async(get_total_database_count())
+        # Use constant total database count
+        total_db_count = 13971
         
         # Summary metrics
         st.markdown("---")
