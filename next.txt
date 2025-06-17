@@ -7,6 +7,8 @@ Clarify the changes
 - Make it find the linkedins in API search
 - LLM query transparency
 - Search fields he can make changes
+- Did the Adding fields to enrichment
+
 
 
 Parallelize the API calls

@@ -1510,7 +1510,13 @@ def main():
                     def simple_progress_callback(completed, total, current_company):
                         progress = completed / total
                         progress_bar.progress(progress)
-                        status_text.text(f"🔄 Enriching: {current_company} ({completed}/{total})")
+                        
+                        # Show more detailed status
+                        if completed == total:
+                            status_text.text(f"✅ Completed: {current_company} ({completed}/{total})")
+                        else:
+                            estimated_remaining = ((total - completed) * 10)  # 10 minutes per company estimate
+                            status_text.text(f"🔄 Enriching: {current_company} ({completed}/{total}) - ~{estimated_remaining:.0f}min remaining")
                     
                     try:
                         with st.spinner("Starting enrichment process..."):
@@ -1532,6 +1538,23 @@ def main():
                                 'contacts': contacts_df,
                                 'timestamp': datetime.now()
                             }
+                            
+                            # Debug information
+                            st.success("✅ Enrichment completed! Here's what we got:")
+                            st.write("**Debug Info:**")
+                            st.write(f"- Companies DataFrame shape: {enriched_df.shape}")
+                            st.write(f"- Companies DataFrame columns: {list(enriched_df.columns)}")
+                            st.write(f"- Contacts DataFrame shape: {contacts_df.shape}")
+                            st.write(f"- Contacts DataFrame columns: {list(contacts_df.columns)}")
+                            
+                            # Show first few rows of data
+                            if not enriched_df.empty:
+                                st.write("**First company record:**")
+                                st.json(enriched_df.iloc[0].to_dict())
+                            
+                            if not contacts_df.empty:
+                                st.write("**First contact record:**")
+                                st.json(contacts_df.iloc[0].to_dict())
                             
                             progress_bar.progress(1.0)
                             status_text.text("✅ Enrichment completed successfully!")
@@ -1716,13 +1739,13 @@ def main():
                         if available_contact_columns:
                             display_contacts_df = contacts_df[available_contact_columns].copy()
                             
-                            # Format LinkedIn links in contacts
-                            if 'linkedin' in display_contacts_df.columns:
-                                display_contacts_df['LinkedIn'] = display_contacts_df['linkedin'].apply(
-                                    lambda x: f"[🔗 Profile]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
-                                )
-                                display_contacts_df = display_contacts_df.drop('linkedin', axis=1)
-                            
+                        # Format LinkedIn links in contacts
+                        if 'linkedin' in display_contacts_df.columns:
+                            display_contacts_df['LinkedIn'] = display_contacts_df['linkedin'].apply(
+                                lambda x: f"[🔗 Profile]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
+                            )
+                            display_contacts_df = display_contacts_df.drop('linkedin', axis=1)
+                        
                             # Format other social media fields for contacts
                             contact_social_fields = ['twitter_handle', 'facebook_profile', 'instagram_handle']
                             for field in contact_social_fields:
@@ -1734,39 +1757,39 @@ def main():
                                         lambda x: f"[{emoji} {display_name}]({x})" if x and str(x) != 'nan' and str(x).strip() else "❌"
                                     )
                                     display_contacts_df = display_contacts_df.drop(field, axis=1)
-                            
-                            # Rename columns for better display
+                        
+                        # Rename columns for better display
                             contact_column_renames = {
-                                'company_name': 'Company',
-                                'nmls_id': 'NMLS ID',
-                                'name': 'Name',
-                                'title': 'Title',
+                            'company_name': 'Company',
+                            'nmls_id': 'NMLS ID',
+                            'name': 'Name',
+                            'title': 'Title',
                                 'email': 'Email',
                                 'phone': 'Phone',
                                 'mobile': 'Mobile'
-                            }
+                        }
                             display_contacts_df = display_contacts_df.rename(columns=contact_column_renames)
-                            
-                            st.dataframe(display_contacts_df, use_container_width=True)
-                            
-                            # Contact summary
-                            st.markdown("---")
-                            st.markdown("**👥 Contact Summary:**")
-                            col_contact1, col_contact2, col_contact3 = st.columns(3)
-                            
-                            with col_contact1:
-                                total_contacts = len(contacts_df)
-                                st.metric("Total Contacts", total_contacts)
-                            
-                            with col_contact2:
-                                contacts_with_email = len(contacts_df[contacts_df.get('email', '').notna() & (contacts_df.get('email', '') != '')])
-                                st.metric("With Email", contacts_with_email)
-                            
-                            with col_contact3:
-                                contacts_with_linkedin = len(contacts_df[contacts_df.get('linkedin', '').notna() & (contacts_df.get('linkedin', '') != '')])
-                                st.metric("With LinkedIn", contacts_with_linkedin)
-                        else:
-                            st.warning("No contact data to display")
+                        
+                        st.dataframe(display_contacts_df, use_container_width=True)
+                        
+                        # Contact summary
+                        st.markdown("---")
+                        st.markdown("**👥 Contact Summary:**")
+                        col_contact1, col_contact2, col_contact3 = st.columns(3)
+                        
+                        with col_contact1:
+                            total_contacts = len(contacts_df)
+                            st.metric("Total Contacts", total_contacts)
+                        
+                        with col_contact2:
+                            contacts_with_email = len(contacts_df[contacts_df.get('email', '').notna() & (contacts_df.get('email', '') != '')])
+                            st.metric("With Email", contacts_with_email)
+                        
+                        with col_contact3:
+                            contacts_with_linkedin = len(contacts_df[contacts_df.get('linkedin', '').notna() & (contacts_df.get('linkedin', '') != '')])
+                            st.metric("With LinkedIn", contacts_with_linkedin)
+                    else:
+                        st.warning("No contact data to display")
                         
                         # Export contacts
                         if st.button("📧 Download Contacts CSV"):
@@ -1777,8 +1800,6 @@ def main():
                                 file_name=f"contacts_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv",
                                 mime="text/csv"
                             )
-                    else:
-                        st.info("No contacts found")
         else:
             st.info("No companies match the current filters.")
 
