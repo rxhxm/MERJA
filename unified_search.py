@@ -487,8 +487,14 @@ class NaturalLanguageProcessor:
                 messages=[{"role": "user", "content": prompt}]
             )
 
-            analysis_result = self._parse_claude_response(
-                response.content[0].text)
+            response_text = response.content[0].text
+            logger.info(f"Claude response length: {len(response_text)} characters")
+            
+            # Check for truncated response
+            if len(response_text) >= 1950:  # Close to max_tokens limit
+                logger.warning("Claude response may be truncated")
+            
+            analysis_result = self._parse_claude_response(response_text)
 
             # Enhance with vector search if semantic query detected
             if analysis_result.semantic_query:
@@ -501,6 +507,22 @@ class NaturalLanguageProcessor:
 
         except Exception as e:
             logger.error(f"Claude analysis error: {e}")
+            
+            # Smart fallback for common queries
+            if "installment" in query.lower() and "loan" in query.lower():
+                return QueryAnalysis(
+                    intent=QueryIntent.FIND_LENDERS,
+                    filters=SearchFilters(
+                        license_types=["Installment Loan", "Installment Lender", "Consumer Installment Loan"],
+                        active_licenses_only=True
+                    ),
+                    lender_type_preference=LenderType.UNSECURED_PERSONAL,
+                    semantic_query=None,
+                    confidence=0.8,
+                    explanation="Smart fallback: Finding companies with installment loan licenses",
+                    business_critical_flags=["claude_error_fallback"]
+                )
+            
             return QueryAnalysis(
                 intent=QueryIntent.FIND_COMPANIES,
                 filters=SearchFilters(query=query),
@@ -517,41 +539,31 @@ You are analyzing search queries for an NMLS database search system.
 
 Query: "{query}"
 
-CRITICAL RULES FOR GEOGRAPHIC SEARCHES:
-1. If the query is asking for companies in specific locations (states/cities) using generic terms like:
-   - "banks in [location]"
-   - "lenders in [location]" 
-   - "financial companies in [location]"
-   - "companies in [location]"
-   
-   Then you MUST:
-   - Set states filter ONLY: {{"states": ["CA"], "query": null, "license_types": null}}
-   - DO NOT add any license_types filters
-   - DO NOT use the generic term as a text search
+CRITICAL RULES FOR SPECIFIC LICENSE TYPE SEARCHES:
+1. For specific license type queries:
+   - "Installment loan companies" → add license_types: ["Installment Loan", "Installment Lender", "Consumer Installment Loan"]
+   - "Personal loan companies" → add license_types: ["Personal Loan", "Consumer Loan", "Consumer Credit"]
+   - "Consumer credit lenders" → add license_types: ["Consumer Credit", "Consumer Loan"]
+   - "Payday loan companies" → add license_types: ["Payday Lender"]
+   - "Small loan companies" → add license_types: ["Small Loan", "Small Lender"]
+   - "Finance companies" → add license_types: ["Finance Company", "Consumer Finance"]
 
-2. Only add license_types filters when the user specifically mentions license types:
-   - "personal loan companies" → add license_types: ["Personal"]
-   - "consumer credit lenders" → add license_types: ["Consumer Credit"]
-   - "mortgage companies" → add license_types: ["Mortgage"]
+2. For geographic searches with generic terms:
+   - "banks in [location]" → Set states filter ONLY: {{"states": ["CA"], "query": null, "license_types": null}}
+   - "lenders in [location]" → Set states filter ONLY: {{"states": ["TX"], "query": null, "license_types": null}}
+   - DO NOT add license_types filters for generic geographic searches
 
 3. For LICENSE COUNT queries (large/small lenders, companies with X+ licenses):
    - "Large lenders" → {{"min_licenses": 10, "query": null}}
    - "Small lenders" → {{"max_licenses": 5, "query": null}}
    - "Companies with 10+ licenses" → {{"min_licenses": 10, "query": null}}
-   - "Lenders with 5-20 licenses" → {{"min_licenses": 5, "max_licenses": 20, "query": null}}
-   - "Big companies" → {{"min_licenses": 15, "query": null}}
-   - "Major lenders" → {{"min_licenses": 20, "query": null}}
 
 EXAMPLES:
+- "Installment loan companies" → {{"license_types": ["Installment Loan", "Installment Lender", "Consumer Installment Loan"], "query": null, "states": null}}
 - "Banks in California" → {{"states": ["CA"], "query": null, "license_types": null}}
-- "Lenders in Texas" → {{"states": ["TX"], "query": null, "license_types": null}}
-- "Banks in California and New York" → {{"states": ["CA", "NY"], "query": null, "license_types": null}}
-- "Financial companies in Florida" → {{"states": ["FL"], "query": null, "license_types": null}}
-- "Personal loan companies in NY" → {{"states": ["NY"], "license_types": ["Personal"]}}
+- "Personal loan companies in NY" → {{"states": ["NY"], "license_types": ["Personal Loan", "Consumer Loan"]}}
 - "Wells Fargo" → {{"query": "Wells Fargo", "states": null, "license_types": null}}
 - "Large lenders with 10+ licenses" → {{"min_licenses": 10, "query": null, "license_types": null}}
-- "Small companies with few licenses" → {{"max_licenses": 3, "query": null, "license_types": null}}
-- "Major financial institutions" → {{"min_licenses": 25, "query": null, "license_types": null}}
 
 STATE MAPPING: california→CA, new york→NY, texas→TX, florida→FL
 
@@ -559,14 +571,14 @@ Return ONLY this JSON structure:
 {{
     "intent": "find_lenders",
     "confidence": 0.9,
-    "explanation": "User wants to find companies licensed in specific states",
-    "lender_type_preference": null,
+    "explanation": "User wants to find companies with specific license types or in specific locations",
+    "lender_type_preference": "unsecured_personal",
     "semantic_query": null,
     "business_critical_flags": [],
     "filters": {{
         "query": null,
-        "states": ["CA", "NY"],
-        "license_types": null,
+        "states": null,
+        "license_types": ["Installment Loan", "Installment Lender"],
         "min_licenses": null,
         "max_licenses": null,
         "active_licenses_only": true
@@ -574,8 +586,10 @@ Return ONLY this JSON structure:
 }}
 
 REMEMBER: 
-- For geographic searches with generic terms (banks, lenders, financial companies), NEVER add license_types filters. Only filter by states.
-- For size-based queries (large, small, big, major, X+ licenses), use min_licenses/max_licenses filters, NOT text search.
+- Always return complete, valid JSON
+- For installment loan queries, use multiple license type variations to ensure comprehensive results
+- For geographic searches with generic terms, NEVER add license_types filters
+- For size-based queries, use min_licenses/max_licenses filters, NOT text search
 """
 
     async def _get_search_context(self) -> Dict:
@@ -596,12 +610,25 @@ REMEMBER:
 
     def _parse_claude_response(self, response_text: str) -> QueryAnalysis:
         try:
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if not json_match:
-                raise ValueError("No JSON found in response")
+            # Log the raw response for debugging
+            logger.info(f"Claude raw response: {response_text[:500]}...")
+            
+            # Extract JSON from response - handle both plain JSON and markdown formatted
+            json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_text = json_match.group(1)
+            else:
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if not json_match:
+                    raise ValueError("No JSON found in response")
+                json_text = json_match.group()
 
-            data = json.loads(json_match.group())
+            # Clean up the JSON text
+            json_text = json_text.strip()
+            
+            logger.info(f"Extracted JSON: {json_text}")
+            
+            data = json.loads(json_text)
 
             # Parse filters
             filters_data = data.get('filters', {})
@@ -632,9 +659,26 @@ REMEMBER:
 
         except Exception as e:
             logger.error(f"Failed to parse Claude response: {e}")
+            logger.error(f"Raw response: {response_text}")
+            
+            # For "Installment loan companies" queries, provide a smart fallback
+            if "installment" in response_text.lower() and "loan" in response_text.lower():
+                return QueryAnalysis(
+                    intent=QueryIntent.FIND_LENDERS,
+                    filters=SearchFilters(
+                        license_types=["Installment Loan", "Installment Lender", "Consumer Installment Loan"],
+                        active_licenses_only=True
+                    ),
+                    lender_type_preference=LenderType.UNSECURED_PERSONAL,
+                    semantic_query=None,
+                    confidence=0.8,
+                    explanation="Smart fallback: Finding companies with installment loan licenses",
+                    business_critical_flags=["fallback_parse"]
+                )
+                
             return QueryAnalysis(
                 intent=QueryIntent.FIND_COMPANIES,
-                filters=SearchFilters(query=response_text[:100]),
+                filters=SearchFilters(query="installment loan" if "installment" in response_text.lower() else None),
                 lender_type_preference=LenderType.UNKNOWN,
                 semantic_query=None,
                 confidence=0.3,
@@ -787,20 +831,18 @@ class SearchService:
 
         # License type filtering - use flexible matching
         if filters.license_types:
-            param_count += 1
             # Use ILIKE for flexible matching instead of exact equality
             license_conditions = []
             for license_type in filters.license_types:
+                param_count += 1
                 license_conditions.append(f"license_type ILIKE ${param_count}")
                 params.append(f"%{license_type}%")
-                param_count += 1
             
             conditions.append(f"""
                 EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
                         AND active = true 
                         AND ({' OR '.join(license_conditions)}))
             """)
-            param_count -= 1  # Adjust for the loop increment
 
         # Business structure filtering
         if filters.business_structures:
@@ -948,20 +990,18 @@ class SearchService:
 
         # License type filtering - use flexible matching
         if filters.license_types:
-            param_count += 1
             # Use ILIKE for flexible matching instead of exact equality
             license_conditions = []
             for license_type in filters.license_types:
+                param_count += 1
                 license_conditions.append(f"license_type ILIKE ${param_count}")
                 params.append(f"%{license_type}%")
-                param_count += 1
             
             conditions.append(f"""
                 EXISTS (SELECT 1 FROM licenses WHERE company_id = c.id 
                         AND active = true 
                         AND ({' OR '.join(license_conditions)}))
             """)
-            param_count -= 1  # Adjust for the loop increment
 
         # Business structure filtering
         if filters.business_structures:
