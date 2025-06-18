@@ -508,8 +508,26 @@ class NaturalLanguageProcessor:
         except Exception as e:
             logger.error(f"Claude analysis error: {e}")
             
-            # Smart fallback for common queries
-            if "installment" in query.lower() and "loan" in query.lower():
+            # Smart fallbacks for common queries
+            query_lower = query.lower()
+            
+            # Personal loan service providers
+            if any(term in query_lower for term in ["personal loan", "personal lending", "personal credit"]):
+                return QueryAnalysis(
+                    intent=QueryIntent.FIND_LENDERS,
+                    filters=SearchFilters(
+                        license_types=["Personal Loan", "Consumer Loan", "Consumer Credit", "Consumer Finance"],
+                        active_licenses_only=True
+                    ),
+                    lender_type_preference=LenderType.UNSECURED_PERSONAL,
+                    semantic_query=None,
+                    confidence=0.8,
+                    explanation="Smart fallback: Finding personal loan service providers",
+                    business_critical_flags=["claude_error_personal_loan_fallback"]
+                )
+            
+            # Installment loan companies
+            elif any(term in query_lower for term in ["installment loan", "installment lend"]):
                 return QueryAnalysis(
                     intent=QueryIntent.FIND_LENDERS,
                     filters=SearchFilters(
@@ -519,10 +537,11 @@ class NaturalLanguageProcessor:
                     lender_type_preference=LenderType.UNSECURED_PERSONAL,
                     semantic_query=None,
                     confidence=0.8,
-                    explanation="Smart fallback: Finding companies with installment loan licenses",
-                    business_critical_flags=["claude_error_fallback"]
+                    explanation="Smart fallback: Finding installment loan companies",
+                    business_critical_flags=["claude_error_installment_fallback"]
                 )
             
+            # Generic fallback
             return QueryAnalysis(
                 intent=QueryIntent.FIND_COMPANIES,
                 filters=SearchFilters(query=query),
@@ -613,6 +632,18 @@ REMEMBER:
             # Log the raw response for debugging
             logger.info(f"Claude raw response: {response_text[:500]}...")
             
+            # Check if response is truncated (common signs)
+            is_truncated = (
+                len(response_text) >= 1950 or  # Close to max_tokens
+                response_text.rstrip().endswith(('","', '",', '"')) or  # Ends mid-JSON
+                not response_text.rstrip().endswith(('}', ']')) or  # Doesn't end properly
+                response_text.count('{') != response_text.count('}')  # Unbalanced braces
+            )
+            
+            if is_truncated:
+                logger.warning("Detected truncated Claude response, using smart fallback")
+                return self._create_smart_fallback(response_text)
+            
             # Extract JSON from response - handle both plain JSON and markdown formatted
             json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
             if json_match:
@@ -620,7 +651,8 @@ REMEMBER:
             else:
                 json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
                 if not json_match:
-                    raise ValueError("No JSON found in response")
+                    logger.warning("No JSON found in response, using smart fallback")
+                    return self._create_smart_fallback(response_text)
                 json_text = json_match.group()
 
             # Clean up the JSON text
@@ -660,30 +692,97 @@ REMEMBER:
         except Exception as e:
             logger.error(f"Failed to parse Claude response: {e}")
             logger.error(f"Raw response: {response_text}")
-            
-            # For "Installment loan companies" queries, provide a smart fallback
-            if "installment" in response_text.lower() and "loan" in response_text.lower():
-                return QueryAnalysis(
-                    intent=QueryIntent.FIND_LENDERS,
-                    filters=SearchFilters(
-                        license_types=["Installment Loan", "Installment Lender", "Consumer Installment Loan"],
-                        active_licenses_only=True
-                    ),
-                    lender_type_preference=LenderType.UNSECURED_PERSONAL,
-                    semantic_query=None,
-                    confidence=0.8,
-                    explanation="Smart fallback: Finding companies with installment loan licenses",
-                    business_critical_flags=["fallback_parse"]
-                )
-                
+            return self._create_smart_fallback(response_text)
+
+    def _create_smart_fallback(self, response_text: str) -> QueryAnalysis:
+        """Create intelligent fallback based on response content and common patterns"""
+        response_lower = response_text.lower()
+        
+        # Personal loan queries
+        if any(term in response_lower for term in ["personal loan", "personal lending", "personal credit"]):
+            return QueryAnalysis(
+                intent=QueryIntent.FIND_LENDERS,
+                filters=SearchFilters(
+                    license_types=["Personal Loan", "Consumer Loan", "Consumer Credit", "Consumer Finance"],
+                    active_licenses_only=True
+                ),
+                lender_type_preference=LenderType.UNSECURED_PERSONAL,
+                semantic_query=None,
+                confidence=0.8,
+                explanation="Smart fallback: Finding personal loan service providers",
+                business_critical_flags=["smart_fallback_personal_loan"]
+            )
+        
+        # Installment loan queries
+        elif any(term in response_lower for term in ["installment loan", "installment lend", "installment credit"]):
+            return QueryAnalysis(
+                intent=QueryIntent.FIND_LENDERS,
+                filters=SearchFilters(
+                    license_types=["Installment Loan", "Installment Lender", "Consumer Installment Loan"],
+                    active_licenses_only=True
+                ),
+                lender_type_preference=LenderType.UNSECURED_PERSONAL,
+                semantic_query=None,
+                confidence=0.8,
+                explanation="Smart fallback: Finding installment loan companies",
+                business_critical_flags=["smart_fallback_installment"]
+            )
+        
+        # Consumer credit queries
+        elif any(term in response_lower for term in ["consumer credit", "consumer lend", "consumer finance"]):
+            return QueryAnalysis(
+                intent=QueryIntent.FIND_LENDERS,
+                filters=SearchFilters(
+                    license_types=["Consumer Credit", "Consumer Loan", "Consumer Finance"],
+                    active_licenses_only=True
+                ),
+                lender_type_preference=LenderType.UNSECURED_PERSONAL,
+                semantic_query=None,
+                confidence=0.8,
+                explanation="Smart fallback: Finding consumer credit lenders",
+                business_critical_flags=["smart_fallback_consumer_credit"]
+            )
+        
+        # Small loan queries
+        elif any(term in response_lower for term in ["small loan", "small lend", "payday"]):
+            return QueryAnalysis(
+                intent=QueryIntent.FIND_LENDERS,
+                filters=SearchFilters(
+                    license_types=["Small Loan", "Small Lender", "Payday Lender"],
+                    active_licenses_only=True
+                ),
+                lender_type_preference=LenderType.UNSECURED_PERSONAL,
+                semantic_query=None,
+                confidence=0.8,
+                explanation="Smart fallback: Finding small loan companies",
+                business_critical_flags=["smart_fallback_small_loan"]
+            )
+        
+        # Generic lender queries
+        elif any(term in response_lower for term in ["lender", "lending", "loan"]):
+            return QueryAnalysis(
+                intent=QueryIntent.FIND_LENDERS,
+                filters=SearchFilters(
+                    license_types=["Consumer Loan", "Personal Loan", "Consumer Credit", "Finance Company"],
+                    active_licenses_only=True
+                ),
+                lender_type_preference=LenderType.UNSECURED_PERSONAL,
+                semantic_query=None,
+                confidence=0.7,
+                explanation="Smart fallback: Finding general lenders",
+                business_critical_flags=["smart_fallback_general_lender"]
+            )
+        
+        # Default fallback - don't put raw response in query field
+        else:
             return QueryAnalysis(
                 intent=QueryIntent.FIND_COMPANIES,
-                filters=SearchFilters(query="installment loan" if "installment" in response_text.lower() else None),
+                filters=SearchFilters(active_licenses_only=True),  # Don't put raw response here
                 lender_type_preference=LenderType.UNKNOWN,
                 semantic_query=None,
                 confidence=0.3,
-                explanation=f"Parse error: {str(e)}",
-                business_critical_flags=["parse_error"]
+                explanation="Default fallback: Showing all companies with active licenses",
+                business_critical_flags=["default_fallback"]
             )
 
 # ============================================================================
