@@ -2000,41 +2000,41 @@ def main():
         else:
             st.info("No companies match the current filters.")
 
-    # Always check for migration needs when we have results
-    if search_results and not search_results.empty:
-        # Check if annotation columns exist
-        try:
-            annotation_columns_exist = check_annotation_columns_exist()
-            # Debug info
-            st.write(f"🔍 Debug: Annotation columns exist = {annotation_columns_exist}")
-        except Exception as e:
-            annotation_columns_exist = False
-            st.error(f"Error checking database columns: {e}")
-        
-        # Show migration section prominently if columns don't exist
-        if not annotation_columns_exist:
-            st.markdown("---")
-            st.markdown("### 🔧 **DATABASE MIGRATION REQUIRED**")
-            st.error("⚠️ The annotation system needs to be set up. Click below to add the required database columns.")
+        # Always check for migration needs when we have results
+        if st.session_state.search_results and 'companies' in st.session_state.search_results and st.session_state.search_results['companies']:
+            # Check if annotation columns exist
+            try:
+                annotation_columns_exist = check_annotation_columns_exist()
+                # Debug info
+                st.write(f"🔍 Debug: Annotation columns exist = {annotation_columns_exist}")
+            except Exception as e:
+                annotation_columns_exist = False
+                st.error(f"Error checking database columns: {e}")
             
-            col1, col2, col3 = st.columns([2, 1, 2])
-            with col2:
-                if st.button("🚀 **RUN MIGRATION NOW**", type="primary", use_container_width=True):
-                    with st.spinner("🔄 Adding annotation columns to database..."):
-                        success, message = run_annotation_migration()
-                        if success:
-                            st.success("✅ " + message)
-                            st.info("🔄 Please refresh the page to use the annotation features.")
-                            st.balloons()
-                            time.sleep(2)
-                            st.rerun()  # Auto-refresh the page
-                        else:
-                            st.error("❌ " + message)
-            
-            st.info("📋 This will safely add `is_reviewed`, `classification`, and `notes` columns to your companies table.")
-            st.markdown("---")
-        else:
-            st.success("✅ Database migration already completed - annotation features are ready!")
+            # Show migration section prominently if columns don't exist
+            if not annotation_columns_exist:
+                st.markdown("---")
+                st.markdown("### 🔧 **DATABASE MIGRATION REQUIRED**")
+                st.error("⚠️ The annotation system needs to be set up. Click below to add the required database columns.")
+                
+                col1, col2, col3 = st.columns([2, 1, 2])
+                with col2:
+                    if st.button("🚀 **RUN MIGRATION NOW**", type="primary", use_container_width=True):
+                        with st.spinner("🔄 Adding annotation columns to database..."):
+                            success, message = run_annotation_migration()
+                            if success:
+                                st.success("✅ " + message)
+                                st.info("🔄 Please refresh the page to use the annotation features.")
+                                st.balloons()
+                                time.sleep(2)
+                                st.rerun()  # Auto-refresh the page
+                            else:
+                                st.error("❌ " + message)
+                
+                st.info("📋 This will safely add `is_reviewed`, `classification`, and `notes` columns to your companies table.")
+                st.markdown("---")
+            else:
+                st.success("✅ Database migration already completed - annotation features are ready!")
 
 def cleanup_resources():
     """Clean up resources when app shuts down"""
