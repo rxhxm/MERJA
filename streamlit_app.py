@@ -1208,7 +1208,32 @@ def main():
                         if selected_company.get('notes'):
                             st.text_area("📝 Existing Notes:", selected_company.get('notes'), disabled=True, height=100)
             
+            # Company Intelligence Dashboard
+            st.markdown("---")
+            st.markdown("### 🎯 Company Intelligence Dashboard")
+            st.markdown("*Complete business intelligence for B2B prospecting - All your scraped data in one place*")
+            
+            intelligence_company_id = st.selectbox(
+                "Select a company for complete intelligence report:",
+                options=["None"] + [f"{c['company_name']} ({c['nmls_id']})" for c in companies],
+                help="Get comprehensive company intelligence including all scraped data, business analysis, and sales recommendations",
+                key="intelligence_selector"
+            )
+            
+            if intelligence_company_id != "None":
+                # Extract NMLS ID from the selection
+                intelligence_nmls_id = intelligence_company_id.split('(')[-1].replace(')', '')
+                
+                with st.spinner("🔍 Gathering complete company intelligence..."):
+                    intelligence_data = run_async(get_complete_company_intelligence(intelligence_nmls_id))
+                
+                if intelligence_data:
+                    display_company_intelligence_dashboard(intelligence_data)
+                else:
+                    st.error("❌ Unable to load company intelligence data.")
+            
             # Show license details for selected companies
+            st.markdown("---")
             st.markdown("### 🔍 Detailed License Analysis")
             selected_company_id = st.selectbox(
                 "Select a company to see its complete license breakdown:",
@@ -2186,6 +2211,708 @@ def run_annotation_migration():
             return False, "Database connection timeout - please try again"
         else:
             return False, f"Migration failed: {error_msg}"
+
+# Add this new function after the existing company detail functions (around line 550)
+
+async def get_complete_company_intelligence(nmls_id: str) -> Dict[str, Any]:
+    """Get complete company intelligence aggregating all available data"""
+    pool = await get_or_create_pool()
+    if not pool:
+        return {}
+
+    try:
+        async with pool.acquire() as conn:
+            # Get comprehensive company data
+            company_data = await conn.fetchrow("""
+                SELECT 
+                    c.*,
+                    (SELECT COUNT(*) FROM licenses WHERE company_id = c.id) as total_licenses,
+                    (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) as active_licenses,
+                    (SELECT COUNT(*) FROM addresses WHERE company_id = c.id AND address_type = 'street') as street_addresses,
+                    (SELECT COUNT(*) FROM addresses WHERE company_id = c.id AND address_type = 'mailing') as mailing_addresses
+                FROM companies c
+                WHERE c.nmls_id = $1
+            """, nmls_id)
+            
+            if not company_data:
+                return {}
+            
+            # Get all licenses with full details
+            licenses = await conn.fetch("""
+                SELECT 
+                    license_type,
+                    license_number,
+                    regulator,
+                    status,
+                    active,
+                    authorized_to_conduct_business,
+                    original_issue_date,
+                    renewed_through,
+                    status_date,
+                    state_trade_names
+                FROM licenses l
+                WHERE l.company_id = (SELECT id FROM companies WHERE nmls_id = $1)
+                ORDER BY active DESC, original_issue_date DESC
+            """, nmls_id)
+            
+            # Get all addresses
+            addresses = await conn.fetch("""
+                SELECT 
+                    address_type,
+                    full_address,
+                    city,
+                    state,
+                    zip_code,
+                    street_lines
+                FROM addresses a
+                WHERE a.company_id = (SELECT id FROM companies WHERE nmls_id = $1)
+                ORDER BY address_type
+            """, nmls_id)
+            
+            # Process and structure the data
+            intelligence = {
+                'company_info': dict(company_data),
+                'licenses': [dict(row) for row in licenses],
+                'addresses': [dict(row) for row in addresses],
+                'license_analysis': analyze_license_portfolio(licenses),
+                'business_intelligence': extract_business_intelligence(company_data, licenses),
+                'contact_quality': assess_contact_quality(company_data),
+                'regulatory_status': assess_regulatory_status(licenses)
+            }
+            
+            return intelligence
+            
+    except Exception as e:
+        logger.error(f"Error fetching company intelligence for {nmls_id}: {e}")
+        return {}
+
+def analyze_license_portfolio(licenses) -> Dict[str, Any]:
+    """Analyze the company's license portfolio for business intelligence"""
+    if not licenses:
+        return {}
+    
+    active_licenses = [l for l in licenses if l['active']]
+    inactive_licenses = [l for l in licenses if not l['active']]
+    
+    # Analyze license types
+    license_types = {}
+    states_covered = set()
+    authorized_states = set()
+    
+    for license in active_licenses:
+        license_type = license['license_type']
+        regulator = license['regulator'] or ''
+        
+        # Extract state from regulator
+        state = extract_state_from_regulator(regulator)
+        if state:
+            states_covered.add(state)
+            
+        if license['authorized_to_conduct_business']:
+            if state:
+                authorized_states.add(state)
+        
+        # Count license types
+        if license_type not in license_types:
+            license_types[license_type] = {'count': 0, 'states': set()}
+        license_types[license_type]['count'] += 1
+        if state:
+            license_types[license_type]['states'].add(state)
+    
+    # Convert sets to lists for JSON serialization
+    for lt in license_types:
+        license_types[lt]['states'] = sorted(list(license_types[lt]['states']))
+    
+    return {
+        'total_licenses': len(licenses),
+        'active_licenses': len(active_licenses),
+        'inactive_licenses': len(inactive_licenses),
+        'license_types': license_types,
+        'states_covered': sorted(list(states_covered)),
+        'authorized_states': sorted(list(authorized_states)),
+        'geographic_reach': len(states_covered),
+        'authorization_rate': len(authorized_states) / max(len(states_covered), 1) * 100
+    }
+
+def extract_business_intelligence(company_data, licenses) -> Dict[str, Any]:
+    """Extract business intelligence insights"""
+    intelligence = {}
+    
+    # Company age and maturity
+    if company_data.get('date_formed'):
+        from datetime import datetime
+        formed_date = company_data['date_formed']
+        if isinstance(formed_date, str):
+            try:
+                formed_date = datetime.strptime(formed_date, '%Y-%m-%d').date()
+            except:
+                formed_date = None
+        
+        if formed_date:
+            years_in_business = (datetime.now().date() - formed_date).days / 365.25
+            intelligence['years_in_business'] = round(years_in_business, 1)
+            
+            if years_in_business < 2:
+                intelligence['maturity_level'] = 'Startup'
+            elif years_in_business < 5:
+                intelligence['maturity_level'] = 'Growing'
+            elif years_in_business < 10:
+                intelligence['maturity_level'] = 'Established'
+            else:
+                intelligence['maturity_level'] = 'Mature'
+    
+    # Business complexity indicators
+    trade_names_count = len(company_data.get('trade_names') or [])
+    intelligence['trade_names_count'] = trade_names_count
+    intelligence['has_multiple_brands'] = trade_names_count > 1
+    
+    # Federal regulation status
+    intelligence['federally_regulated'] = bool(company_data.get('federal_regulator'))
+    intelligence['federal_regulator'] = company_data.get('federal_regulator')
+    
+    # License diversity
+    if licenses:
+        unique_license_types = len(set(l['license_type'] for l in licenses if l['active']))
+        intelligence['license_diversity'] = unique_license_types
+        intelligence['is_multi_product'] = unique_license_types > 2
+    
+    return intelligence
+
+def assess_contact_quality(company_data) -> Dict[str, Any]:
+    """Assess the quality and completeness of contact information"""
+    quality = {
+        'has_phone': bool(company_data.get('phone')),
+        'has_email': bool(company_data.get('email')),
+        'has_website': bool(company_data.get('website')),
+        'has_toll_free': bool(company_data.get('toll_free')),
+        'contact_score': 0
+    }
+    
+    # Calculate contact score
+    score = 0
+    if quality['has_phone']: score += 25
+    if quality['has_email']: score += 35  # Email is most valuable for outreach
+    if quality['has_website']: score += 25
+    if quality['has_toll_free']: score += 15
+    
+    quality['contact_score'] = score
+    
+    if score >= 85:
+        quality['contact_grade'] = 'Excellent'
+    elif score >= 60:
+        quality['contact_grade'] = 'Good'
+    elif score >= 35:
+        quality['contact_grade'] = 'Fair'
+    else:
+        quality['contact_grade'] = 'Poor'
+    
+    return quality
+
+def assess_regulatory_status(licenses) -> Dict[str, Any]:
+    """Assess regulatory status and compliance indicators"""
+    if not licenses:
+        return {'status': 'No licenses found'}
+    
+    active_licenses = [l for l in licenses if l['active']]
+    
+    # Check for any regulatory red flags
+    revoked_licenses = [l for l in licenses if 'revoked' in (l.get('status') or '').lower()]
+    suspended_licenses = [l for l in licenses if 'suspended' in (l.get('status') or '').lower()]
+    
+    status = {
+        'active_license_count': len(active_licenses),
+        'total_license_count': len(licenses),
+        'has_revoked_licenses': len(revoked_licenses) > 0,
+        'has_suspended_licenses': len(suspended_licenses) > 0,
+        'revoked_count': len(revoked_licenses),
+        'suspended_count': len(suspended_licenses)
+    }
+    
+    # Overall regulatory health
+    if status['has_revoked_licenses'] or status['has_suspended_licenses']:
+        status['regulatory_health'] = 'Concerning'
+        status['risk_level'] = 'High'
+    elif len(active_licenses) == 0:
+        status['regulatory_health'] = 'Inactive'
+        status['risk_level'] = 'Medium'
+    else:
+        status['regulatory_health'] = 'Good'
+        status['risk_level'] = 'Low'
+    
+    return status
+
+def display_company_intelligence_dashboard(intelligence_data: Dict[str, Any]):
+    """Display comprehensive company intelligence dashboard"""
+    company_info = intelligence_data.get('company_info', {})
+    license_analysis = intelligence_data.get('license_analysis', {})
+    business_intelligence = intelligence_data.get('business_intelligence', {})
+    contact_quality = intelligence_data.get('contact_quality', {})
+    regulatory_status = intelligence_data.get('regulatory_status', {})
+    licenses = intelligence_data.get('licenses', [])
+    addresses = intelligence_data.get('addresses', [])
+    
+    # Header with company name
+    st.markdown(f"## 🏢 {company_info.get('company_name', 'Unknown Company')}")
+    st.markdown(f"**NMLS ID:** {company_info.get('nmls_id', 'N/A')}")
+    
+    # Quick stats row
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Contact Score", 
+            f"{contact_quality.get('contact_score', 0)}/100",
+            help="Quality of available contact information"
+        )
+        st.caption(f"Grade: {contact_quality.get('contact_grade', 'Unknown')}")
+    
+    with col2:
+        st.metric(
+            "Active Licenses", 
+            license_analysis.get('active_licenses', 0),
+            help="Number of currently active licenses"
+        )
+        st.caption(f"Total: {license_analysis.get('total_licenses', 0)}")
+    
+    with col3:
+        st.metric(
+            "States", 
+            license_analysis.get('geographic_reach', 0),
+            help="Number of states with active licenses"
+        )
+        auth_rate = license_analysis.get('authorization_rate', 0)
+        st.caption(f"{auth_rate:.0f}% Authorized")
+    
+    with col4:
+        risk_level = regulatory_status.get('risk_level', 'Unknown')
+        risk_color = {'Low': '🟢', 'Medium': '🟡', 'High': '🔴'}.get(risk_level, '⚪')
+        st.metric(
+            "Risk Level", 
+            f"{risk_color} {risk_level}",
+            help="Regulatory risk assessment"
+        )
+        st.caption(regulatory_status.get('regulatory_health', 'Unknown'))
+    
+    # Detailed sections in tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🏢 Company Profile", 
+        "📋 License Portfolio", 
+        "📞 Contact Intelligence", 
+        "⚖️ Regulatory Status",
+        "🎯 Sales Intelligence"
+    ])
+    
+    with tab1:
+        st.markdown("### Company Profile")
+        
+        # Basic company information
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Company Details:**")
+            st.write(f"• **Legal Name:** {company_info.get('company_name', 'N/A')}")
+            st.write(f"• **Business Structure:** {company_info.get('business_structure', 'N/A')}")
+            st.write(f"• **Formed In:** {company_info.get('formed_in', 'N/A')}")
+            
+            if company_info.get('date_formed'):
+                st.write(f"• **Date Formed:** {company_info.get('date_formed')}")
+            
+            if business_intelligence.get('years_in_business'):
+                st.write(f"• **Years in Business:** {business_intelligence.get('years_in_business')} years")
+                st.write(f"• **Maturity Level:** {business_intelligence.get('maturity_level', 'Unknown')}")
+            
+            if company_info.get('fiscal_year_end'):
+                st.write(f"• **Fiscal Year End:** {company_info.get('fiscal_year_end')}")
+        
+        with col2:
+            st.markdown("**Federal Regulation:**")
+            if business_intelligence.get('federally_regulated'):
+                st.write(f"✅ **Federal Regulator:** {business_intelligence.get('federal_regulator')}")
+            else:
+                st.write("❌ Not federally regulated")
+            
+            st.markdown("**Business Complexity:**")
+            trade_names_count = business_intelligence.get('trade_names_count', 0)
+            st.write(f"• **Trade Names:** {trade_names_count}")
+            
+            if business_intelligence.get('has_multiple_brands'):
+                st.write("🏷️ **Multi-brand operation**")
+            
+            license_diversity = business_intelligence.get('license_diversity', 0)
+            st.write(f"• **License Types:** {license_diversity}")
+            
+            if business_intelligence.get('is_multi_product'):
+                st.write("🔄 **Multi-product lender**")
+        
+        # Trade names if available
+        if company_info.get('trade_names'):
+            st.markdown("**Trade Names:**")
+            trade_names = company_info.get('trade_names', [])
+            if isinstance(trade_names, list):
+                for name in trade_names[:10]:  # Show first 10
+                    st.write(f"• {name}")
+                if len(trade_names) > 10:
+                    st.write(f"... and {len(trade_names) - 10} more")
+            else:
+                st.write(trade_names)
+        
+        # Addresses
+        if addresses:
+            st.markdown("**Addresses:**")
+            for addr in addresses:
+                addr_type = addr.get('address_type', 'Unknown').title()
+                full_address = addr.get('full_address', 'N/A')
+                st.write(f"• **{addr_type}:** {full_address}")
+    
+    with tab2:
+        st.markdown("### License Portfolio Analysis")
+        
+        if license_analysis:
+            # Portfolio summary
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Licenses", license_analysis.get('total_licenses', 0))
+                st.metric("Active Licenses", license_analysis.get('active_licenses', 0))
+            
+            with col2:
+                st.metric("Geographic Reach", f"{license_analysis.get('geographic_reach', 0)} states")
+                auth_rate = license_analysis.get('authorization_rate', 0)
+                st.metric("Authorization Rate", f"{auth_rate:.1f}%")
+            
+            with col3:
+                inactive_count = license_analysis.get('inactive_licenses', 0)
+                st.metric("Inactive Licenses", inactive_count)
+                
+                if inactive_count > 0:
+                    st.caption("⚠️ Has inactive licenses")
+            
+            # License types breakdown
+            license_types = license_analysis.get('license_types', {})
+            if license_types:
+                st.markdown("**License Types & Coverage:**")
+                for license_type, details in license_types.items():
+                    count = details.get('count', 0)
+                    states = details.get('states', [])
+                    states_text = ', '.join(states[:5])
+                    if len(states) > 5:
+                        states_text += f" (+{len(states)-5} more)"
+                    
+                    st.write(f"• **{license_type}** ({count} licenses)")
+                    if states:
+                        st.write(f"  📍 States: {states_text}")
+            
+            # States coverage
+            states_covered = license_analysis.get('states_covered', [])
+            authorized_states = license_analysis.get('authorized_states', [])
+            
+            if states_covered:
+                st.markdown("**Geographic Coverage:**")
+                st.write(f"**Licensed in:** {', '.join(states_covered)}")
+                
+                if authorized_states:
+                    st.write(f"**Authorized to conduct business in:** {', '.join(authorized_states)}")
+                    
+                    not_authorized = set(states_covered) - set(authorized_states)
+                    if not_authorized:
+                        st.write(f"**⚠️ Licensed but not authorized in:** {', '.join(sorted(not_authorized))}")
+        
+        # Detailed license table
+        if licenses:
+            st.markdown("**All Licenses:**")
+            license_df = pd.DataFrame(licenses)
+            
+            # Select relevant columns for display
+            display_columns = ['license_type', 'regulator', 'status', 'active', 'authorized_to_conduct_business', 'original_issue_date']
+            available_columns = [col for col in display_columns if col in license_df.columns]
+            
+            if available_columns:
+                st.dataframe(
+                    license_df[available_columns],
+                    use_container_width=True,
+                    hide_index=True
+                )
+    
+    with tab3:
+        st.markdown("### Contact Intelligence")
+        
+        # Contact quality overview
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Contact Information Available:**")
+            
+            phone = company_info.get('phone')
+            if phone:
+                st.write(f"📞 **Phone:** {phone}")
+            else:
+                st.write("📞 Phone: ❌ Not available")
+            
+            toll_free = company_info.get('toll_free')
+            if toll_free:
+                st.write(f"☎️ **Toll-Free:** {toll_free}")
+            
+            email = company_info.get('email')
+            if email:
+                st.write(f"📧 **Email:** {email}")
+            else:
+                st.write("📧 Email: ❌ Not available")
+            
+            website = company_info.get('website')
+            if website:
+                # Handle multiple websites
+                if isinstance(website, str) and (',' in website or ' ' in website):
+                    websites = [w.strip() for w in website.replace(',', ' ').split() if w.strip()]
+                    st.write("🌐 **Websites:**")
+                    for w in websites:
+                        if not w.startswith('http'):
+                            w = f"https://{w}"
+                        st.write(f"  • [{w}]({w})")
+                else:
+                    if not website.startswith('http'):
+                        website = f"https://{website}"
+                    st.write(f"🌐 **Website:** [{website}]({website})")
+            else:
+                st.write("🌐 Website: ❌ Not available")
+            
+            fax = company_info.get('fax')
+            if fax:
+                st.write(f"📠 **Fax:** {fax}")
+        
+        with col2:
+            st.markdown("**Contact Quality Assessment:**")
+            
+            score = contact_quality.get('contact_score', 0)
+            grade = contact_quality.get('contact_grade', 'Unknown')
+            
+            # Progress bar for contact score
+            st.progress(score / 100)
+            st.write(f"**Score:** {score}/100 ({grade})")
+            
+            st.markdown("**Outreach Readiness:**")
+            
+            if contact_quality.get('has_email'):
+                st.write("✅ Email outreach possible")
+            else:
+                st.write("❌ No email for direct outreach")
+            
+            if contact_quality.get('has_phone'):
+                st.write("✅ Phone contact available")
+            else:
+                st.write("❌ No phone number")
+            
+            if contact_quality.get('has_website'):
+                st.write("✅ Website for research")
+            else:
+                st.write("❌ No website listed")
+            
+            # Recommendations
+            st.markdown("**Recommendations:**")
+            if score >= 60:
+                st.success("🎯 **Ready for outreach** - Good contact information available")
+            elif score >= 35:
+                st.warning("⚠️ **Needs research** - Limited contact info, research website/LinkedIn")
+            else:
+                st.error("🔍 **High research needed** - Very limited contact information")
+    
+    with tab4:
+        st.markdown("### Regulatory Status")
+        
+        # Regulatory health overview
+        health = regulatory_status.get('regulatory_health', 'Unknown')
+        risk = regulatory_status.get('risk_level', 'Unknown')
+        
+        if health == 'Good':
+            st.success(f"✅ **Regulatory Health:** {health} (Risk: {risk})")
+        elif health == 'Concerning':
+            st.error(f"🚨 **Regulatory Health:** {health} (Risk: {risk})")
+        else:
+            st.warning(f"⚠️ **Regulatory Health:** {health} (Risk: {risk})")
+        
+        # License status breakdown
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**License Status:**")
+            active_count = regulatory_status.get('active_license_count', 0)
+            total_count = regulatory_status.get('total_license_count', 0)
+            st.write(f"• **Active Licenses:** {active_count}")
+            st.write(f"• **Total Licenses:** {total_count}")
+            
+            if total_count > 0:
+                active_rate = (active_count / total_count) * 100
+                st.write(f"• **Active Rate:** {active_rate:.1f}%")
+        
+        with col2:
+            st.markdown("**Regulatory Issues:**")
+            
+            revoked_count = regulatory_status.get('revoked_count', 0)
+            suspended_count = regulatory_status.get('suspended_count', 0)
+            
+            if revoked_count > 0:
+                st.write(f"🚨 **Revoked Licenses:** {revoked_count}")
+            else:
+                st.write("✅ No revoked licenses")
+            
+            if suspended_count > 0:
+                st.write(f"⚠️ **Suspended Licenses:** {suspended_count}")
+            else:
+                st.write("✅ No suspended licenses")
+        
+        # Regulatory actions if available
+        if company_info.get('regulatory_actions'):
+            st.markdown("**Regulatory Actions:**")
+            st.write(company_info.get('regulatory_actions'))
+        else:
+            st.write("✅ No regulatory actions on record")
+    
+    with tab5:
+        st.markdown("### Sales Intelligence Summary")
+        
+        # Overall prospect score
+        prospect_score = calculate_prospect_score(intelligence_data)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Prospect Assessment:**")
+            
+            # Progress bar for prospect score
+            st.progress(prospect_score / 100)
+            st.write(f"**Overall Score:** {prospect_score}/100")
+            
+            if prospect_score >= 80:
+                st.success("🎯 **Hot Prospect** - High priority for outreach")
+            elif prospect_score >= 60:
+                st.info("✅ **Good Prospect** - Worth pursuing")
+            elif prospect_score >= 40:
+                st.warning("⚠️ **Moderate Prospect** - Needs evaluation")
+            else:
+                st.error("❌ **Low Priority** - May not be worth pursuing")
+        
+        with col2:
+            st.markdown("**Key Insights:**")
+            
+            # Business maturity
+            maturity = business_intelligence.get('maturity_level')
+            if maturity:
+                st.write(f"• **Business Maturity:** {maturity}")
+            
+            # Geographic reach
+            reach = license_analysis.get('geographic_reach', 0)
+            if reach > 10:
+                st.write(f"• **Wide Geographic Reach:** {reach} states")
+            elif reach > 5:
+                st.write(f"• **Regional Player:** {reach} states")
+            elif reach > 0:
+                st.write(f"• **Local/Limited:** {reach} states")
+            
+            # Multi-product capability
+            if business_intelligence.get('is_multi_product'):
+                st.write("• **Multi-Product Lender:** Diversified offerings")
+            
+            # Federal regulation
+            if business_intelligence.get('federally_regulated'):
+                st.write("• **Federally Regulated:** Established institution")
+            
+            # Contact readiness
+            contact_grade = contact_quality.get('contact_grade', 'Unknown')
+            st.write(f"• **Contact Quality:** {contact_grade}")
+        
+        # Action recommendations
+        st.markdown("**Recommended Actions:**")
+        
+        recommendations = generate_sales_recommendations(intelligence_data)
+        for rec in recommendations:
+            st.write(f"• {rec}")
+
+def calculate_prospect_score(intelligence_data: Dict[str, Any]) -> int:
+    """Calculate overall prospect score for sales prioritization"""
+    score = 0
+    
+    # Contact quality (0-30 points)
+    contact_score = intelligence_data.get('contact_quality', {}).get('contact_score', 0)
+    score += int(contact_score * 0.3)
+    
+    # Regulatory health (0-25 points)
+    regulatory_health = intelligence_data.get('regulatory_status', {}).get('regulatory_health', 'Unknown')
+    if regulatory_health == 'Good':
+        score += 25
+    elif regulatory_health == 'Inactive':
+        score += 10
+    # Concerning gets 0 points
+    
+    # Business maturity (0-20 points)
+    maturity = intelligence_data.get('business_intelligence', {}).get('maturity_level', '')
+    maturity_scores = {'Mature': 20, 'Established': 15, 'Growing': 10, 'Startup': 5}
+    score += maturity_scores.get(maturity, 0)
+    
+    # Geographic reach (0-15 points)
+    reach = intelligence_data.get('license_analysis', {}).get('geographic_reach', 0)
+    if reach >= 10:
+        score += 15
+    elif reach >= 5:
+        score += 10
+    elif reach >= 2:
+        score += 5
+    
+    # Active licenses (0-10 points)
+    active_licenses = intelligence_data.get('license_analysis', {}).get('active_licenses', 0)
+    if active_licenses >= 10:
+        score += 10
+    elif active_licenses >= 5:
+        score += 7
+    elif active_licenses >= 1:
+        score += 5
+    
+    return min(score, 100)  # Cap at 100
+
+def generate_sales_recommendations(intelligence_data: Dict[str, Any]) -> List[str]:
+    """Generate specific sales recommendations based on company intelligence"""
+    recommendations = []
+    
+    contact_quality = intelligence_data.get('contact_quality', {})
+    business_intel = intelligence_data.get('business_intelligence', {})
+    regulatory_status = intelligence_data.get('regulatory_status', {})
+    license_analysis = intelligence_data.get('license_analysis', {})
+    
+    # Contact-based recommendations
+    if contact_quality.get('has_email'):
+        recommendations.append("📧 **Email outreach possible** - Direct contact available")
+    else:
+        recommendations.append("🔍 **Research needed** - Find decision maker contact info")
+    
+    if contact_quality.get('has_website'):
+        recommendations.append("🌐 **Research company website** - Understand their business model")
+    
+    # Business intelligence recommendations
+    if business_intel.get('is_multi_product'):
+        recommendations.append("🎯 **Multi-product opportunity** - Multiple lending products to discuss")
+    
+    if business_intel.get('federally_regulated'):
+        recommendations.append("🏛️ **Federally regulated** - Likely has compliance budget and needs")
+    
+    # Geographic recommendations
+    reach = license_analysis.get('geographic_reach', 0)
+    if reach > 10:
+        recommendations.append("🗺️ **National reach** - Large-scale solutions may be relevant")
+    elif reach > 1:
+        recommendations.append("📍 **Multi-state operation** - Regional expansion opportunities")
+    
+    # Regulatory recommendations
+    if regulatory_status.get('regulatory_health') == 'Concerning':
+        recommendations.append("⚠️ **Regulatory issues** - Compliance solutions may be needed")
+    elif regulatory_status.get('active_license_count', 0) == 0:
+        recommendations.append("❌ **No active licenses** - May be inactive or changing business")
+    
+    # Maturity-based recommendations
+    maturity = business_intel.get('maturity_level', '')
+    if maturity == 'Growing':
+        recommendations.append("📈 **Growing company** - Scaling solutions may be relevant")
+    elif maturity == 'Startup':
+        recommendations.append("🚀 **Startup** - Cost-effective solutions and growth support")
+    
+    return recommendations
 
 if __name__ == "__main__":
     main() 
