@@ -2108,7 +2108,8 @@ def run_annotation_migration():
             
             # Use a fresh connection with timeout
             try:
-                async with asyncio.wait_for(pool.acquire(), timeout=15.0) as conn:
+                conn = await asyncio.wait_for(pool.acquire(), timeout=15.0)
+                try:
                     st.write("🔍 **Debug:** Database connection acquired successfully")
                     
                     # Execute migration commands one by one with individual transactions
@@ -2140,6 +2141,10 @@ def run_annotation_migration():
                     
                     st.write("🔍 **Debug:** All migration commands completed!")
                     return True
+                finally:
+                    # Always release the connection back to the pool
+                    await pool.release(conn)
+                    st.write("🔍 **Debug:** Database connection released")
                     
             except asyncio.TimeoutError:
                 raise Exception("Database connection timeout - please try again in a moment")
