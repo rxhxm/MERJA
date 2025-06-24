@@ -2070,21 +2070,52 @@ def cleanup_resources():
 def check_annotation_columns_exist():
     """Check if annotation columns exist in the database"""
     try:
-        async def check_columns():
-            pool = await get_or_create_pool()
-            if not pool:
-                return False
-            
-            async with pool.acquire() as conn:
-                result = await conn.fetch("""
-                    SELECT column_name 
-                    FROM information_schema.columns 
-                    WHERE table_name = 'companies' 
-                    AND column_name IN ('is_reviewed', 'classification', 'notes')
-                """)
-                return len(result) == 3  # All 3 columns exist
+        # Use the database URL directly with psycopg2 for simpler connection
+        import psycopg2
+        import os
         
-        return run_async(check_columns())
+        DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL'))
+        if not DATABASE_URL:
+            return False
+            
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'companies' 
+            AND column_name IN ('is_reviewed', 'classification', 'notes')
+        """)
+        
+        result = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        return len(result) == 3  # All 3 columns exist
+        
+    except ImportError:
+        st.error("❌ psycopg2 not available. Using fallback method...")
+        # Fallback to async method if psycopg2 not available
+        try:
+            async def check_columns():
+                pool = await get_or_create_pool()
+                if not pool:
+                    return False
+                
+                async with pool.acquire() as conn:
+                    result = await conn.fetch("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'companies' 
+                        AND column_name IN ('is_reviewed', 'classification', 'notes')
+                    """)
+                    return len(result) == 3
+            
+            return run_async(check_columns())
+        except Exception as e:
+            logger.error(f"Error checking annotation columns: {e}")
+            return False
     except Exception as e:
         logger.error(f"Error checking annotation columns: {e}")
         return False
@@ -2094,72 +2125,54 @@ def run_annotation_migration():
     try:
         st.write("🔍 **Debug:** Starting migration process...")
         
-        async def execute_migration():
-            st.write("🔍 **Debug:** Getting database connection pool...")
+        # Try psycopg2 first for simpler connection handling
+        try:
+            import psycopg2
+            import os
             
-            # Wait a moment to let any pending operations complete
-            await asyncio.sleep(2)
+            DATABASE_URL = st.secrets.get('DATABASE_URL', os.getenv('DATABASE_URL'))
+            if not DATABASE_URL:
+                raise Exception("Database URL not available")
             
-            pool = await get_or_create_pool()
-            if not pool:
-                raise Exception("Database connection not available")
+            st.write("🔍 **Debug:** Using direct psycopg2 connection...")
             
-            st.write("🔍 **Debug:** Database pool acquired, executing migration commands...")
+            conn = psycopg2.connect(DATABASE_URL)
+            conn.autocommit = True  # Enable autocommit for DDL statements
+            cur = conn.cursor()
             
-            # Use a fresh connection with timeout
-            try:
-                conn = await asyncio.wait_for(pool.acquire(), timeout=15.0)
+            # Execute migration commands one by one
+            commands = [
+                "ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE companies ADD COLUMN IF NOT EXISTS classification VARCHAR(100) DEFAULT NULL", 
+                "ALTER TABLE companies ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL",
+                "CREATE INDEX IF NOT EXISTS idx_companies_is_reviewed ON companies(is_reviewed)",
+                "CREATE INDEX IF NOT EXISTS idx_companies_classification ON companies(classification)",
+                "UPDATE companies SET is_reviewed = FALSE WHERE is_reviewed IS NULL"
+            ]
+            
+            for i, command in enumerate(commands, 1):
+                st.write(f"🔍 **Debug:** Executing command {i}/6: {command[:50]}...")
                 try:
-                    st.write("🔍 **Debug:** Database connection acquired successfully")
-                    
-                    # Execute migration commands one by one with individual transactions
-                    commands = [
-                        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE",
-                        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS classification VARCHAR(100) DEFAULT NULL", 
-                        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL",
-                        "CREATE INDEX IF NOT EXISTS idx_companies_is_reviewed ON companies(is_reviewed)",
-                        "CREATE INDEX IF NOT EXISTS idx_companies_classification ON companies(classification)",
-                        "UPDATE companies SET is_reviewed = FALSE WHERE is_reviewed IS NULL"
-                    ]
-                    
-                    for i, command in enumerate(commands, 1):
-                        st.write(f"🔍 **Debug:** Executing command {i}/6: {command[:50]}...")
-                        try:
-                            # Execute each command in its own transaction
-                            async with conn.transaction():
-                                await conn.execute(command)
-                            st.write(f"✅ **Debug:** Command {i}/6 completed successfully")
-                            await asyncio.sleep(0.5)  # Small delay between commands
-                        except Exception as cmd_error:
-                            st.write(f"⚠️ **Debug:** Command {i}/6 failed: {str(cmd_error)}")
-                            # For ALTER TABLE IF NOT EXISTS, ignore if column already exists
-                            if "already exists" in str(cmd_error).lower() or "duplicate" in str(cmd_error).lower():
-                                st.write(f"ℹ️ **Debug:** Command {i}/6 skipped (already exists)")
-                                continue
-                            else:
-                                raise cmd_error
-                    
-                    st.write("🔍 **Debug:** All migration commands completed!")
-                    return True
-                finally:
-                    # Always release the connection back to the pool
-                    await pool.release(conn)
-                    st.write("🔍 **Debug:** Database connection released")
-                    
-            except asyncio.TimeoutError:
-                raise Exception("Database connection timeout - please try again in a moment")
-            except Exception as conn_error:
-                st.write(f"🔍 **Debug:** Connection error: {str(conn_error)}")
-                raise conn_error
-        
-        st.write("🔍 **Debug:** Running async migration...")
-        result = run_async(execute_migration())
-        if result:
-            st.write("🔍 **Debug:** Migration completed successfully!")
+                    cur.execute(command)
+                    st.write(f"✅ **Debug:** Command {i}/6 completed successfully")
+                except Exception as cmd_error:
+                    st.write(f"⚠️ **Debug:** Command {i}/6 failed: {str(cmd_error)}")
+                    # For ALTER TABLE IF NOT EXISTS, ignore if column already exists
+                    if "already exists" in str(cmd_error).lower() or "duplicate" in str(cmd_error).lower():
+                        st.write(f"ℹ️ **Debug:** Command {i}/6 skipped (already exists)")
+                        continue
+                    else:
+                        raise cmd_error
+            
+            cur.close()
+            conn.close()
+            st.write("🔍 **Debug:** Migration completed successfully with psycopg2!")
             return True, "Migration completed successfully!"
-        else:
-            st.write("🔍 **Debug:** Migration returned False")
-            return False, "Migration failed for unknown reason"
+            
+        except ImportError:
+            st.write("🔍 **Debug:** psycopg2 not available, trying asyncpg...")
+            # Fallback to simplified async approach
+            return False, "psycopg2 not available. Please install psycopg2-binary package."
             
     except Exception as e:
         error_msg = str(e)
