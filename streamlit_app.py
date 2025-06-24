@@ -26,6 +26,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 import os
 import threading
+import time
 from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 # NMLS Search - Enhanced for Finosu (v2.1 - Indentation Fix)
@@ -1099,37 +1100,99 @@ def main():
                     col_save1, col_save2, col_save3 = st.columns([1, 1, 2])
                     with col_save1:
                         if st.button("💾 Save Annotations", key=f"save_{selected_nmls_id}"):
-                            # Call the API to update annotations
+                            # Save annotations directly to database
                             try:
-                                async def update_annotations():
-                                    import httpx
-                                    async with httpx.AsyncClient() as client:
-                                        response = await client.put(
-                                            f"http://localhost:8000/company/{selected_nmls_id}/annotations",
-                                            json={
-                                                "is_reviewed": is_reviewed,
-                                                "classification": classification if classification else None,
-                                                "notes": notes if notes else None
-                                            }
-                                        )
-                                        return response.json()
+                                async def update_annotations_db():
+                                    pool = await get_or_create_pool()
+                                    if not pool:
+                                        raise Exception("Database connection not available")
+                                    
+                                    # Check if annotation columns exist
+                                    async with pool.acquire() as conn:
+                                        # First check if columns exist
+                                        columns_check = await conn.fetchval("""
+                                            SELECT COUNT(*) FROM information_schema.columns 
+                                            WHERE table_name = 'companies' 
+                                            AND column_name IN ('is_reviewed', 'classification', 'notes')
+                                        """)
+                                        
+                                        if columns_check < 3:
+                                            raise Exception("Annotation columns not yet created. Database migration required.")
+                                        
+                                        # Build update query dynamically
+                                        update_fields = []
+                                        params = []
+                                        param_count = 0
+                                        
+                                        if is_reviewed is not None:
+                                            param_count += 1
+                                            update_fields.append(f"is_reviewed = ${param_count}")
+                                            params.append(is_reviewed)
+                                        
+                                        if classification:
+                                            param_count += 1
+                                            update_fields.append(f"classification = ${param_count}")
+                                            params.append(classification)
+                                        else:
+                                            param_count += 1
+                                            update_fields.append(f"classification = ${param_count}")
+                                            params.append(None)
+                                        
+                                        if notes:
+                                            param_count += 1
+                                            update_fields.append(f"notes = ${param_count}")
+                                            params.append(notes)
+                                        else:
+                                            param_count += 1
+                                            update_fields.append(f"notes = ${param_count}")
+                                            params.append(None)
+                                        
+                                        if not update_fields:
+                                            raise Exception("No annotation fields to update")
+                                        
+                                        param_count += 1
+                                        params.append(selected_nmls_id)
+                                        
+                                        update_query = f"""
+                                        UPDATE companies 
+                                        SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP
+                                        WHERE nmls_id = ${param_count}
+                                        RETURNING nmls_id, company_name, is_reviewed, classification, notes
+                                        """
+                                        
+                                        result = await conn.fetchrow(update_query, *params)
+                                        
+                                        if not result:
+                                            raise Exception("Company not found or update failed")
+                                        
+                                        return result
                                 
-                                result = run_async(update_annotations())
+                                result = run_async(update_annotations_db())
                                 st.success(f"✅ Annotations saved for {selected_company['company_name']}")
                                 
                                 # Update the company data in session state
-                                for company in st.session_state.search_results['companies']:
-                                    if company['nmls_id'] == selected_nmls_id:
-                                        company['is_reviewed'] = is_reviewed
-                                        company['classification'] = classification
-                                        company['notes'] = notes
-                                        break
+                                if 'search_results' in st.session_state and st.session_state.search_results:
+                                    for company in st.session_state.search_results['companies']:
+                                        if company['nmls_id'] == selected_nmls_id:
+                                            company['is_reviewed'] = is_reviewed
+                                            company['classification'] = classification
+                                            company['notes'] = notes
+                                            break
                                 
-                                # Trigger a rerun to refresh the display
+                                # Brief success message
+                                time.sleep(1)
                                 st.rerun()
                                 
                             except Exception as e:
                                 st.error(f"❌ Failed to save annotations: {str(e)}")
+                                
+                                # Show helpful guidance based on error type
+                                error_str = str(e).lower()
+                                if "annotation columns not yet created" in error_str or "column" in error_str:
+                                    st.info("💡 **Next Step:** Run the database migration to enable annotations:")
+                                    st.code("python3 run_migration.py", language="bash")
+                                elif "database connection" in error_str:
+                                    st.info("💡 **Tip:** Check your database connection settings.")
                     
                     with col_save2:
                         if st.button("🔄 Refresh Data", key=f"refresh_{selected_nmls_id}"):
