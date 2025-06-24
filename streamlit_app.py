@@ -2000,6 +2000,42 @@ def main():
         else:
             st.info("No companies match the current filters.")
 
+    # Always check for migration needs when we have results
+    if search_results and not search_results.empty:
+        # Check if annotation columns exist
+        try:
+            annotation_columns_exist = check_annotation_columns_exist()
+            # Debug info
+            st.write(f"🔍 Debug: Annotation columns exist = {annotation_columns_exist}")
+        except Exception as e:
+            annotation_columns_exist = False
+            st.error(f"Error checking database columns: {e}")
+        
+        # Show migration section prominently if columns don't exist
+        if not annotation_columns_exist:
+            st.markdown("---")
+            st.markdown("### 🔧 **DATABASE MIGRATION REQUIRED**")
+            st.error("⚠️ The annotation system needs to be set up. Click below to add the required database columns.")
+            
+            col1, col2, col3 = st.columns([2, 1, 2])
+            with col2:
+                if st.button("🚀 **RUN MIGRATION NOW**", type="primary", use_container_width=True):
+                    with st.spinner("🔄 Adding annotation columns to database..."):
+                        success, message = run_annotation_migration()
+                        if success:
+                            st.success("✅ " + message)
+                            st.info("🔄 Please refresh the page to use the annotation features.")
+                            st.balloons()
+                            time.sleep(2)
+                            st.rerun()  # Auto-refresh the page
+                        else:
+                            st.error("❌ " + message)
+            
+            st.info("📋 This will safely add `is_reviewed`, `classification`, and `notes` columns to your companies table.")
+            st.markdown("---")
+        else:
+            st.success("✅ Database migration already completed - annotation features are ready!")
+
 def cleanup_resources():
     """Clean up resources when app shuts down"""
     try:
@@ -2011,6 +2047,50 @@ def cleanup_resources():
         logger.info("Resources cleaned up successfully")
     except Exception as e:
         logger.warning(f"Error during cleanup: {e}")
+
+def check_annotation_columns_exist():
+    """Check if annotation columns exist in the database"""
+    try:
+        conn = st.connection('postgresql', type='sql')
+        result = conn.query("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'companies' 
+            AND column_name IN ('is_reviewed', 'classification', 'notes')
+        """)
+        return len(result) == 3  # All 3 columns exist
+    except:
+        return False
+
+def run_annotation_migration():
+    """Run the database migration to add annotation columns"""
+    try:
+        # SQL migration commands
+        migration_sql = """
+        -- Add annotation columns to companies table
+        ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE;
+        ALTER TABLE companies ADD COLUMN IF NOT EXISTS classification VARCHAR(100) DEFAULT NULL;
+        ALTER TABLE companies ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL;
+
+        -- Add indexes for the new columns
+        CREATE INDEX IF NOT EXISTS idx_companies_is_reviewed ON companies(is_reviewed);
+        CREATE INDEX IF NOT EXISTS idx_companies_classification ON companies(classification);
+
+        -- Update existing records to have default values
+        UPDATE companies SET is_reviewed = FALSE WHERE is_reviewed IS NULL;
+        """
+        
+        conn = st.connection('postgresql', type='sql')
+        # Execute each command separately
+        commands = [cmd.strip() for cmd in migration_sql.split(';') if cmd.strip() and not cmd.strip().startswith('--')]
+        
+        for command in commands:
+            if command:
+                conn.query(command + ';')
+        
+        return True, "Migration completed successfully!"
+    except Exception as e:
+        return False, f"Migration failed: {str(e)}"
 
 if __name__ == "__main__":
     main() 
