@@ -918,10 +918,9 @@ class SearchService:
         """
         
         # Check if annotation columns exist and use appropriate SELECT clause
-        if db_manager and await SearchService.check_annotation_columns_exist(db_manager):
-            base_query = base_query.format(annotation_select=annotation_columns)
-        else:
-            base_query = base_query.format(annotation_select=fallback_columns)
+        # Default to using annotation columns (they should exist after migration)
+        # Only fallback if the actual query execution fails
+        base_query = base_query.format(annotation_select=annotation_columns)
 
         conditions = []
         params = []
@@ -1274,11 +1273,31 @@ class UnifiedSearchAPI:
                 search_filters)
             total_count = await conn.fetchval(count_query, *count_params)
 
-            # Get results
+            # Get results with fallback for annotation columns
             search_query, search_params = await SearchService.build_search_query(
                 search_filters, page, page_size, sort_field, sort_order, self.db_manager
             )
-            rows = await conn.fetch(search_query, *search_params)
+            
+            try:
+                rows = await conn.fetch(search_query, *search_params)
+            except Exception as query_error:
+                # If query fails (likely due to missing annotation columns), rebuild with fallback
+                if "column" in str(query_error).lower() and ("is_reviewed" in str(query_error) or "classification" in str(query_error) or "notes" in str(query_error)):
+                    logger.warning(f"Annotation columns not found, using fallback query: {query_error}")
+                    # Rebuild query with fallback columns
+                    fallback_columns = """
+                        false as is_reviewed,
+                        null::text as classification,
+                        null::text as notes,
+                    """
+                    # Replace the annotation columns in the query
+                    search_query = search_query.replace(
+                        "COALESCE(c.is_reviewed, false) as is_reviewed,\n            c.classification,\n            c.notes,",
+                        fallback_columns.strip()
+                    )
+                    rows = await conn.fetch(search_query, *search_params)
+                else:
+                    raise query_error
 
             # Process results
             companies = []
