@@ -2017,9 +2017,22 @@ def main():
                 st.markdown("### 🔧 **DATABASE MIGRATION REQUIRED**")
                 st.error("⚠️ The annotation system needs to be set up. Click below to add the required database columns.")
                 
-                col1, col2, col3 = st.columns([2, 1, 2])
+                # Make the button more prominent
+                st.markdown("#### 👇 **CLICK HERE TO FIX THE ANNOTATION SYSTEM** 👇")
+                
+                # Center the button
+                col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
-                    if st.button("🚀 **RUN MIGRATION NOW**", type="primary", use_container_width=True):
+                    # Make button more prominent
+                    migration_button = st.button(
+                        "🚀 **RUN MIGRATION NOW**", 
+                        type="primary", 
+                        use_container_width=True,
+                        help="Click to add annotation columns to your database"
+                    )
+                    
+                    if migration_button:
+                        st.write("🔄 **Migration button clicked!** Starting migration...")
                         with st.spinner("🔄 Adding annotation columns to database..."):
                             success, message = run_annotation_migration()
                             if success:
@@ -2032,6 +2045,7 @@ def main():
                                 st.error("❌ " + message)
                 
                 st.info("📋 This will safely add `is_reviewed`, `classification`, and `notes` columns to your companies table.")
+                st.warning("⚠️ **If you don't see a button above, try refreshing the page!**")
                 st.markdown("---")
             else:
                 st.success("✅ Database migration already completed - annotation features are ready!")
@@ -2073,10 +2087,15 @@ def check_annotation_columns_exist():
 def run_annotation_migration():
     """Run the database migration to add annotation columns"""
     try:
+        st.write("🔍 **Debug:** Starting migration process...")
+        
         async def execute_migration():
+            st.write("🔍 **Debug:** Getting database connection pool...")
             pool = await get_or_create_pool()
             if not pool:
                 raise Exception("Database connection not available")
+            
+            st.write("🔍 **Debug:** Database pool acquired, executing migration commands...")
             
             async with pool.acquire() as conn:
                 # Execute migration commands one by one
@@ -2089,20 +2108,28 @@ def run_annotation_migration():
                     "UPDATE companies SET is_reviewed = FALSE WHERE is_reviewed IS NULL"
                 ]
                 
-                for command in commands:
+                for i, command in enumerate(commands, 1):
+                    st.write(f"🔍 **Debug:** Executing command {i}/6: {command[:50]}...")
                     await conn.execute(command)
+                    st.write(f"✅ **Debug:** Command {i}/6 completed successfully")
                 
+                st.write("🔍 **Debug:** All migration commands completed!")
                 return True
         
+        st.write("🔍 **Debug:** Running async migration...")
         result = run_async(execute_migration())
         if result:
+            st.write("🔍 **Debug:** Migration completed successfully!")
             return True, "Migration completed successfully!"
         else:
+            st.write("🔍 **Debug:** Migration returned False")
             return False, "Migration failed for unknown reason"
             
     except Exception as e:
+        error_msg = str(e)
+        st.write(f"🔍 **Debug:** Migration failed with error: {error_msg}")
         logger.error(f"Migration error: {e}")
-        return False, f"Migration failed: {str(e)}"
+        return False, f"Migration failed: {error_msg}"
 
 if __name__ == "__main__":
     main() 
