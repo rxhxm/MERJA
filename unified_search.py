@@ -867,15 +867,30 @@ class SearchService:
             return False
 
     @staticmethod
-    def build_search_query(
+    async def build_search_query(
             filters: SearchFilters,
             page: int,
             page_size: int,
             sort_field: SortField,
-            sort_order: SortOrder) -> tuple:
-        # Fixed query structure to avoid GROUP BY issues
-        # Base query without annotation columns (for backward compatibility)
-        # Will be enhanced after migration is applied
+            sort_order: SortOrder,
+            db_manager=None) -> tuple:
+        # Dynamic query structure that includes annotation columns if they exist
+        # Check for annotation columns and build appropriate SELECT clause
+        annotation_columns = """
+            COALESCE(c.is_reviewed, false) as is_reviewed,
+            c.classification,
+            c.notes,
+        """
+        
+        # Fallback for when annotation columns don't exist yet
+        fallback_columns = """
+            false as is_reviewed,
+            null::text as classification,
+            null::text as notes,
+        """
+        
+        # Try to determine if annotation columns exist by checking the first part of the query
+        # This will be dynamically replaced based on column existence
         base_query = """
         SELECT 
             c.nmls_id,
@@ -888,9 +903,7 @@ class SearchService:
             (SELECT full_address FROM addresses WHERE company_id = c.id AND address_type = 'mailing' LIMIT 1) as mailing_address,
             c.federal_regulator,
             c.created_at,
-            false as is_reviewed,
-            null::text as classification,
-            null::text as notes,
+            {annotation_select}
             (SELECT COUNT(*) FROM licenses WHERE company_id = c.id) as total_licenses,
             (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) as active_licenses,
             (SELECT ARRAY_AGG(DISTINCT license_type) FROM licenses WHERE company_id = c.id AND active = true AND license_type IS NOT NULL) as license_types,
@@ -903,6 +916,12 @@ class SearchService:
              WHERE combined.state IS NOT NULL) as states_licensed
         FROM companies c
         """
+        
+        # Check if annotation columns exist and use appropriate SELECT clause
+        if db_manager and await SearchService.check_annotation_columns_exist(db_manager):
+            base_query = base_query.format(annotation_select=annotation_columns)
+        else:
+            base_query = base_query.format(annotation_select=fallback_columns)
 
         conditions = []
         params = []
@@ -1256,8 +1275,8 @@ class UnifiedSearchAPI:
             total_count = await conn.fetchval(count_query, *count_params)
 
             # Get results
-            search_query, search_params = SearchService.build_search_query(
-                search_filters, page, page_size, sort_field, sort_order
+            search_query, search_params = await SearchService.build_search_query(
+                search_filters, page, page_size, sort_field, sort_order, self.db_manager
             )
             rows = await conn.fetch(search_query, *search_params)
 
