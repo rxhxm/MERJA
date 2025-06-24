@@ -190,6 +190,10 @@ class CompanyResponse(BaseModel):
     has_valid_contact: Optional[bool] = None
     contact_issues: Optional[List[str]] = None
     business_score: Optional[float] = None
+    # Annotation fields
+    is_reviewed: Optional[bool] = False
+    classification: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class SearchResponse(BaseModel):
@@ -868,6 +872,9 @@ class SearchService:
             (SELECT full_address FROM addresses WHERE company_id = c.id AND address_type = 'mailing' LIMIT 1) as mailing_address,
             c.federal_regulator,
             c.created_at,
+            c.is_reviewed,
+            c.classification,
+            c.notes,
             (SELECT COUNT(*) FROM licenses WHERE company_id = c.id) as total_licenses,
             (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) as active_licenses,
             (SELECT ARRAY_AGG(DISTINCT license_type) FROM licenses WHERE company_id = c.id AND active = true AND license_type IS NOT NULL) as license_types,
@@ -1700,6 +1707,71 @@ async def search_endpoint(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class AnnotationUpdate(BaseModel):
+    is_reviewed: Optional[bool] = None
+    classification: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@app.put("/company/{nmls_id}/annotations")
+async def update_company_annotations(nmls_id: str, annotation: AnnotationUpdate):
+    """Update company annotations (reviewed status, classification, notes)"""
+    try:
+        # Build update query dynamically based on provided fields
+        update_fields = []
+        params = []
+        param_count = 0
+        
+        if annotation.is_reviewed is not None:
+            param_count += 1
+            update_fields.append(f"is_reviewed = ${param_count}")
+            params.append(annotation.is_reviewed)
+        
+        if annotation.classification is not None:
+            param_count += 1
+            update_fields.append(f"classification = ${param_count}")
+            params.append(annotation.classification)
+        
+        if annotation.notes is not None:
+            param_count += 1
+            update_fields.append(f"notes = ${param_count}")
+            params.append(annotation.notes)
+        
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No annotation fields provided")
+        
+        param_count += 1
+        params.append(nmls_id)
+        
+        update_query = f"""
+        UPDATE companies 
+        SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP
+        WHERE nmls_id = ${param_count}
+        RETURNING nmls_id, company_name, is_reviewed, classification, notes
+        """
+        
+        async with unified_api.db_manager.pool.acquire() as conn:
+            row = await conn.fetchrow(update_query, *params)
+            
+            if not row:
+                raise HTTPException(status_code=404, detail="Company not found")
+            
+            return {
+                "nmls_id": row["nmls_id"],
+                "company_name": row["company_name"],
+                "is_reviewed": row["is_reviewed"],
+                "classification": row["classification"],
+                "notes": row["notes"],
+                "message": "Annotations updated successfully"
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Annotation update error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update annotations: {str(e)}")
 
 # ============================================================================
 # MAIN EXECUTION

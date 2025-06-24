@@ -983,13 +983,13 @@ def main():
             states_covered = len(set([state for c in companies for state in c.get('states_licensed', [])]))
             st.metric("States Covered", states_covered)
         
-        # Results table
+        # Results table with annotations
         if companies:
             st.subheader(f"📋 Lenders Found")
             
-            # Create display data
+            # Create display data with annotations
             display_data = []
-            for company in companies:
+            for i, company in enumerate(companies):
                 states_licensed = company.get('states_licensed', [])
                 states_str = ', '.join(sorted(states_licensed)) if states_licensed else 'Unknown'
                 if len(states_str) > 50:
@@ -1005,11 +1005,129 @@ def main():
                     'LinkedIn': f"[🔗 LinkedIn]({company.get('company_linkedin', '')})" if company.get('company_linkedin') else '❌',
                     'States Licensed': states_str,
                     'Total States': len(states_licensed),
-                    'Contact Info': '✅' if (company.get('phone') and company.get('email')) else '📧' if company.get('email') else '📞' if company.get('phone') else '❌'
+                    'Contact Info': '✅' if (company.get('phone') and company.get('email')) else '📧' if company.get('email') else '📞' if company.get('phone') else '❌',
+                    'Reviewed': '✅' if company.get('is_reviewed') else '❌',
+                    'Classification': company.get('classification', ''),
+                    'Notes': company.get('notes', '')
                 })
             
             df = pd.DataFrame(display_data)
             st.dataframe(df, use_container_width=True)
+            
+            # Annotation Section
+            st.markdown("---")
+            st.subheader("📝 Company Annotations")
+            
+            # Select company to annotate
+            company_options = [(f"{c['company_name']} (NMLS: {c['nmls_id']})", c['nmls_id']) for c in companies]
+            selected_option = st.selectbox(
+                "Select a company to review/annotate:",
+                options=company_options,
+                format_func=lambda x: x[0],
+                help="Choose a company to add your review, classification, and notes"
+            )
+            
+            selected_nmls_id = selected_option[1] if selected_option else None
+            
+            if selected_nmls_id:
+                selected_company = next((c for c in companies if c['nmls_id'] == selected_nmls_id), None)
+                
+                if selected_company:
+                    st.markdown(f"**Annotating:** {selected_company['company_name']}")
+                    
+                    col1, col2, col3 = st.columns([1, 2, 3])
+                    
+                    with col1:
+                        # Reviewed checkbox
+                        current_reviewed = selected_company.get('is_reviewed', False)
+                        is_reviewed = st.checkbox(
+                            "✅ Reviewed",
+                            value=current_reviewed,
+                            key=f"reviewed_{selected_nmls_id}",
+                            help="Mark this company as reviewed"
+                        )
+                    
+                    with col2:
+                        # Classification dropdown
+                        classification_options = [
+                            "",
+                            "🎯 Target Customer",
+                            "❌ Exclude - Mortgage Only",
+                            "⚠️ Mixed - Needs Review",
+                            "🔍 Investigate Further",
+                            "✅ Good Prospect",
+                            "❌ Not Interested",
+                            "📞 Contact Attempted"
+                        ]
+                        current_classification = selected_company.get('classification', '')
+                        classification = st.selectbox(
+                            "Classification",
+                            options=classification_options,
+                            index=classification_options.index(current_classification) if current_classification in classification_options else 0,
+                            key=f"classification_{selected_nmls_id}",
+                            help="Classify this company for your sales process"
+                        )
+                    
+                    with col3:
+                        # Notes text area
+                        current_notes = selected_company.get('notes', '')
+                        notes = st.text_area(
+                            "Notes",
+                            value=current_notes,
+                            key=f"notes_{selected_nmls_id}",
+                            help="Add your notes about this company",
+                            height=100
+                        )
+                    
+                    # Save/Update button
+                    col_save1, col_save2, col_save3 = st.columns([1, 1, 2])
+                    with col_save1:
+                        if st.button("💾 Save Annotations", key=f"save_{selected_nmls_id}"):
+                            # Call the API to update annotations
+                            try:
+                                async def update_annotations():
+                                    import httpx
+                                    async with httpx.AsyncClient() as client:
+                                        response = await client.put(
+                                            f"http://localhost:8000/company/{selected_nmls_id}/annotations",
+                                            json={
+                                                "is_reviewed": is_reviewed,
+                                                "classification": classification if classification else None,
+                                                "notes": notes if notes else None
+                                            }
+                                        )
+                                        return response.json()
+                                
+                                result = run_async(update_annotations())
+                                st.success(f"✅ Annotations saved for {selected_company['company_name']}")
+                                
+                                # Update the company data in session state
+                                for company in st.session_state.search_results['companies']:
+                                    if company['nmls_id'] == selected_nmls_id:
+                                        company['is_reviewed'] = is_reviewed
+                                        company['classification'] = classification
+                                        company['notes'] = notes
+                                        break
+                                
+                                # Trigger a rerun to refresh the display
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"❌ Failed to save annotations: {str(e)}")
+                    
+                    with col_save2:
+                        if st.button("🔄 Refresh Data", key=f"refresh_{selected_nmls_id}"):
+                            st.rerun()
+                    
+                    # Show current annotation status
+                    if selected_company.get('is_reviewed') or selected_company.get('classification') or selected_company.get('notes'):
+                        st.markdown("**Current Annotations:**")
+                        if selected_company.get('is_reviewed'):
+                            st.success("✅ Marked as reviewed")
+                        if selected_company.get('classification'):
+                            st.info(f"🏷️ Classification: {selected_company.get('classification')}")
+                        if selected_company.get('notes'):
+                            st.text_area("📝 Existing Notes:", selected_company.get('notes'), disabled=True, height=50)
             
             # Show license details for selected companies
             st.markdown("### 🔍 Detailed License Analysis")
