@@ -2043,6 +2043,11 @@ def main():
                                 st.rerun()  # Auto-refresh the page
                             else:
                                 st.error("❌ " + message)
+                                # Add retry button for failed migrations
+                                if "database busy" in message.lower() or "timeout" in message.lower():
+                                    st.warning("💡 **Tip:** The database was busy. Wait 10 seconds and try again.")
+                                    if st.button("🔄 **TRY MIGRATION AGAIN**", type="secondary", key="retry_migration"):
+                                        st.rerun()
                 
                 st.info("📋 This will safely add `is_reviewed`, `classification`, and `notes` columns to your companies table.")
                 st.warning("⚠️ **If you don't see a button above, try refreshing the page!**")
@@ -2091,30 +2096,56 @@ def run_annotation_migration():
         
         async def execute_migration():
             st.write("🔍 **Debug:** Getting database connection pool...")
+            
+            # Wait a moment to let any pending operations complete
+            await asyncio.sleep(2)
+            
             pool = await get_or_create_pool()
             if not pool:
                 raise Exception("Database connection not available")
             
             st.write("🔍 **Debug:** Database pool acquired, executing migration commands...")
             
-            async with pool.acquire() as conn:
-                # Execute migration commands one by one
-                commands = [
-                    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE",
-                    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS classification VARCHAR(100) DEFAULT NULL",
-                    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL",
-                    "CREATE INDEX IF NOT EXISTS idx_companies_is_reviewed ON companies(is_reviewed)",
-                    "CREATE INDEX IF NOT EXISTS idx_companies_classification ON companies(classification)",
-                    "UPDATE companies SET is_reviewed = FALSE WHERE is_reviewed IS NULL"
-                ]
-                
-                for i, command in enumerate(commands, 1):
-                    st.write(f"🔍 **Debug:** Executing command {i}/6: {command[:50]}...")
-                    await conn.execute(command)
-                    st.write(f"✅ **Debug:** Command {i}/6 completed successfully")
-                
-                st.write("🔍 **Debug:** All migration commands completed!")
-                return True
+            # Use a fresh connection with timeout
+            try:
+                async with asyncio.wait_for(pool.acquire(), timeout=15.0) as conn:
+                    st.write("🔍 **Debug:** Database connection acquired successfully")
+                    
+                    # Execute migration commands one by one with individual transactions
+                    commands = [
+                        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE",
+                        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS classification VARCHAR(100) DEFAULT NULL", 
+                        "ALTER TABLE companies ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL",
+                        "CREATE INDEX IF NOT EXISTS idx_companies_is_reviewed ON companies(is_reviewed)",
+                        "CREATE INDEX IF NOT EXISTS idx_companies_classification ON companies(classification)",
+                        "UPDATE companies SET is_reviewed = FALSE WHERE is_reviewed IS NULL"
+                    ]
+                    
+                    for i, command in enumerate(commands, 1):
+                        st.write(f"🔍 **Debug:** Executing command {i}/6: {command[:50]}...")
+                        try:
+                            # Execute each command in its own transaction
+                            async with conn.transaction():
+                                await conn.execute(command)
+                            st.write(f"✅ **Debug:** Command {i}/6 completed successfully")
+                            await asyncio.sleep(0.5)  # Small delay between commands
+                        except Exception as cmd_error:
+                            st.write(f"⚠️ **Debug:** Command {i}/6 failed: {str(cmd_error)}")
+                            # For ALTER TABLE IF NOT EXISTS, ignore if column already exists
+                            if "already exists" in str(cmd_error).lower() or "duplicate" in str(cmd_error).lower():
+                                st.write(f"ℹ️ **Debug:** Command {i}/6 skipped (already exists)")
+                                continue
+                            else:
+                                raise cmd_error
+                    
+                    st.write("🔍 **Debug:** All migration commands completed!")
+                    return True
+                    
+            except asyncio.TimeoutError:
+                raise Exception("Database connection timeout - please try again in a moment")
+            except Exception as conn_error:
+                st.write(f"🔍 **Debug:** Connection error: {str(conn_error)}")
+                raise conn_error
         
         st.write("🔍 **Debug:** Running async migration...")
         result = run_async(execute_migration())
@@ -2129,7 +2160,14 @@ def run_annotation_migration():
         error_msg = str(e)
         st.write(f"🔍 **Debug:** Migration failed with error: {error_msg}")
         logger.error(f"Migration error: {e}")
-        return False, f"Migration failed: {error_msg}"
+        
+        # Provide helpful error messages
+        if "another operation is in progress" in error_msg.lower():
+            return False, "Database busy - please wait a moment and try again"
+        elif "timeout" in error_msg.lower():
+            return False, "Database connection timeout - please try again"
+        else:
+            return False, f"Migration failed: {error_msg}"
 
 if __name__ == "__main__":
     main() 
