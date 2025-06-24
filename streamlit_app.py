@@ -2051,45 +2051,57 @@ def cleanup_resources():
 def check_annotation_columns_exist():
     """Check if annotation columns exist in the database"""
     try:
-        conn = st.connection('postgresql', type='sql')
-        result = conn.query("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'companies' 
-            AND column_name IN ('is_reviewed', 'classification', 'notes')
-        """)
-        return len(result) == 3  # All 3 columns exist
-    except:
+        async def check_columns():
+            pool = await get_or_create_pool()
+            if not pool:
+                return False
+            
+            async with pool.acquire() as conn:
+                result = await conn.fetch("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'companies' 
+                    AND column_name IN ('is_reviewed', 'classification', 'notes')
+                """)
+                return len(result) == 3  # All 3 columns exist
+        
+        return run_async(check_columns())
+    except Exception as e:
+        logger.error(f"Error checking annotation columns: {e}")
         return False
 
 def run_annotation_migration():
     """Run the database migration to add annotation columns"""
     try:
-        # SQL migration commands
-        migration_sql = """
-        -- Add annotation columns to companies table
-        ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE;
-        ALTER TABLE companies ADD COLUMN IF NOT EXISTS classification VARCHAR(100) DEFAULT NULL;
-        ALTER TABLE companies ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL;
-
-        -- Add indexes for the new columns
-        CREATE INDEX IF NOT EXISTS idx_companies_is_reviewed ON companies(is_reviewed);
-        CREATE INDEX IF NOT EXISTS idx_companies_classification ON companies(classification);
-
-        -- Update existing records to have default values
-        UPDATE companies SET is_reviewed = FALSE WHERE is_reviewed IS NULL;
-        """
+        async def execute_migration():
+            pool = await get_or_create_pool()
+            if not pool:
+                raise Exception("Database connection not available")
+            
+            async with pool.acquire() as conn:
+                # Execute migration commands one by one
+                commands = [
+                    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_reviewed BOOLEAN DEFAULT FALSE",
+                    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS classification VARCHAR(100) DEFAULT NULL",
+                    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL",
+                    "CREATE INDEX IF NOT EXISTS idx_companies_is_reviewed ON companies(is_reviewed)",
+                    "CREATE INDEX IF NOT EXISTS idx_companies_classification ON companies(classification)",
+                    "UPDATE companies SET is_reviewed = FALSE WHERE is_reviewed IS NULL"
+                ]
+                
+                for command in commands:
+                    await conn.execute(command)
+                
+                return True
         
-        conn = st.connection('postgresql', type='sql')
-        # Execute each command separately
-        commands = [cmd.strip() for cmd in migration_sql.split(';') if cmd.strip() and not cmd.strip().startswith('--')]
-        
-        for command in commands:
-            if command:
-                conn.query(command + ';')
-        
-        return True, "Migration completed successfully!"
+        result = run_async(execute_migration())
+        if result:
+            return True, "Migration completed successfully!"
+        else:
+            return False, "Migration failed for unknown reason"
+            
     except Exception as e:
+        logger.error(f"Migration error: {e}")
         return False, f"Migration failed: {str(e)}"
 
 if __name__ == "__main__":
