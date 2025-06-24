@@ -1014,20 +1014,36 @@ def main():
             df = pd.DataFrame(display_data)
             st.dataframe(df, use_container_width=True)
             
-            # Annotation Section
-            st.markdown("---")
-            st.subheader("📝 Company Annotations")
-            
-            # Select company to annotate
-            company_options = [(f"{c['company_name']} (NMLS: {c['nmls_id']})", c['nmls_id']) for c in companies]
-            selected_option = st.selectbox(
-                "Select a company to review/annotate:",
-                options=company_options,
-                format_func=lambda x: x[0],
-                help="Choose a company to add your review, classification, and notes"
+            # Annotation Section - check if annotations are available
+            annotations_available = any(
+                company.get('is_reviewed') is not None or 
+                company.get('classification') is not None or 
+                company.get('notes') is not None 
+                for company in companies
             )
             
-            selected_nmls_id = selected_option[1] if selected_option else None
+            st.markdown("---")
+            if annotations_available:
+                st.subheader("📝 Company Annotations")
+            else:
+                st.subheader("📝 Company Annotations")
+                st.info("🔧 **Annotation system will be available after database migration is complete.** Currently showing search results without annotation data.")
+            
+            if annotations_available:
+                # Select company to annotate
+                company_options = [(f"{c['company_name']} (NMLS: {c['nmls_id']})", c['nmls_id']) for c in companies]
+                selected_option = st.selectbox(
+                    "Select a company to review/annotate:",
+                    options=company_options,
+                    format_func=lambda x: x[0],
+                    help="Choose a company to add your review, classification, and notes"
+                )
+                
+                selected_nmls_id = selected_option[1] if selected_option else None
+            else:
+                st.warning("📋 **To enable annotations:** Run the database migration script to add annotation columns.")
+                st.code("python3 run_migration.py", language="bash")
+                selected_nmls_id = None
             
             if selected_nmls_id:
                 selected_company = next((c for c in companies if c['nmls_id'] == selected_nmls_id), None)

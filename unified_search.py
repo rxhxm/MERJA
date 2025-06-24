@@ -853,6 +853,20 @@ class DatabaseManager:
 
 class SearchService:
     @staticmethod
+    async def check_annotation_columns_exist(db_manager) -> bool:
+        """Check if annotation columns exist in the database"""
+        try:
+            async with db_manager.pool.acquire() as conn:
+                result = await conn.fetchval("""
+                    SELECT COUNT(*) FROM information_schema.columns 
+                    WHERE table_name = 'companies' 
+                    AND column_name IN ('is_reviewed', 'classification', 'notes')
+                """)
+                return result == 3  # All 3 columns exist
+        except Exception:
+            return False
+
+    @staticmethod
     def build_search_query(
             filters: SearchFilters,
             page: int,
@@ -860,6 +874,8 @@ class SearchService:
             sort_field: SortField,
             sort_order: SortOrder) -> tuple:
         # Fixed query structure to avoid GROUP BY issues
+        # Base query without annotation columns (for backward compatibility)
+        # Will be enhanced after migration is applied
         base_query = """
         SELECT 
             c.nmls_id,
@@ -872,9 +888,9 @@ class SearchService:
             (SELECT full_address FROM addresses WHERE company_id = c.id AND address_type = 'mailing' LIMIT 1) as mailing_address,
             c.federal_regulator,
             c.created_at,
-            c.is_reviewed,
-            c.classification,
-            c.notes,
+            false as is_reviewed,
+            null::text as classification,
+            null::text as notes,
             (SELECT COUNT(*) FROM licenses WHERE company_id = c.id) as total_licenses,
             (SELECT COUNT(*) FROM licenses WHERE company_id = c.id AND active = true) as active_licenses,
             (SELECT ARRAY_AGG(DISTINCT license_type) FROM licenses WHERE company_id = c.id AND active = true AND license_type IS NOT NULL) as license_types,
@@ -1718,6 +1734,14 @@ class AnnotationUpdate(BaseModel):
 @app.put("/company/{nmls_id}/annotations")
 async def update_company_annotations(nmls_id: str, annotation: AnnotationUpdate):
     """Update company annotations (reviewed status, classification, notes)"""
+    # Check if annotation columns exist first
+    columns_exist = await SearchService.check_annotation_columns_exist(unified_api.db_manager)
+    if not columns_exist:
+        raise HTTPException(
+            status_code=503, 
+            detail="Annotation system not yet available. Database migration required."
+        )
+    
     try:
         # Build update query dynamically based on provided fields
         update_fields = []
