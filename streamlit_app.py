@@ -1206,7 +1206,7 @@ def main():
                         if selected_company.get('classification'):
                             st.info(f"🏷️ Classification: {selected_company.get('classification')}")
                         if selected_company.get('notes'):
-                            st.text_area("📝 Existing Notes:", selected_company.get('notes'), disabled=True, height=50)
+                            st.text_area("📝 Existing Notes:", selected_company.get('notes'), disabled=True, height=100)
             
             # Show license details for selected companies
             st.markdown("### 🔍 Detailed License Analysis")
