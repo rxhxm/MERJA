@@ -123,7 +123,7 @@ async def close_db_pool():
         finally:
             _db_pool = None
 
-# Simple CSS
+# Enhanced CSS with proper annotation interface styling
 st.markdown("""
 <style>
     .main-header {
@@ -139,6 +139,54 @@ st.markdown("""
     .lender-type-target { color: #28a745; font-weight: bold; }
     .lender-type-exclude { color: #dc3545; font-weight: bold; }
     .lender-type-mixed { color: #ffc107; font-weight: bold; }
+    
+    /* Fix annotation interface colors */
+    .stSelectbox > div > div {
+        background-color: white !important;
+        color: black !important;
+    }
+    
+    .stTextArea > div > div > textarea {
+        background-color: white !important;
+        color: black !important;
+        border: 1px solid #ccc !important;
+    }
+    
+    .stCheckbox > label {
+        color: black !important;
+    }
+    
+    /* Fix expander content background */
+    .streamlit-expanderContent {
+        background-color: white !important;
+    }
+    
+    /* Fix general text colors in annotation section */
+    .stMarkdown p, .stMarkdown h4, .stMarkdown h5 {
+        color: black !important;
+    }
+    
+    /* Ensure form elements have proper styling */
+    .stSelectbox label, .stTextArea label, .stCheckbox label {
+        color: black !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Fix button styling in annotation section */
+    .stButton > button {
+        background-color: #0066cc !important;
+        color: white !important;
+        border: none !important;
+    }
+    
+    /* Fix status display colors */
+    .annotation-status {
+        background-color: #f8f9fa !important;
+        color: black !important;
+        padding: 0.5rem !important;
+        border-radius: 4px !important;
+        border: 1px solid #dee2e6 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1767,7 +1815,7 @@ def main():
                         if status_items:
                             status_text = " • ".join(status_items)
                             st.markdown(f"""
-                            <div style="background: #d4edda; padding: 1rem; border-radius: 8px; border-left: 4px solid #28a745; margin: 0.5rem 0;">
+                            <div class="annotation-status" style="background: #d4edda; border-left: 4px solid #28a745; margin: 0.5rem 0;">
                                 <p style="margin: 0; color: #155724;">{status_text}</p>
                             </div>
                             """, unsafe_allow_html=True)
