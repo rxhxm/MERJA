@@ -933,7 +933,7 @@ def main():
         
         # Filter Preview
         st.markdown("---")
-        st.markdown("##### 👀 Combined Filter Preview")
+        st.markdown("##### 🔍 Preview Filter Results (CHANGE TEST)")
         
         if st.button("🔍 Preview All Filter Results", use_container_width=True):
             if st.session_state.search_results:
