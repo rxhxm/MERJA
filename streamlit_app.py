@@ -123,7 +123,7 @@ async def close_db_pool():
         finally:
             _db_pool = None
 
-# Enhanced CSS with proper annotation interface styling
+# Simple CSS
 st.markdown("""
 <style>
     .main-header {
@@ -139,54 +139,6 @@ st.markdown("""
     .lender-type-target { color: #28a745; font-weight: bold; }
     .lender-type-exclude { color: #dc3545; font-weight: bold; }
     .lender-type-mixed { color: #ffc107; font-weight: bold; }
-    
-    /* Fix annotation interface colors */
-    .stSelectbox > div > div {
-        background-color: white !important;
-        color: black !important;
-    }
-    
-    .stTextArea > div > div > textarea {
-        background-color: white !important;
-        color: black !important;
-        border: 1px solid #ccc !important;
-    }
-    
-    .stCheckbox > label {
-        color: black !important;
-    }
-    
-    /* Fix expander content background */
-    .streamlit-expanderContent {
-        background-color: white !important;
-    }
-    
-    /* Fix general text colors in annotation section */
-    .stMarkdown p, .stMarkdown h4, .stMarkdown h5 {
-        color: black !important;
-    }
-    
-    /* Ensure form elements have proper styling */
-    .stSelectbox label, .stTextArea label, .stCheckbox label {
-        color: black !important;
-        font-weight: 500 !important;
-    }
-    
-    /* Fix button styling in annotation section */
-    .stButton > button {
-        background-color: #0066cc !important;
-        color: white !important;
-        border: none !important;
-    }
-    
-    /* Fix status display colors */
-    .annotation-status {
-        background-color: #f8f9fa !important;
-        color: black !important;
-        padding: 0.5rem !important;
-        border-radius: 4px !important;
-        border: 1px solid #dee2e6 !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1595,24 +1547,16 @@ def main():
             
             st.markdown("---")
             
-            # Enhanced header with better styling
-            st.markdown("""
-            <div style="background: linear-gradient(90deg, #1f4e79 0%, #2d5aa0 100%); padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
-                <h2 style="color: white; margin: 0; display: flex; align-items: center;">
-                    📝 Company Annotations
-                </h2>
-                <p style="color: #e8f4fd; margin: 0.5rem 0 0 0; font-size: 0.9rem;">
-                    Review, classify, and annotate companies for your B2B sales workflow
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+            # Simple header without custom styling
+            st.subheader("📝 Company Annotations")
+            st.markdown("Review, classify, and annotate companies for your B2B sales workflow")
             
             if not annotations_available:
                 st.info("🔧 **Annotation system will be available after database migration is complete.** Currently showing search results without annotation data.")
             
             if annotations_available:
-                # Enhanced company selector with better styling
-                st.markdown("##### 🎯 Select Company to Annotate")
+                # Company selector
+                st.markdown("**🎯 Select Company to Annotate**")
                 company_options = [(f"{c['company_name']} (NMLS: {c['nmls_id']})", c['nmls_id']) for c in companies]
                 selected_option = st.selectbox(
                     "Select a company to review/annotate:",
@@ -1632,20 +1576,12 @@ def main():
                 selected_company = next((c for c in companies if c['nmls_id'] == selected_nmls_id), None)
                 
                 if selected_company:
-                    # Enhanced company info display
-                    st.markdown(f"""
-                    <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid #2d5aa0; margin: 1rem 0;">
-                        <h4 style="margin: 0; color: #1f4e79;">
-                            🏢 Annotating: {selected_company['company_name']}
-                        </h4>
-                        <p style="margin: 0.5rem 0 0 0; color: #6c757d; font-size: 0.9rem;">
-                            NMLS ID: {selected_nmls_id}
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # Simple company info display
+                    st.markdown(f"**🏢 Annotating: {selected_company['company_name']}**")
+                    st.markdown(f"NMLS ID: {selected_nmls_id}")
                     
-                    # Enhanced form layout with better styling
-                    st.markdown("##### 📋 Annotation Details")
+                    # Annotation form
+                    st.markdown("**📋 Annotation Details**")
                     
                     col1, col2, col3 = st.columns([1, 2, 3])
                     
@@ -1697,8 +1633,8 @@ def main():
                             placeholder="Add your notes about this company..."
                         )
                     
-                    # Enhanced action buttons
-                    st.markdown("##### 🎬 Actions")
+                    # Action buttons
+                    st.markdown("**🎬 Actions**")
                     col_save1, col_save2, col_save3 = st.columns([1, 1, 2])
                     with col_save1:
                         if st.button("💾 Save Annotations", key=f"save_{selected_nmls_id}", type="primary", use_container_width=True):
@@ -1814,11 +1750,7 @@ def main():
                         
                         if status_items:
                             status_text = " • ".join(status_items)
-                            st.markdown(f"""
-                            <div class="annotation-status" style="background: #d4edda; border-left: 4px solid #28a745; margin: 0.5rem 0;">
-                                <p style="margin: 0; color: #155724;">{status_text}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            st.info(status_text)
                         
                         if selected_company.get('notes'):
                             st.markdown("**📝 Current Notes:**")
