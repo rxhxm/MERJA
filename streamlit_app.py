@@ -702,87 +702,9 @@ def main():
                 st.session_state.last_query = "Mortgage companies"
                 st.rerun()
     
-    # Advanced Filters Section
-    with st.expander("🔧 Advanced Filters & Custom Rules", expanded=False):
-        st.markdown("**Customize your filtering criteria with business rules and thresholds**")
-        
-        # FORCE DEPLOYMENT UPDATE - Add exclude logic test
-        st.info("🚀 **NEW: Exclude Logic Available Below!** - Use the checkboxes and dropdowns below to exclude unwanted companies")
-        
-        # Initialize session state for advanced filters
-        if 'advanced_filters' not in st.session_state:
-            st.session_state.advanced_filters = {
-                'selected_states': [],
-                'lender_type_filter': 'All Types',
-                'min_licenses': 1,
-                'max_licenses': 1000,
-                'min_states': 1,
-                'max_states': 50,
-                'business_structures': [],
-                'federal_regulators': [],
-                'has_contact_info': 'Any',
-                # New exclude logic fields
-                'exclude_mortgage_licenses': False,
-                'exclude_specific_licenses': [],
-                'exclude_business_structures': [],
-                'exclude_states': [],
-                'exclude_no_contact': False,
-                'exclude_inactive_licenses': False,
-                'exclude_regulatory_actions': False,
-                'custom_exclude_keywords': []
-            }
-        
-        # Ensure all required keys exist (migration for existing sessions)
-        if 'selected_states' not in st.session_state.advanced_filters:
-            st.session_state.advanced_filters['selected_states'] = []
-        if 'lender_type_filter' not in st.session_state.advanced_filters:
-            st.session_state.advanced_filters['lender_type_filter'] = 'All Types'
-        
-        # Add new exclude fields if they don't exist
-        exclude_fields = {
-            'exclude_mortgage_licenses': False,
-            'exclude_specific_licenses': [],
-            'exclude_business_structures': [],
-            'exclude_states': [],
-            'exclude_no_contact': False,
-            'exclude_inactive_licenses': False,
-            'exclude_regulatory_actions': False,
-            'custom_exclude_keywords': []
-        }
-        for field, default_value in exclude_fields.items():
-            if field not in st.session_state.advanced_filters:
-                st.session_state.advanced_filters[field] = default_value
-
-        # Primary Filters Section
-        st.markdown("##### 🎯 Primary Filters")
-        
-        col_primary1, col_primary2 = st.columns(2)
-        
-        with col_primary1:
-            selected_states = st.multiselect(
-                "📍 States Licensed In:",
-                ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
-                default=st.session_state.advanced_filters['selected_states'],
-                help="Filter companies by states where they are licensed"
-            )
-            st.session_state.advanced_filters['selected_states'] = selected_states
-        
-        with col_primary2:
-            lender_type_filter = st.selectbox(
-                "🏦 Lender Type:", 
-                ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
-                index=["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"].index(
-                    st.session_state.advanced_filters['lender_type_filter']
-                ),
-                help="Filter by lender classification type"
-            )
-            st.session_state.advanced_filters['lender_type_filter'] = lender_type_filter
-
-        st.markdown("---")
-        
-        # EXCLUDE LOGIC SECTION - PROMINENTLY DISPLAYED
+    # EXCLUDE LOGIC SECTION - MOVED FOR VISIBILITY
+    with st.expander("❌ Exclude Logic - Remove Unwanted Companies", expanded=True):
         st.error("🔥 EXCLUDE LOGIC SECTION - THIS SHOULD BE VISIBLE! 🔥")
-        st.markdown("### ❌ EXCLUDE LOGIC")
         
         # Quick Exclude Toggles - Make more compact
         exclude_mortgage = st.checkbox(
@@ -855,6 +777,79 @@ def main():
                     st.success("✅ No companies would be excluded with current settings")
             else:
                 st.warning("Please run a search first to preview exclude impact")
+
+    # Advanced Filters Section
+    with st.expander("🔧 Advanced Filters & Custom Rules", expanded=False):
+        st.markdown("**Customize your filtering criteria with business rules and thresholds**")
+        
+        # Initialize session state for advanced filters
+        if 'advanced_filters' not in st.session_state:
+            st.session_state.advanced_filters = {
+                'selected_states': [],
+                'lender_type_filter': 'All Types',
+                'min_licenses': 1,
+                'max_licenses': 1000,
+                'min_states': 1,
+                'max_states': 50,
+                'business_structures': [],
+                'federal_regulators': [],
+                'has_contact_info': 'Any',
+                # New exclude logic fields
+                'exclude_mortgage_licenses': False,
+                'exclude_specific_licenses': [],
+                'exclude_business_structures': [],
+                'exclude_states': [],
+                'exclude_no_contact': False,
+                'exclude_inactive_licenses': False,
+                'exclude_regulatory_actions': False,
+                'custom_exclude_keywords': []
+            }
+        
+        # Ensure all required keys exist (migration for existing sessions)
+        if 'selected_states' not in st.session_state.advanced_filters:
+            st.session_state.advanced_filters['selected_states'] = []
+        if 'lender_type_filter' not in st.session_state.advanced_filters:
+            st.session_state.advanced_filters['lender_type_filter'] = 'All Types'
+        
+        # Add new exclude fields if they don't exist
+        exclude_fields = {
+            'exclude_mortgage_licenses': False,
+            'exclude_specific_licenses': [],
+            'exclude_business_structures': [],
+            'exclude_states': [],
+            'exclude_no_contact': False,
+            'exclude_inactive_licenses': False,
+            'exclude_regulatory_actions': False,
+            'custom_exclude_keywords': []
+        }
+        for field, default_value in exclude_fields.items():
+            if field not in st.session_state.advanced_filters:
+                st.session_state.advanced_filters[field] = default_value
+
+        # Primary Filters Section
+        st.markdown("##### 🎯 Primary Filters")
+        
+        col_primary1, col_primary2 = st.columns(2)
+        
+        with col_primary1:
+            selected_states = st.multiselect(
+                "📍 States Licensed In:",
+                ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
+                default=st.session_state.advanced_filters['selected_states'],
+                help="Filter companies by states where they are licensed"
+            )
+            st.session_state.advanced_filters['selected_states'] = selected_states
+        
+        with col_primary2:
+            lender_type_filter = st.selectbox(
+                "🏦 Lender Type:", 
+                ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
+                index=["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"].index(
+                    st.session_state.advanced_filters['lender_type_filter']
+                ),
+                help="Filter by lender classification type"
+            )
+            st.session_state.advanced_filters['lender_type_filter'] = lender_type_filter
 
         st.markdown("---")
         
