@@ -650,6 +650,52 @@ def main():
     
     st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
     
+    # Initialize session state for advanced filters FIRST (before any UI elements)
+    if 'advanced_filters' not in st.session_state:
+        st.session_state.advanced_filters = {
+            'selected_states': [],
+            'lender_type_filter': 'All Types',
+            'min_licenses': 1,
+            'max_licenses': 1000,
+            'min_states': 1,
+            'max_states': 50,
+            'business_structures': [],
+            'federal_regulators': [],
+            'has_contact_info': 'Any',
+            # Exclude logic fields
+            'exclude_mortgage_licenses': False,
+            'exclude_specific_licenses': [],
+            'exclude_business_structures': [],
+            'exclude_states': [],
+            'exclude_no_contact': False,
+            'exclude_inactive_licenses': False,
+            'exclude_regulatory_actions': False,
+            'custom_exclude_keywords': []
+        }
+    
+    # Ensure all required keys exist (migration for existing sessions)
+    exclude_fields = {
+        'exclude_mortgage_licenses': False,
+        'exclude_specific_licenses': [],
+        'exclude_business_structures': [],
+        'exclude_states': [],
+        'exclude_no_contact': False,
+        'exclude_inactive_licenses': False,
+        'exclude_regulatory_actions': False,
+        'custom_exclude_keywords': [],
+        'selected_states': [],
+        'lender_type_filter': 'All Types',
+        'min_licenses': 1,
+        'max_licenses': 1000,
+        'min_states': 1,
+        'max_states': 50,
+        'business_structures': [],
+        'federal_regulators': [],
+        'has_contact_info': 'Any'
+    }
+    for field, default_value in exclude_fields.items():
+        if field not in st.session_state.advanced_filters:
+            st.session_state.advanced_filters[field] = default_value
     
     # Initialize session state for search query
     if 'search_query' not in st.session_state:
@@ -782,53 +828,7 @@ def main():
     with st.expander("🔧 Advanced Filters & Custom Rules", expanded=False):
         st.markdown("**Customize your filtering criteria with business rules and thresholds**")
         
-        # Initialize session state for advanced filters
-        if 'advanced_filters' not in st.session_state:
-            st.session_state.advanced_filters = {
-                'selected_states': [],
-                'lender_type_filter': 'All Types',
-                'min_licenses': 1,
-                'max_licenses': 1000,
-                'min_states': 1,
-                'max_states': 50,
-                'business_structures': [],
-                'federal_regulators': [],
-                'has_contact_info': 'Any',
-                # New exclude logic fields
-                'exclude_mortgage_licenses': False,
-                'exclude_specific_licenses': [],
-                'exclude_business_structures': [],
-                'exclude_states': [],
-                'exclude_no_contact': False,
-                'exclude_inactive_licenses': False,
-                'exclude_regulatory_actions': False,
-                'custom_exclude_keywords': []
-            }
-        
-        # Ensure all required keys exist (migration for existing sessions)
-        if 'selected_states' not in st.session_state.advanced_filters:
-            st.session_state.advanced_filters['selected_states'] = []
-        if 'lender_type_filter' not in st.session_state.advanced_filters:
-            st.session_state.advanced_filters['lender_type_filter'] = 'All Types'
-        
-        # Add new exclude fields if they don't exist (comprehensive migration)
-        exclude_fields = {
-            'exclude_mortgage_licenses': False,
-            'exclude_specific_licenses': [],
-            'exclude_business_structures': [],
-            'exclude_states': [],
-            'exclude_no_contact': False,
-            'exclude_inactive_licenses': False,
-            'exclude_regulatory_actions': False,
-            'custom_exclude_keywords': []
-        }
-        for field, default_value in exclude_fields.items():
-            if field not in st.session_state.advanced_filters:
-                st.session_state.advanced_filters[field] = default_value
-        
-        # Extra safety check - ensure the field exists before any UI elements try to access it
-        if 'exclude_mortgage_licenses' not in st.session_state.advanced_filters:
-            st.session_state.advanced_filters['exclude_mortgage_licenses'] = False
+        # Session state is now initialized at the top of main() function
 
         # Primary Filters Section
         st.markdown("##### 🎯 Primary Filters")
