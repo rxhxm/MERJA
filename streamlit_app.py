@@ -706,9 +706,6 @@ def main():
     with st.expander("🔧 Advanced Filters & Custom Rules", expanded=False):
         st.markdown("**Customize your filtering criteria with business rules and thresholds**")
         
-        # FORCE DEPLOYMENT UPDATE - Add exclude logic test
-        st.info("🚀 **NEW: Exclude Logic Available Below!** - Use the checkboxes and dropdowns below to exclude unwanted companies")
-        
         # Initialize session state for advanced filters
         if 'advanced_filters' not in st.session_state:
             st.session_state.advanced_filters = {
@@ -781,12 +778,19 @@ def main():
         st.markdown("---")
         
         # EXCLUDE LOGIC SECTION - PROMINENTLY DISPLAYED
-        st.error("🔥 EXCLUDE LOGIC SECTION - THIS SHOULD BE VISIBLE! 🔥")
         st.markdown("##### ❌ EXCLUDE LOGIC - Remove Unwanted Companies")
         st.markdown("*Use these filters to automatically exclude companies you don't want to see*")
         
+        # Add a colored container for better visibility in dark theme
+        with st.container():
+            st.markdown("""
+            <div style="background-color: #1f1f1f; padding: 1rem; border-radius: 8px; border: 2px solid #ff4444; margin: 0.5rem 0;">
+                <h4 style="color: #ff4444; margin: 0;">🚫 Quick Exclude Options</h4>
+                <p style="color: #ffffff; margin: 0.5rem 0;">Check any boxes below to exclude those types of companies:</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
         # Quick Exclude Toggles
-        st.markdown("**🚫 Quick Exclude Options:**")
         col_quick1, col_quick2, col_quick3 = st.columns(3)
         
         with col_quick1:
