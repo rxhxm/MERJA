@@ -750,192 +750,194 @@ def main():
             if field not in st.session_state.advanced_filters:
                 st.session_state.advanced_filters[field] = default_value
 
-        # Create sections for better organization (using expanders for compatibility)
+        # Primary Filters Section
+        st.markdown("##### 🎯 Primary Filters")
         
-        # Include Filters Section
-        with st.expander("🎯 Include Filters", expanded=True):
-            st.markdown("##### 🎯 Primary Filters")
-            
-            col_primary1, col_primary2 = st.columns(2)
-            
-            with col_primary1:
-                selected_states = st.multiselect(
-                    "📍 States Licensed In:",
-                    ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
-                    default=st.session_state.advanced_filters['selected_states'],
-                    help="Filter companies by states where they are licensed"
-                )
-                st.session_state.advanced_filters['selected_states'] = selected_states
-            
-            with col_primary2:
-                lender_type_filter = st.selectbox(
-                    "🏦 Lender Type:", 
-                    ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
-                    index=["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"].index(
-                        st.session_state.advanced_filters['lender_type_filter']
-                    ),
-                    help="Filter by lender classification type"
-                )
-                st.session_state.advanced_filters['lender_type_filter'] = lender_type_filter
-            
-            st.markdown("##### 🏢 Additional Business Filters")
-            
-            col_biz1, col_biz2 = st.columns(2)
-            
-            with col_biz1:
-                business_structures = st.multiselect(
-                    "Business Structure:",
-                    ["Corporation", "LLC", "Partnership", "Sole Proprietorship", "Limited Partnership", "Other"],
-                    default=st.session_state.advanced_filters['business_structures'],
-                    help="Filter by business entity type"
-                )
-                st.session_state.advanced_filters['business_structures'] = business_structures
-            
-            with col_biz2:
-                federal_regulators = st.multiselect(
-                    "Federal Regulator:",
-                    ["FDIC", "OCC", "Federal Reserve", "NCUA", "CFPB", "Other"],
-                    default=st.session_state.advanced_filters['federal_regulators'],
-                    help="Filter by federal regulatory oversight"
-                )
-                st.session_state.advanced_filters['federal_regulators'] = federal_regulators
+        col_primary1, col_primary2 = st.columns(2)
+        
+        with col_primary1:
+            selected_states = st.multiselect(
+                "📍 States Licensed In:",
+                ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
+                default=st.session_state.advanced_filters['selected_states'],
+                help="Filter companies by states where they are licensed"
+            )
+            st.session_state.advanced_filters['selected_states'] = selected_states
+        
+        with col_primary2:
+            lender_type_filter = st.selectbox(
+                "🏦 Lender Type:", 
+                ["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"],
+                index=["All Types", "Unsecured Personal (TARGET)", "Mortgage (EXCLUDE)", "Mixed", "Unknown"].index(
+                    st.session_state.advanced_filters['lender_type_filter']
+                ),
+                help="Filter by lender classification type"
+            )
+            st.session_state.advanced_filters['lender_type_filter'] = lender_type_filter
 
-        # Exclude Logic Section  
-        with st.expander("❌ Exclude Logic - Remove Unwanted Companies", expanded=False):
-            st.markdown("*Use these filters to automatically exclude companies you don't want to see*")
+        st.markdown("---")
+        
+        # EXCLUDE LOGIC SECTION - PROMINENTLY DISPLAYED
+        st.markdown("##### ❌ EXCLUDE LOGIC - Remove Unwanted Companies")
+        st.markdown("*Use these filters to automatically exclude companies you don't want to see*")
+        
+        # Quick Exclude Toggles
+        st.markdown("**🚫 Quick Exclude Options:**")
+        col_quick1, col_quick2, col_quick3 = st.columns(3)
+        
+        with col_quick1:
+            exclude_mortgage = st.checkbox(
+                "❌ Exclude All Mortgage Companies",
+                value=st.session_state.advanced_filters['exclude_mortgage_licenses'],
+                help="Automatically exclude companies with any mortgage-related licenses"
+            )
+            st.session_state.advanced_filters['exclude_mortgage_licenses'] = exclude_mortgage
+        
+        with col_quick2:
+            exclude_no_contact = st.checkbox(
+                "❌ Exclude No Contact Info",
+                value=st.session_state.advanced_filters['exclude_no_contact'],
+                help="Exclude companies without email or phone"
+            )
+            st.session_state.advanced_filters['exclude_no_contact'] = exclude_no_contact
+        
+        with col_quick3:
+            exclude_inactive = st.checkbox(
+                "❌ Exclude Inactive Licenses",
+                value=st.session_state.advanced_filters['exclude_inactive_licenses'],
+                help="Exclude companies with only inactive licenses"
+            )
+            st.session_state.advanced_filters['exclude_inactive_licenses'] = exclude_inactive
+        
+        # Detailed Exclude Options
+        st.markdown("**🎯 Detailed Exclude Controls:**")
+        
+        col_det1, col_det2 = st.columns(2)
+        
+        with col_det1:
+            st.markdown("**Exclude Specific License Types:**")
             
-            # Quick Exclude Toggles
-            st.markdown("**🚫 Quick Exclude Options:**")
-            col_quick1, col_quick2, col_quick3 = st.columns(3)
+            # Mortgage License Types (most common excludes)
+            mortgage_license_types = [
+                "Mortgage Lender License",
+                "Mortgage Broker License", 
+                "Residential Mortgage Lender License",
+                "Mortgage Loan Company License",
+                "Mortgage Servicer License",
+                "1st Mortgage Broker License",
+                "2nd Mortgage Broker License",
+                "Mortgage Loan Originator License"
+            ]
             
-            with col_quick1:
-                exclude_mortgage = st.checkbox(
-                    "❌ Exclude All Mortgage Companies",
-                    value=st.session_state.advanced_filters['exclude_mortgage_licenses'],
-                    help="Automatically exclude companies with any mortgage-related licenses"
-                )
-                st.session_state.advanced_filters['exclude_mortgage_licenses'] = exclude_mortgage
+            # Other common excludes
+            other_exclude_types = [
+                "Bank License",
+                "Credit Union License",
+                "Trust Company License",
+                "Insurance License",
+                "Real Estate License",
+                "Securities License"
+            ]
             
-            with col_quick2:
-                exclude_no_contact = st.checkbox(
-                    "❌ Exclude No Contact Info",
-                    value=st.session_state.advanced_filters['exclude_no_contact'],
-                    help="Exclude companies without email or phone"
-                )
-                st.session_state.advanced_filters['exclude_no_contact'] = exclude_no_contact
+            all_exclude_options = mortgage_license_types + other_exclude_types
             
-            with col_quick3:
-                exclude_inactive = st.checkbox(
-                    "❌ Exclude Inactive Licenses",
-                    value=st.session_state.advanced_filters['exclude_inactive_licenses'],
-                    help="Exclude companies with only inactive licenses"
-                )
-                st.session_state.advanced_filters['exclude_inactive_licenses'] = exclude_inactive
+            exclude_licenses = st.multiselect(
+                "Select license types to exclude:",
+                all_exclude_options,
+                default=st.session_state.advanced_filters['exclude_specific_licenses'],
+                help="Companies with these license types will be excluded from results"
+            )
+            st.session_state.advanced_filters['exclude_specific_licenses'] = exclude_licenses
             
-            st.markdown("---")
+            st.markdown("**Exclude Business Structures:**")
+            exclude_biz_structures = st.multiselect(
+                "Business structures to exclude:",
+                ["Corporation", "LLC", "Partnership", "Sole Proprietorship", "Limited Partnership", "Other"],
+                default=st.session_state.advanced_filters['exclude_business_structures'],
+                help="Exclude companies with these business structures"
+            )
+            st.session_state.advanced_filters['exclude_business_structures'] = exclude_biz_structures
+        
+        with col_det2:
+            st.markdown("**Exclude Geographic Areas:**")
+            exclude_states = st.multiselect(
+                "States to exclude:",
+                ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
+                default=st.session_state.advanced_filters['exclude_states'],
+                help="Exclude companies licensed in these states"
+            )
+            st.session_state.advanced_filters['exclude_states'] = exclude_states
             
-            # Detailed Exclude Options
-            st.markdown("**🎯 Detailed Exclude Controls:**")
-            
-            col_det1, col_det2 = st.columns(2)
-            
-            with col_det1:
-                st.markdown("**Exclude Specific License Types:**")
+            st.markdown("**Custom Exclude Keywords:**")
+            custom_keywords = st.text_area(
+                "Company name keywords to exclude (one per line):",
+                value="\n".join(st.session_state.advanced_filters['custom_exclude_keywords']),
+                height=100,
+                help="Exclude companies whose names contain these keywords",
+                placeholder="mortgage\nbank\ncredit union\ninsurance"
+            )
+            keyword_list = [k.strip() for k in custom_keywords.split('\n') if k.strip()]
+            st.session_state.advanced_filters['custom_exclude_keywords'] = keyword_list
+        
+        # Exclude Preview
+        if st.button("🔍 Preview Exclude Impact", use_container_width=True):
+            if st.session_state.search_results:
+                original_companies = st.session_state.search_results['companies'].copy()
+                excluded_companies = apply_exclude_filters(original_companies, st.session_state.advanced_filters)
                 
-                # Mortgage License Types (most common excludes)
-                mortgage_license_types = [
-                    "Mortgage Lender License",
-                    "Mortgage Broker License", 
-                    "Residential Mortgage Lender License",
-                    "Mortgage Loan Company License",
-                    "Mortgage Servicer License",
-                    "1st Mortgage Broker License",
-                    "2nd Mortgage Broker License",
-                    "Mortgage Loan Originator License"
-                ]
+                excluded_count = len(original_companies) - len(excluded_companies)
                 
-                # Other common excludes
-                other_exclude_types = [
-                    "Bank License",
-                    "Credit Union License",
-                    "Trust Company License",
-                    "Insurance License",
-                    "Real Estate License",
-                    "Securities License"
-                ]
-                
-                all_exclude_options = mortgage_license_types + other_exclude_types
-                
-                exclude_licenses = st.multiselect(
-                    "Select license types to exclude:",
-                    all_exclude_options,
-                    default=st.session_state.advanced_filters['exclude_specific_licenses'],
-                    help="Companies with these license types will be excluded from results"
-                )
-                st.session_state.advanced_filters['exclude_specific_licenses'] = exclude_licenses
-                
-                st.markdown("**Exclude Business Structures:**")
-                exclude_biz_structures = st.multiselect(
-                    "Business structures to exclude:",
-                    ["Corporation", "LLC", "Partnership", "Sole Proprietorship", "Limited Partnership", "Other"],
-                    default=st.session_state.advanced_filters['exclude_business_structures'],
-                    help="Exclude companies with these business structures"
-                )
-                st.session_state.advanced_filters['exclude_business_structures'] = exclude_biz_structures
-            
-            with col_det2:
-                st.markdown("**Exclude Geographic Areas:**")
-                exclude_states = st.multiselect(
-                    "States to exclude:",
-                    ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
-                    default=st.session_state.advanced_filters['exclude_states'],
-                    help="Exclude companies licensed in these states"
-                )
-                st.session_state.advanced_filters['exclude_states'] = exclude_states
-                
-                st.markdown("**Custom Exclude Keywords:**")
-                custom_keywords = st.text_area(
-                    "Company name keywords to exclude (one per line):",
-                    value="\n".join(st.session_state.advanced_filters['custom_exclude_keywords']),
-                    height=100,
-                    help="Exclude companies whose names contain these keywords",
-                    placeholder="mortgage\nbank\ncredit union\ninsurance"
-                )
-                keyword_list = [k.strip() for k in custom_keywords.split('\n') if k.strip()]
-                st.session_state.advanced_filters['custom_exclude_keywords'] = keyword_list
-            
-            # Exclude Preview
-            if st.button("🔍 Preview Exclude Impact", use_container_width=True):
-                if st.session_state.search_results:
-                    original_companies = st.session_state.search_results['companies'].copy()
-                    excluded_companies = apply_exclude_filters(original_companies, st.session_state.advanced_filters)
+                if excluded_count > 0:
+                    st.warning(f"⚠️ **{excluded_count}** companies would be excluded from **{len(original_companies)}** results")
+                    st.info(f"📊 **{len(excluded_companies)}** companies would remain after exclude filters")
                     
-                    excluded_count = len(original_companies) - len(excluded_companies)
+                    # Show what's being excluded
+                    if st.session_state.advanced_filters['exclude_mortgage_licenses']:
+                        mortgage_count = len([c for c in original_companies if is_mortgage_company(c)])
+                        if mortgage_count > 0:
+                            st.text(f"• {mortgage_count} mortgage companies excluded")
                     
-                    if excluded_count > 0:
-                        st.warning(f"⚠️ **{excluded_count}** companies would be excluded from **{len(original_companies)}** results")
-                        st.info(f"📊 **{len(excluded_companies)}** companies would remain after exclude filters")
-                        
-                        # Show what's being excluded
-                        if st.session_state.advanced_filters['exclude_mortgage_licenses']:
-                            mortgage_count = len([c for c in original_companies if is_mortgage_company(c)])
-                            if mortgage_count > 0:
-                                st.text(f"• {mortgage_count} mortgage companies excluded")
-                        
-                        if st.session_state.advanced_filters['exclude_no_contact']:
-                            no_contact_count = len([c for c in original_companies if not c.get('email_address') and not c.get('phone_number')])
-                            if no_contact_count > 0:
-                                st.text(f"• {no_contact_count} companies without contact info excluded")
-                        
-                        if st.session_state.advanced_filters['exclude_specific_licenses']:
-                            license_excluded = len([c for c in original_companies if has_excluded_licenses(c, st.session_state.advanced_filters['exclude_specific_licenses'])])
-                            if license_excluded > 0:
-                                st.text(f"• {license_excluded} companies with excluded license types")
-                    else:
-                        st.success("✅ No companies would be excluded with current settings")
+                    if st.session_state.advanced_filters['exclude_no_contact']:
+                        no_contact_count = len([c for c in original_companies if not c.get('email_address') and not c.get('phone_number')])
+                        if no_contact_count > 0:
+                            st.text(f"• {no_contact_count} companies without contact info excluded")
+                    
+                    if st.session_state.advanced_filters['exclude_specific_licenses']:
+                        license_excluded = len([c for c in original_companies if has_excluded_licenses(c, st.session_state.advanced_filters['exclude_specific_licenses'])])
+                        if license_excluded > 0:
+                            st.text(f"• {license_excluded} companies with excluded license types")
                 else:
-                    st.warning("Please run a search first to preview exclude impact")
+                    st.success("✅ No companies would be excluded with current settings")
+            else:
+                st.warning("Please run a search first to preview exclude impact")
 
+        st.markdown("---")
+        
+        # Additional Business Filters Section
+        st.markdown("##### 🏢 Additional Business Filters")
+        
+        col_biz1, col_biz2 = st.columns(2)
+        
+        with col_biz1:
+            business_structures = st.multiselect(
+                "Business Structure:",
+                ["Corporation", "LLC", "Partnership", "Sole Proprietorship", "Limited Partnership", "Other"],
+                default=st.session_state.advanced_filters['business_structures'],
+                help="Filter by business entity type"
+            )
+            st.session_state.advanced_filters['business_structures'] = business_structures
+        
+        with col_biz2:
+            federal_regulators = st.multiselect(
+                "Federal Regulator:",
+                ["FDIC", "OCC", "Federal Reserve", "NCUA", "CFPB", "Other"],
+                default=st.session_state.advanced_filters['federal_regulators'],
+                help="Filter by federal regulatory oversight"
+            )
+            st.session_state.advanced_filters['federal_regulators'] = federal_regulators
+
+        st.markdown("---")
+        
         # Business Rules Section
         with st.expander("⚙️ Business Rules & Thresholds", expanded=False):
             
