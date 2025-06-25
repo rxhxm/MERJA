@@ -2984,9 +2984,10 @@ def display_complete_database_info(complete_data: Dict[str, Any]):
         st.markdown("#### 🏢 Complete Company Information")
         
         # Organize company fields into logical groups
-        basic_info_fields = ['nmls_id', 'company_name', 'url', 'timestamp']
+        basic_info_fields = ['nmls_id', 'company_name', 'url', 'timestamp', 'zip_code']
         contact_fields = ['phone', 'toll_free', 'fax', 'email', 'website']
         business_fields = ['business_structure', 'formed_in', 'date_formed', 'fiscal_year_end', 'stock_symbol']
+        mlo_fields = ['mlo_type', 'mlo_count']
         federal_fields = ['federal_regulator', 'federal_status', 'federal_regulator_url']
         names_fields = ['trade_names', 'prior_trade_names', 'prior_legal_names']
         regulatory_fields = ['regulatory_actions']
@@ -3020,6 +3021,12 @@ def display_complete_database_info(complete_data: Dict[str, Any]):
             
             st.markdown("##### 🏛️ Business Structure")
             for field in business_fields:
+                value = company_data.get(field)
+                if value is not None and value != '':
+                    st.write(f"**{field.replace('_', ' ').title()}:** {value}")
+            
+            st.markdown("##### 👥 MLO Information")
+            for field in mlo_fields:
                 value = company_data.get(field)
                 if value is not None and value != '':
                     st.write(f"**{field.replace('_', ' ').title()}:** {value}")
