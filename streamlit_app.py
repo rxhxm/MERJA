@@ -651,7 +651,7 @@ def main():
     # DEPLOYMENT TEST - THIS SHOULD BE VISIBLE AT THE TOP
     st.error("🚨 DEPLOYMENT TEST - If you see this, the app is updating! 🚨")
     
-    st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">NMLS Search - DEPLOYMENT TEST ACTIVE</h1>', unsafe_allow_html=True)
     
     
     # Initialize session state for search query
