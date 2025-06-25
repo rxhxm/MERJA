@@ -1208,30 +1208,6 @@ def main():
                         if selected_company.get('notes'):
                             st.text_area("📝 Existing Notes:", selected_company.get('notes'), disabled=True, height=100)
             
-            # Company Intelligence Dashboard
-            st.markdown("---")
-            st.markdown("### 🎯 Company Intelligence Dashboard")
-            st.markdown("*Complete business intelligence for B2B prospecting - All your scraped data in one place*")
-            
-            intelligence_company_id = st.selectbox(
-                "Select a company for complete intelligence report:",
-                options=["None"] + [f"{c['company_name']} ({c['nmls_id']})" for c in companies],
-                help="Get comprehensive company intelligence including all scraped data, business analysis, and sales recommendations",
-                key="intelligence_selector"
-            )
-            
-            if intelligence_company_id != "None":
-                # Extract NMLS ID from the selection
-                intelligence_nmls_id = intelligence_company_id.split('(')[-1].replace(')', '')
-                
-                with st.spinner("🔍 Gathering complete company intelligence..."):
-                    intelligence_data = run_async(get_complete_company_intelligence(intelligence_nmls_id))
-                
-                if intelligence_data:
-                    display_company_intelligence_dashboard(intelligence_data)
-                else:
-                    st.error("❌ Unable to load company intelligence data.")
-            
             # Complete Database Information Section
             st.markdown("---")
             st.markdown("### 💾 Complete Database Information")
