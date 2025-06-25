@@ -512,12 +512,13 @@ def has_excluded_keywords(company: Dict[str, Any], excluded_keywords: List[str])
     return any(keyword.lower() in company_name for keyword in excluded_keywords)
 
 def apply_exclude_filters(companies: List[Dict[str, Any]], advanced_filters: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Apply exclude logic to filter out unwanted companies"""
+    """Apply comprehensive exclude logic to filter out unwanted companies"""
     if not companies:
         return companies
     
     filtered_companies = companies.copy()
     
+    # QUICK EXCLUDES
     # Exclude mortgage companies
     if advanced_filters.get('exclude_mortgage_licenses', False):
         filtered_companies = [c for c in filtered_companies if not is_mortgage_company(c)]
@@ -529,6 +530,54 @@ def apply_exclude_filters(companies: List[Dict[str, Any]], advanced_filters: Dic
             if c.get('email_address') or c.get('phone_number')
         ]
     
+    # Exclude companies with only inactive licenses
+    if advanced_filters.get('exclude_inactive_licenses', False):
+        # Filter out companies with no active licenses
+        filtered_companies = [
+            c for c in filtered_companies 
+            if c.get('active_licenses', 0) > 0
+        ]
+    
+    # Exclude major banks
+    if advanced_filters.get('exclude_major_banks', False):
+        major_bank_keywords = ['wells fargo', 'chase', 'bank of america', 'citibank', 'jpmorgan', 'goldman sachs', 'morgan stanley', 'us bank', 'pnc bank', 'truist', 'capital one']
+        filtered_companies = [
+            c for c in filtered_companies 
+            if not any(keyword in c.get('company_name', '').lower() for keyword in major_bank_keywords)
+        ]
+    
+    # Exclude credit unions
+    if advanced_filters.get('exclude_credit_unions', False):
+        filtered_companies = [
+            c for c in filtered_companies 
+            if 'credit union' not in c.get('company_name', '').lower()
+        ]
+    
+    # Exclude government entities
+    if advanced_filters.get('exclude_government', False):
+        gov_keywords = ['government', 'federal', 'state', 'city', 'county', 'municipal', 'public', 'authority', 'agency', 'department']
+        filtered_companies = [
+            c for c in filtered_companies 
+            if not any(keyword in c.get('company_name', '').lower() for keyword in gov_keywords)
+        ]
+    
+    # Exclude foreign companies
+    if advanced_filters.get('exclude_foreign', False):
+        foreign_keywords = ['international', 'foreign', 'european', 'canadian', 'japanese', 'chinese', 'korean', 'german', 'british', 'uk', 'ltd', 'plc', 'gmbh', 'sa', 'ag']
+        filtered_companies = [
+            c for c in filtered_companies 
+            if not any(keyword in c.get('company_name', '').lower() for keyword in foreign_keywords)
+        ]
+    
+    # Exclude insurance companies
+    if advanced_filters.get('exclude_insurance', False):
+        insurance_keywords = ['insurance', 'assurance', 'mutual', 'life', 'casualty', 'property', 'auto', 'health']
+        filtered_companies = [
+            c for c in filtered_companies 
+            if not any(keyword in c.get('company_name', '').lower() for keyword in insurance_keywords)
+        ]
+    
+    # BUSINESS STRUCTURE & LICENSE EXCLUDES
     # Exclude companies with specific license types
     excluded_licenses = advanced_filters.get('exclude_specific_licenses', [])
     if excluded_licenses:
@@ -545,6 +594,15 @@ def apply_exclude_filters(companies: List[Dict[str, Any]], advanced_filters: Dic
             if c.get('business_structure') not in excluded_structures
         ]
     
+    # Exclude by federal regulator
+    excluded_regulators = advanced_filters.get('exclude_federal_regulators', [])
+    if excluded_regulators:
+        filtered_companies = [
+            c for c in filtered_companies 
+            if c.get('federal_regulator') not in excluded_regulators
+        ]
+    
+    # GEOGRAPHIC EXCLUDES
     # Exclude companies from specific states
     excluded_states = advanced_filters.get('exclude_states', [])
     if excluded_states:
@@ -553,6 +611,47 @@ def apply_exclude_filters(companies: List[Dict[str, Any]], advanced_filters: Dic
             if not any(state in c.get('states_licensed', []) for state in excluded_states)
         ]
     
+    # Exclude single-state companies
+    if advanced_filters.get('exclude_single_state', False):
+        filtered_companies = [
+            c for c in filtered_companies 
+            if len(c.get('states_licensed', [])) > 1
+        ]
+    
+    # Exclude nationwide companies (40+ states)
+    if advanced_filters.get('exclude_nationwide', False):
+        filtered_companies = [
+            c for c in filtered_companies 
+            if len(c.get('states_licensed', [])) < 40
+        ]
+    
+    # ADVANCED EXCLUDES
+    # Exclude very small companies (< 3 licenses)
+    if advanced_filters.get('exclude_too_small', False):
+        filtered_companies = [
+            c for c in filtered_companies 
+            if c.get('total_licenses', 0) >= 3
+        ]
+    
+    # Exclude very large companies (100+ licenses)
+    if advanced_filters.get('exclude_too_large', False):
+        filtered_companies = [
+            c for c in filtered_companies 
+            if c.get('total_licenses', 0) < 100
+        ]
+    
+    # Exclude companies with regulatory actions
+    if advanced_filters.get('exclude_regulatory_actions', False):
+        # This would require regulatory action data - for now, skip companies with certain flags
+        # In a full implementation, you'd check for actual regulatory actions
+        pass
+    
+    # Exclude recently licensed companies (< 1 year)
+    if advanced_filters.get('exclude_recently_licensed', False):
+        # This would require license date analysis - placeholder for now
+        # In a full implementation, you'd check the earliest license date
+        pass
+    
     # Exclude companies with custom keywords in name
     excluded_keywords = advanced_filters.get('custom_exclude_keywords', [])
     if excluded_keywords:
@@ -560,12 +659,6 @@ def apply_exclude_filters(companies: List[Dict[str, Any]], advanced_filters: Dic
             c for c in filtered_companies 
             if not has_excluded_keywords(c, excluded_keywords)
         ]
-    
-    # Exclude companies with only inactive licenses
-    if advanced_filters.get('exclude_inactive_licenses', False):
-        # This would require license-level data, for now we'll skip companies without active licenses
-        # In a full implementation, you'd need to check the actual license status
-        pass
     
     return filtered_companies
 
@@ -675,6 +768,7 @@ def main():
     
     # Ensure all required keys exist (migration for existing sessions)
     exclude_fields = {
+        # Original exclude fields
         'exclude_mortgage_licenses': False,
         'exclude_specific_licenses': [],
         'exclude_business_structures': [],
@@ -683,6 +777,19 @@ def main():
         'exclude_inactive_licenses': False,
         'exclude_regulatory_actions': False,
         'custom_exclude_keywords': [],
+        # New comprehensive exclude fields
+        'exclude_major_banks': False,
+        'exclude_credit_unions': False,
+        'exclude_government': False,
+        'exclude_foreign': False,
+        'exclude_insurance': False,
+        'exclude_federal_regulators': [],
+        'exclude_single_state': False,
+        'exclude_nationwide': False,
+        'exclude_too_small': False,
+        'exclude_too_large': False,
+        'exclude_recently_licensed': False,
+        # Original advanced filter fields
         'selected_states': [],
         'lender_type_filter': 'All Types',
         'min_licenses': 1,
@@ -748,49 +855,220 @@ def main():
                 st.session_state.last_query = "Mortgage companies"
                 st.rerun()
     
-    # EXCLUDE LOGIC SECTION - MOVED FOR VISIBILITY
+    # EXCLUDE LOGIC SECTION - COMPREHENSIVE FILTERING
     with st.expander("❌ Exclude Logic - Remove Unwanted Companies", expanded=True):
-
+        st.markdown("**🎯 Powerful exclusion filters to remove unwanted companies from your prospecting list**")
         
-        # Quick Exclude Toggles - Make more compact
-        exclude_mortgage = st.checkbox(
-            "❌ Exclude All Mortgage Companies",
-            value=st.session_state.advanced_filters['exclude_mortgage_licenses'],
-            help="Automatically exclude companies with any mortgage-related licenses"
-        )
-        st.session_state.advanced_filters['exclude_mortgage_licenses'] = exclude_mortgage
+        # Organize into tabs for better UX
+        tab1, tab2, tab3, tab4 = st.tabs(["🚫 Quick Excludes", "🏢 Business Types", "📍 Geographic", "🔍 Advanced"])
         
-        exclude_no_contact = st.checkbox(
-            "❌ Exclude No Contact Info",
-            value=st.session_state.advanced_filters['exclude_no_contact'],
-            help="Exclude companies without email or phone"
-        )
-        st.session_state.advanced_filters['exclude_no_contact'] = exclude_no_contact
+        with tab1:
+            st.markdown("##### ⚡ Quick Exclude Toggles")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                exclude_mortgage = st.checkbox(
+                    "❌ All Mortgage Companies",
+                    value=st.session_state.advanced_filters['exclude_mortgage_licenses'],
+                    help="Exclude companies with any mortgage-related licenses"
+                )
+                st.session_state.advanced_filters['exclude_mortgage_licenses'] = exclude_mortgage
+                
+                exclude_no_contact = st.checkbox(
+                    "❌ No Contact Information",
+                    value=st.session_state.advanced_filters['exclude_no_contact'],
+                    help="Exclude companies without email or phone"
+                )
+                st.session_state.advanced_filters['exclude_no_contact'] = exclude_no_contact
+                
+                exclude_inactive = st.checkbox(
+                    "❌ Inactive/Expired Licenses",
+                    value=st.session_state.advanced_filters['exclude_inactive_licenses'],
+                    help="Exclude companies with only inactive licenses"
+                )
+                st.session_state.advanced_filters['exclude_inactive_licenses'] = exclude_inactive
+                
+                exclude_big_banks = st.checkbox(
+                    "❌ Major Banks (Wells Fargo, Chase, etc.)",
+                    value=st.session_state.advanced_filters.get('exclude_major_banks', False),
+                    help="Exclude large national banks that are unlikely prospects"
+                )
+                st.session_state.advanced_filters['exclude_major_banks'] = exclude_big_banks
+            
+            with col2:
+                exclude_credit_unions = st.checkbox(
+                    "❌ Credit Unions",
+                    value=st.session_state.advanced_filters.get('exclude_credit_unions', False),
+                    help="Exclude credit unions from results"
+                )
+                st.session_state.advanced_filters['exclude_credit_unions'] = exclude_credit_unions
+                
+                exclude_government = st.checkbox(
+                    "❌ Government/Municipal Entities",
+                    value=st.session_state.advanced_filters.get('exclude_government', False),
+                    help="Exclude government-owned financial institutions"
+                )
+                st.session_state.advanced_filters['exclude_government'] = exclude_government
+                
+                exclude_foreign = st.checkbox(
+                    "❌ Foreign-Owned Companies",
+                    value=st.session_state.advanced_filters.get('exclude_foreign', False),
+                    help="Exclude foreign banks and international companies"
+                )
+                st.session_state.advanced_filters['exclude_foreign'] = exclude_foreign
+                
+                exclude_insurance = st.checkbox(
+                    "❌ Insurance Companies",
+                    value=st.session_state.advanced_filters.get('exclude_insurance', False),
+                    help="Exclude insurance companies and agents"
+                )
+                st.session_state.advanced_filters['exclude_insurance'] = exclude_insurance
         
-        exclude_inactive = st.checkbox(
-            "❌ Exclude Inactive Licenses",
-            value=st.session_state.advanced_filters['exclude_inactive_licenses'],
-            help="Exclude companies with only inactive licenses"
-        )
-        st.session_state.advanced_filters['exclude_inactive_licenses'] = exclude_inactive
+        with tab2:
+            st.markdown("##### 🏢 Business Structure & License Exclusions")
+            
+            # License Type Exclusions
+            exclude_licenses = st.multiselect(
+                "🚫 Exclude Specific License Types:",
+                [
+                    "Mortgage Lender License", "Mortgage Broker License", "Mortgage Servicer License",
+                    "Bank License", "Credit Union License", "Thrift License",
+                    "Insurance License", "Insurance Agent License", "Insurance Broker License",
+                    "Investment Advisor License", "Securities License", "Broker-Dealer License",
+                    "Money Transmitter License", "Check Casher License", "Payday Lender License",
+                    "Debt Collector License", "Debt Management License", "Credit Repair License",
+                    "Auto Finance License", "Equipment Finance License", "Student Loan Servicer License"
+                ],
+                default=st.session_state.advanced_filters['exclude_specific_licenses'],
+                help="Companies with these license types will be excluded"
+            )
+            st.session_state.advanced_filters['exclude_specific_licenses'] = exclude_licenses
+            
+            # Business Structure Exclusions
+            exclude_structures = st.multiselect(
+                "🚫 Exclude Business Structures:",
+                ["Corporation", "LLC", "Partnership", "Sole Proprietorship", "Limited Partnership", "Trust", "Non-Profit", "Government Entity"],
+                default=st.session_state.advanced_filters.get('exclude_business_structures', []),
+                help="Exclude companies with these business structures"
+            )
+            st.session_state.advanced_filters['exclude_business_structures'] = exclude_structures
+            
+            # Federal Regulator Exclusions
+            exclude_regulators = st.multiselect(
+                "🚫 Exclude by Federal Regulator:",
+                ["FDIC", "OCC", "Federal Reserve", "NCUA", "CFPB", "SEC", "FINRA", "CFTC", "Treasury"],
+                default=st.session_state.advanced_filters.get('exclude_federal_regulators', []),
+                help="Exclude companies regulated by these federal agencies"
+            )
+            st.session_state.advanced_filters['exclude_federal_regulators'] = exclude_regulators
         
-        # Simplified Exclude Options
-        exclude_licenses = st.multiselect(
-            "Exclude Specific License Types:",
-            ["Mortgage Lender License", "Mortgage Broker License", "Bank License", "Credit Union License", "Insurance License"],
-            default=st.session_state.advanced_filters['exclude_specific_licenses'],
-            help="Companies with these license types will be excluded from results"
-        )
-        st.session_state.advanced_filters['exclude_specific_licenses'] = exclude_licenses
+        with tab3:
+            st.markdown("##### 📍 Geographic Exclusions")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                exclude_states = st.multiselect(
+                    "🚫 Exclude States:",
+                    ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI", "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI", "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT", "AR", "NV", "IA", "MS", "KS", "NM", "NE", "ID", "WV", "NH", "ME", "MT", "RI", "DE", "SD", "ND", "AK", "VT", "WY", "HI", "DC"],
+                    default=st.session_state.advanced_filters.get('exclude_states', []),
+                    help="Exclude companies licensed in these states"
+                )
+                st.session_state.advanced_filters['exclude_states'] = exclude_states
+            
+            with col2:
+                exclude_single_state = st.checkbox(
+                    "❌ Single-State Only Companies",
+                    value=st.session_state.advanced_filters.get('exclude_single_state', False),
+                    help="Exclude companies licensed in only one state"
+                )
+                st.session_state.advanced_filters['exclude_single_state'] = exclude_single_state
+                
+                exclude_nationwide = st.checkbox(
+                    "❌ Nationwide Companies (40+ states)",
+                    value=st.session_state.advanced_filters.get('exclude_nationwide', False),
+                    help="Exclude very large companies licensed in 40+ states"
+                )
+                st.session_state.advanced_filters['exclude_nationwide'] = exclude_nationwide
         
-        custom_keywords = st.text_input(
-            "Exclude Company Name Keywords (comma-separated):",
-            value=", ".join(st.session_state.advanced_filters['custom_exclude_keywords']),
-            help="Exclude companies whose names contain these keywords",
-            placeholder="mortgage, bank, credit union, insurance"
-        )
-        keyword_list = [k.strip() for k in custom_keywords.split(',') if k.strip()]
-        st.session_state.advanced_filters['custom_exclude_keywords'] = keyword_list
+        with tab4:
+            st.markdown("##### 🔍 Advanced Exclusion Criteria")
+            
+            # Company Size Exclusions
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Company Size Filters:**")
+                exclude_too_small = st.checkbox(
+                    "❌ Very Small (< 3 licenses)",
+                    value=st.session_state.advanced_filters.get('exclude_too_small', False),
+                    help="Exclude companies with fewer than 3 licenses"
+                )
+                st.session_state.advanced_filters['exclude_too_small'] = exclude_too_small
+                
+                exclude_too_large = st.checkbox(
+                    "❌ Very Large (100+ licenses)",
+                    value=st.session_state.advanced_filters.get('exclude_too_large', False),
+                    help="Exclude companies with 100+ licenses"
+                )
+                st.session_state.advanced_filters['exclude_too_large'] = exclude_too_large
+            
+            with col2:
+                st.markdown("**Regulatory Status:**")
+                exclude_regulatory_actions = st.checkbox(
+                    "❌ Companies with Regulatory Actions",
+                    value=st.session_state.advanced_filters.get('exclude_regulatory_actions', False),
+                    help="Exclude companies with recent regulatory actions"
+                )
+                st.session_state.advanced_filters['exclude_regulatory_actions'] = exclude_regulatory_actions
+                
+                exclude_recently_licensed = st.checkbox(
+                    "❌ Recently Licensed (< 1 year)",
+                    value=st.session_state.advanced_filters.get('exclude_recently_licensed', False),
+                    help="Exclude very new companies"
+                )
+                st.session_state.advanced_filters['exclude_recently_licensed'] = exclude_recently_licensed
+            
+            # Custom Keywords - Enhanced
+            st.markdown("**Custom Keyword Exclusions:**")
+            custom_keywords = st.text_area(
+                "🚫 Exclude Company Name Keywords (one per line or comma-separated):",
+                value="\n".join(st.session_state.advanced_filters['custom_exclude_keywords']) if st.session_state.advanced_filters['custom_exclude_keywords'] else "",
+                help="Exclude companies whose names contain these keywords",
+                placeholder="mortgage\nbank\ncredit union\ninsurance\ngovernment\nfederal\nstate\ncity\ncounty\nmunicipal\ninternational\nforeign\neuropean\ncanadian\njapanese\nchinese",
+                height=100
+            )
+            # Handle both line-separated and comma-separated input
+            if '\n' in custom_keywords:
+                keyword_list = [k.strip() for k in custom_keywords.split('\n') if k.strip()]
+            else:
+                keyword_list = [k.strip() for k in custom_keywords.split(',') if k.strip()]
+            st.session_state.advanced_filters['custom_exclude_keywords'] = keyword_list
+            
+            # Preset keyword collections
+            st.markdown("**Quick Keyword Presets:**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("🏦 Add Banking Keywords", use_container_width=True):
+                    banking_keywords = ["bank", "banking", "national", "federal", "reserve", "trust", "savings", "fsb"]
+                    current_keywords = set(st.session_state.advanced_filters['custom_exclude_keywords'])
+                    current_keywords.update(banking_keywords)
+                    st.session_state.advanced_filters['custom_exclude_keywords'] = list(current_keywords)
+                    st.rerun()
+            
+            with col2:
+                if st.button("🏠 Add Mortgage Keywords", use_container_width=True):
+                    mortgage_keywords = ["mortgage", "home", "residential", "real estate", "realty", "housing", "lending", "loan"]
+                    current_keywords = set(st.session_state.advanced_filters['custom_exclude_keywords'])
+                    current_keywords.update(mortgage_keywords)
+                    st.session_state.advanced_filters['custom_exclude_keywords'] = list(current_keywords)
+                    st.rerun()
+            
+            with col3:
+                if st.button("🏛️ Add Government Keywords", use_container_width=True):
+                    gov_keywords = ["government", "federal", "state", "city", "county", "municipal", "public", "authority", "agency"]
+                    current_keywords = set(st.session_state.advanced_filters['custom_exclude_keywords'])
+                    current_keywords.update(gov_keywords)
+                    st.session_state.advanced_filters['custom_exclude_keywords'] = list(current_keywords)
+                    st.rerun()
         
         # Exclude Preview
         if st.button("🔍 Preview Exclude Impact", use_container_width=True):
