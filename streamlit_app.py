@@ -648,6 +648,9 @@ def main():
     import atexit
     atexit.register(cleanup_resources)
     
+    # DEPLOYMENT TEST - THIS SHOULD BE VISIBLE AT THE TOP
+    st.error("🚨 DEPLOYMENT TEST - If you see this, the app is updating! 🚨")
+    
     st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
     
     
