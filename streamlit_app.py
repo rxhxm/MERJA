@@ -750,10 +750,10 @@ def main():
             if field not in st.session_state.advanced_filters:
                 st.session_state.advanced_filters[field] = default_value
 
-        # Create tabs for better organization
-        tab_include, tab_exclude, tab_rules = st.tabs(["🎯 Include Filters", "❌ Exclude Logic", "⚙️ Business Rules"])
+        # Create sections for better organization (using expanders for compatibility)
         
-        with tab_include:
+        # Include Filters Section
+        with st.expander("🎯 Include Filters", expanded=True):
             st.markdown("##### 🎯 Primary Filters")
             
             col_primary1, col_primary2 = st.columns(2)
@@ -800,8 +800,8 @@ def main():
                 )
                 st.session_state.advanced_filters['federal_regulators'] = federal_regulators
 
-        with tab_exclude:
-            st.markdown("##### ❌ Exclude Logic - Remove Unwanted Companies")
+        # Exclude Logic Section  
+        with st.expander("❌ Exclude Logic - Remove Unwanted Companies", expanded=False):
             st.markdown("*Use these filters to automatically exclude companies you don't want to see*")
             
             # Quick Exclude Toggles
@@ -936,8 +936,8 @@ def main():
                 else:
                     st.warning("Please run a search first to preview exclude impact")
 
-        with tab_rules:
-            st.markdown("##### ⚙️ Business Rules & Thresholds")
+        # Business Rules Section
+        with st.expander("⚙️ Business Rules & Thresholds", expanded=False):
             
             col_rules1, col_rules2 = st.columns(2)
             
