@@ -1232,6 +1232,30 @@ def main():
                 else:
                     st.error("❌ Unable to load company intelligence data.")
             
+            # Complete Database Information Section
+            st.markdown("---")
+            st.markdown("### 💾 Complete Database Information")
+            st.markdown("*Access ALL database fields from every table - the complete data dump Mark requested*")
+            
+            database_company_id = st.selectbox(
+                "Select a company to see ALL database information:",
+                options=["None"] + [f"{c['company_name']} ({c['nmls_id']})" for c in companies],
+                help="View every single database field from companies, licenses, and addresses tables - all 47+ missing fields from detailed license section",
+                key="database_selector"
+            )
+            
+            if database_company_id != "None":
+                # Extract NMLS ID from the selection
+                database_nmls_id = database_company_id.split('(')[-1].replace(')', '')
+                
+                with st.spinner("📊 Loading complete database information..."):
+                    complete_database_data = run_async(get_complete_company_database_info(database_nmls_id))
+                
+                if complete_database_data:
+                    display_complete_database_info(complete_database_data)
+                else:
+                    st.error("❌ Unable to load complete database information.")
+            
             # Show license details for selected companies
             st.markdown("---")
             st.markdown("### 🔍 Detailed License Analysis")
@@ -1397,70 +1421,48 @@ def main():
                     
                     # Detailed License Information Table
                     if comprehensive_details and comprehensive_details.get('licenses'):
-                        st.markdown("##### 📋 Complete License Details")
+                        st.markdown("---")
+                        st.markdown("##### 📋 Detailed License Information")
                         
-                        # Create DataFrame from licenses
-                        licenses_df = pd.DataFrame(comprehensive_details['licenses'])
+                        licenses = comprehensive_details['licenses']
                         
-                        # Format the DataFrame for better display
-                        if not licenses_df.empty:
-                            # Select and rename columns for display
-                            display_columns = {
-                                'license_type': 'License Type',
-                                'regulator': 'Regulator/State',
-                                'status': 'Status',
-                                'active': 'Active',
-                                'authorized_to_conduct_business': 'Authorized',
-                                'original_issue_date': 'Issue Date',
-                                'renewed_through': 'Renewed Through'
-                            }
+                        # Create detailed license table
+                        license_table_data = []
+                        for license_info in licenses:
+                            # Format dates
+                            issue_date = license_info.get('original_issue_date')
+                            renewed_date = license_info.get('renewed_through')
                             
-                            # Only include columns that exist in the DataFrame
-                            available_columns = {k: v for k, v in display_columns.items() if k in licenses_df.columns}
+                            issue_date_str = issue_date.strftime('%Y-%m-%d') if issue_date else 'N/A'
+                            renewed_date_str = renewed_date.strftime('%Y-%m-%d') if renewed_date else 'N/A'
                             
-                            if available_columns:
-                                display_df = licenses_df[list(available_columns.keys())].copy()
-                                display_df = display_df.rename(columns=available_columns)
-                                
-                                # Format boolean columns
-                                for col in ['Active', 'Authorized']:
-                                    if col in display_df.columns:
-                                        display_df[col] = display_df[col].map({True: '✅ Yes', False: '❌ No', None: '❓ Unknown'})
-                                
-                                # Display the table
-                                st.dataframe(
-                                    display_df,
-                                    use_container_width=True,
-                                    hide_index=True
-                                )
-                            else:
-                                st.info("License data structure not compatible for table display")
+                            # Status with emoji
+                            status = license_info.get('status', 'Unknown')
+                            active = license_info.get('active', False)
+                            status_display = f"✅ {status}" if active else f"❌ {status}"
+                            
+                            # Authorized to conduct business
+                            authorized = license_info.get('authorized_to_conduct_business')
+                            authorized_display = "✅ Yes" if authorized else "❌ No" if authorized is False else "❓ Unknown"
+                            
+                            license_table_data.append({
+                                'License Type': license_info.get('license_type', 'Unknown'),
+                                'License Number': license_info.get('license_number', 'N/A'),
+                                'State': license_info.get('state', 'Unknown'),
+                                'Regulator': license_info.get('regulator', 'Unknown'),
+                                'Status': status_display,
+                                'Issue Date': issue_date_str,
+                                'Renewed Through': renewed_date_str,
+                                'Authorized': authorized_display
+                            })
+                        
+                        if license_table_data:
+                            license_df = pd.DataFrame(license_table_data)
+                            st.dataframe(license_df, use_container_width=True)
                         else:
-                            st.info("No license details available")
-
-            # Complete Company Database Information Section
-            st.markdown("---")
-            st.markdown("### 📊 Complete Company Database Information")
-            st.markdown("*Every piece of data we have stored for this company - complete database dump*")
-            
-            all_data_company_id = st.selectbox(
-                "Select a company to see ALL database information:",
-                options=["None"] + [f"{c['company_name']} ({c['nmls_id']})" for c in companies],
-                help="View every single field and piece of data we have stored for this company",
-                key="all_data_selector"
-            )
-            
-            if all_data_company_id != "None":
-                # Extract NMLS ID from selection
-                all_data_nmls_id = all_data_company_id.split("(")[-1].split(")")[0]
-                
-                with st.spinner("🔍 Gathering ALL company data from database..."):
-                    complete_db_data = run_async(get_complete_database_dump(all_data_nmls_id))
-                
-                if complete_db_data:
-                    display_complete_database_information(complete_db_data)
-                else:
-                    st.error("❌ Unable to load complete company data.")
+                            st.info("No detailed license information available")
+                    else:
+                        st.info("Unable to load detailed license information")
 
             # Add enrichment section after license analysis
             st.markdown("---")
@@ -2936,15 +2938,15 @@ def generate_sales_recommendations(intelligence_data: Dict[str, Any]) -> List[st
     
     return recommendations
 
-async def get_complete_database_dump(nmls_id: str) -> Dict[str, Any]:
-    """Get every piece of data from all database tables for a company"""
+async def get_complete_company_database_info(nmls_id: str) -> Dict[str, Any]:
+    """Get ALL database information for a company from all tables and columns"""
     pool = await get_or_create_pool()
     if not pool:
         return {}
 
     try:
         async with pool.acquire() as conn:
-            # Get ALL company data from companies table
+            # Get ALL company data (every single field)
             company_data = await conn.fetchrow("""
                 SELECT * FROM companies WHERE nmls_id = $1
             """, nmls_id)
@@ -2954,423 +2956,368 @@ async def get_complete_database_dump(nmls_id: str) -> Dict[str, Any]:
             
             company_id = company_data['id']
             
-            # Get ALL license data
+            # Get ALL license data (every single field)
             licenses_data = await conn.fetch("""
-                SELECT * FROM licenses WHERE company_id = $1
-                ORDER BY active DESC, original_issue_date DESC
+                SELECT * FROM licenses WHERE company_id = $1 ORDER BY id
             """, company_id)
             
-            # Get ALL address data
+            # Get ALL address data (every single field)
             addresses_data = await conn.fetch("""
-                SELECT * FROM addresses WHERE company_id = $1
-                ORDER BY address_type
+                SELECT * FROM addresses WHERE company_id = $1 ORDER BY id
             """, company_id)
-            
-            # Get annotation data if columns exist
-            annotation_data = None
-            try:
-                annotation_check = await conn.fetchval("""
-                    SELECT COUNT(*) FROM information_schema.columns 
-                    WHERE table_name = 'companies' 
-                    AND column_name IN ('is_reviewed', 'classification', 'notes')
-                """)
-                
-                if annotation_check >= 3:
-                    annotation_data = await conn.fetchrow("""
-                        SELECT is_reviewed, classification, notes 
-                        FROM companies WHERE nmls_id = $1
-                    """, nmls_id)
-            except:
-                pass  # Annotation columns don't exist yet
             
             # Structure all the data
             complete_data = {
-                'company_info': dict(company_data) if company_data else {},
+                'company': dict(company_data),
                 'licenses': [dict(row) for row in licenses_data],
-                'addresses': [dict(row) for row in addresses_data],
-                'annotations': dict(annotation_data) if annotation_data else {},
-                'metadata': {
-                    'total_licenses': len(licenses_data),
-                    'total_addresses': len(addresses_data),
-                    'has_annotations': bool(annotation_data),
-                    'data_retrieval_timestamp': datetime.now().isoformat()
-                }
+                'addresses': [dict(row) for row in addresses_data]
             }
             
             return complete_data
             
     except Exception as e:
-        logger.error(f"Error fetching complete database dump for {nmls_id}: {e}")
+        logger.error(f"Error fetching complete database info for {nmls_id}: {e}")
         return {}
 
-def display_complete_database_information(complete_data: Dict[str, Any]):
-    """Display every piece of database information in an organized way"""
-    company_info = complete_data.get('company_info', {})
-    licenses = complete_data.get('licenses', [])
-    addresses = complete_data.get('addresses', [])
-    annotations = complete_data.get('annotations', {})
-    metadata = complete_data.get('metadata', {})
+def display_complete_database_info(complete_data: Dict[str, Any]):
+    """Display ALL database information in organized sections"""
+    if not complete_data:
+        st.error("No database information available")
+        return
     
-    # Header
-    st.markdown(f"## 📊 Complete Database Information")
-    st.markdown(f"**Company:** {company_info.get('company_name', 'Unknown')}")
-    st.markdown(f"**NMLS ID:** {company_info.get('nmls_id', 'Unknown')}")
-    st.markdown(f"**Data Retrieved:** {metadata.get('data_retrieval_timestamp', 'Unknown')}")
+    company_data = complete_data.get('company', {})
+    licenses_data = complete_data.get('licenses', [])
+    addresses_data = complete_data.get('addresses', [])
     
-    # Create tabs for different data categories
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "🏢 Company Table", 
-        "📋 Licenses Table", 
-        "🏠 Addresses Table",
-        "📝 Annotations",
-        "🔧 Raw Data",
-        "📊 Data Summary"
+    st.markdown("### 📊 Complete Database Information")
+    st.markdown("*Every single field from all database tables*")
+    
+    # Create tabs for different data sections
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🏢 Company Data", 
+        "📋 License Data", 
+        "🏠 Address Data",
+        "📈 Data Summary"
     ])
     
     with tab1:
-        st.markdown("### 🏢 Companies Table - All Fields")
-        st.markdown("*Every field from the companies table in our database*")
+        st.markdown("#### 🏢 Complete Company Information")
+        st.markdown(f"**All {len(company_data)} fields from the companies table:**")
         
-        if company_info:
-            # Organize company data into logical sections
-            
-            # Basic Identity
-            st.markdown("#### 🆔 Basic Identity")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.write(f"**ID (Primary Key):** {company_info.get('id', 'N/A')}")
-                st.write(f"**NMLS ID:** {company_info.get('nmls_id', 'N/A')}")
-                st.write(f"**Company Name:** {company_info.get('company_name', 'N/A')}")
-            
-            with col2:
-                st.write(f"**URL:** {company_info.get('url', 'N/A')}")
-                st.write(f"**Timestamp:** {company_info.get('timestamp', 'N/A')}")
-                st.write(f"**ZIP Code:** {company_info.get('zip_code', 'N/A')}")
-            
-            with col3:
-                st.write(f"**Created At:** {company_info.get('created_at', 'N/A')}")
-                st.write(f"**Updated At:** {company_info.get('updated_at', 'N/A')}")
-                st.write(f"**File Path:** {company_info.get('file_path', 'N/A')}")
-            
-            # Contact Information
-            st.markdown("#### 📞 Contact Information")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write(f"**Phone:** {company_info.get('phone', 'N/A')}")
-                st.write(f"**Toll Free:** {company_info.get('toll_free', 'N/A')}")
-                st.write(f"**Fax:** {company_info.get('fax', 'N/A')}")
-            
-            with col2:
-                st.write(f"**Email:** {company_info.get('email', 'N/A')}")
-                website = company_info.get('website', 'N/A')
-                if website and website != 'N/A':
-                    if not website.startswith('http'):
-                        website = f"https://{website}"
-                    st.markdown(f"**Website:** [{company_info.get('website')}]({website})")
-                else:
-                    st.write(f"**Website:** {website}")
-            
-            # Business Information
-            st.markdown("#### 🏛️ Business Information")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.write(f"**Business Structure:** {company_info.get('business_structure', 'N/A')}")
-                st.write(f"**Formed In:** {company_info.get('formed_in', 'N/A')}")
-                st.write(f"**Date Formed:** {company_info.get('date_formed', 'N/A')}")
-            
-            with col2:
-                st.write(f"**Fiscal Year End:** {company_info.get('fiscal_year_end', 'N/A')}")
-                st.write(f"**Stock Symbol:** {company_info.get('stock_symbol', 'N/A')}")
-            
-            with col3:
-                st.write(f"**MLO Type:** {company_info.get('mlo_type', 'N/A')}")
-                st.write(f"**MLO Count:** {company_info.get('mlo_count', 'N/A')}")
-            
-            # Federal Registration
-            st.markdown("#### 🏛️ Federal Registration")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.write(f"**Federal Regulator:** {company_info.get('federal_regulator', 'N/A')}")
-            
-            with col2:
-                st.write(f"**Federal Status:** {company_info.get('federal_status', 'N/A')}")
-            
-            with col3:
-                fed_url = company_info.get('federal_regulator_url', 'N/A')
-                if fed_url and fed_url != 'N/A':
-                    st.markdown(f"**Federal Regulator URL:** [{fed_url}]({fed_url})")
-                else:
-                    st.write(f"**Federal Regulator URL:** {fed_url}")
-            
-            # Trade Names and Legal Names
-            st.markdown("#### 🏷️ Trade Names and Legal Names")
-            
-            trade_names = company_info.get('trade_names', [])
-            if trade_names and isinstance(trade_names, list):
-                st.markdown("**Current Trade Names:**")
-                for i, name in enumerate(trade_names, 1):
-                    st.write(f"  {i}. {name}")
-            else:
-                st.write("**Current Trade Names:** None")
-            
-            prior_trade_names = company_info.get('prior_trade_names', [])
-            if prior_trade_names and isinstance(prior_trade_names, list):
-                st.markdown("**Prior Trade Names:**")
-                for i, name in enumerate(prior_trade_names, 1):
-                    st.write(f"  {i}. {name}")
-            else:
-                st.write("**Prior Trade Names:** None")
-            
-            prior_legal_names = company_info.get('prior_legal_names', [])
-            if prior_legal_names and isinstance(prior_legal_names, list):
-                st.markdown("**Prior Legal Names:**")
-                for i, name in enumerate(prior_legal_names, 1):
-                    st.write(f"  {i}. {name}")
-            else:
-                st.write("**Prior Legal Names:** None")
-            
-            # Addresses (JSONB fields)
-            st.markdown("#### 🏠 Address Data (JSONB)")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**Street Address (JSONB):**")
-                street_addr = company_info.get('street_address')
-                if street_addr:
-                    st.json(street_addr)
-                else:
-                    st.write("No street address data")
-            
-            with col2:
-                st.markdown("**Mailing Address (JSONB):**")
-                mailing_addr = company_info.get('mailing_address')
-                if mailing_addr:
-                    st.json(mailing_addr)
-                else:
-                    st.write("No mailing address data")
-            
-            # Regulatory Information
-            st.markdown("#### ⚖️ Regulatory Information")
-            regulatory_actions = company_info.get('regulatory_actions')
-            if regulatory_actions:
-                st.text_area("**Regulatory Actions:**", regulatory_actions, height=100, disabled=True)
-            else:
-                st.write("**Regulatory Actions:** None recorded")
-            
-            # Processing Metadata
-            st.markdown("#### 🔧 Processing Metadata")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write(f"**Extraction Timestamp:** {company_info.get('extraction_timestamp', 'N/A')}")
-                
-                processing_errors = company_info.get('processing_errors', [])
-                if processing_errors and isinstance(processing_errors, list):
-                    st.markdown("**Processing Errors:**")
-                    for i, error in enumerate(processing_errors, 1):
-                        st.write(f"  {i}. {error}")
-                else:
-                    st.write("**Processing Errors:** None")
-            
-            with col2:
-                quality_flags = company_info.get('quality_flags', [])
-                if quality_flags and isinstance(quality_flags, list):
-                    st.markdown("**Quality Flags:**")
-                    for i, flag in enumerate(quality_flags, 1):
-                        st.write(f"  {i}. {flag}")
-                else:
-                    st.write("**Quality Flags:** None")
-            
-            # Search Vector
-            st.markdown("#### 🔍 Search Vector")
-            search_vector = company_info.get('search_vector')
-            if search_vector:
-                st.write("**Search Vector:** Present (used for full-text search)")
-            else:
-                st.write("**Search Vector:** Not generated")
+        # Organize company fields into logical groups
+        basic_info_fields = ['nmls_id', 'company_name', 'url', 'timestamp', 'zip_code']
+        contact_fields = ['phone', 'toll_free', 'fax', 'email', 'website']
+        business_fields = ['business_structure', 'formed_in', 'date_formed', 'fiscal_year_end', 'stock_symbol']
+        mlo_fields = ['mlo_type', 'mlo_count']
+        federal_fields = ['federal_regulator', 'federal_status', 'federal_regulator_url']
+        names_fields = ['trade_names', 'prior_trade_names', 'prior_legal_names']
+        regulatory_fields = ['regulatory_actions']
+        address_fields = ['street_address', 'mailing_address']
+        annotation_fields = ['is_reviewed', 'classification', 'notes']
+        metadata_fields = ['extraction_timestamp', 'file_path', 'processing_errors', 'quality_flags', 'search_vector', 'created_at', 'updated_at']
         
-        else:
-            st.error("No company information available")
-    
-    with tab2:
-        st.markdown("### 📋 Licenses Table - All Records")
-        st.markdown("*Every license record from the licenses table*")
-        
-        if licenses:
-            st.write(f"**Total License Records:** {len(licenses)}")
-            
-            # Create a comprehensive DataFrame
-            licenses_df = pd.DataFrame(licenses)
-            
-            # Display all columns
-            st.markdown("#### Complete License Data Table")
-            st.dataframe(
-                licenses_df,
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Summary statistics
-            st.markdown("#### License Statistics")
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                active_count = sum(1 for l in licenses if l.get('active'))
-                st.metric("Active Licenses", active_count)
-            
-            with col2:
-                inactive_count = len(licenses) - active_count
-                st.metric("Inactive Licenses", inactive_count)
-            
-            with col3:
-                authorized_count = sum(1 for l in licenses if l.get('authorized_to_conduct_business'))
-                st.metric("Authorized", authorized_count)
-            
-            with col4:
-                unique_types = len(set(l.get('license_type') for l in licenses if l.get('license_type')))
-                st.metric("Unique Types", unique_types)
-        
-        else:
-            st.info("No license records found")
-    
-    with tab3:
-        st.markdown("### 🏠 Addresses Table - All Records")
-        st.markdown("*Every address record from the addresses table*")
-        
-        if addresses:
-            st.write(f"**Total Address Records:** {len(addresses)}")
-            
-            # Create DataFrame
-            addresses_df = pd.DataFrame(addresses)
-            
-            # Display all columns
-            st.dataframe(
-                addresses_df,
-                use_container_width=True,
-                hide_index=True
-            )
-        
-        else:
-            st.info("No address records found")
-    
-    with tab4:
-        st.markdown("### 📝 Annotation Data")
-        st.markdown("*Mark's annotations and notes for this company*")
-        
-        if annotations:
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                is_reviewed = annotations.get('is_reviewed')
-                if is_reviewed:
-                    st.success("✅ **Reviewed:** Yes")
-                else:
-                    st.info("📋 **Reviewed:** No")
-            
-            with col2:
-                classification = annotations.get('classification')
-                if classification:
-                    st.info(f"🏷️ **Classification:** {classification}")
-                else:
-                    st.write("🏷️ **Classification:** None")
-            
-            with col3:
-                notes = annotations.get('notes')
-                if notes:
-                    st.text_area("📝 **Notes:**", notes, height=100, disabled=True)
-                else:
-                    st.write("📝 **Notes:** None")
-        
-        else:
-            st.info("No annotation data available (annotations may not be enabled yet)")
-    
-    with tab5:
-        st.markdown("### 🔧 Raw Database Data")
-        st.markdown("*Complete raw data dump - exactly as stored in database*")
-        
-        # Show the complete raw data structure
-        st.json(complete_data)
-    
-    with tab6:
-        st.markdown("### 📊 Data Summary")
-        st.markdown("*Overview of all data we have for this company*")
-        
-        # Summary metrics
-        col1, col2, col3, col4 = st.columns(4)
+        # Display each group
+        col1, col2 = st.columns(2)
         
         with col1:
-            st.metric("Database Tables", "3-4")
-            st.caption("Companies, Licenses, Addresses, (Annotations)")
+            st.markdown("##### 📋 Basic Information")
+            for field in basic_info_fields:
+                value = company_data.get(field)
+                if value is not None:
+                    if isinstance(value, list):
+                        st.write(f"**{field}:** {', '.join(map(str, value)) if value else 'None'}")
+                    else:
+                        st.write(f"**{field}:** {value}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
+            
+            st.markdown("##### 📞 Contact Information")
+            for field in contact_fields:
+                value = company_data.get(field)
+                if value is not None:
+                    if field == 'website' and value:
+                        # Make websites clickable
+                        websites = value.split(',') if ',' in value else [value]
+                        st.write(f"**{field}:**")
+                        for website in websites:
+                            website = website.strip()
+                            if not website.startswith('http'):
+                                website = f"https://{website}"
+                            st.write(f"  • [{website}]({website})")
+                    else:
+                        st.write(f"**{field}:** {value}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
+            
+            st.markdown("##### 🏛️ Business Information")
+            for field in business_fields:
+                value = company_data.get(field)
+                if value is not None:
+                    st.write(f"**{field}:** {value}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
+            
+            st.markdown("##### 👥 MLO Information")
+            for field in mlo_fields:
+                value = company_data.get(field)
+                if value is not None:
+                    st.write(f"**{field}:** {value}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
         
         with col2:
-            st.metric("License Records", metadata.get('total_licenses', 0))
+            st.markdown("##### 🏛️ Federal Registration")
+            for field in federal_fields:
+                value = company_data.get(field)
+                if value is not None:
+                    if field == 'federal_regulator_url' and value:
+                        st.write(f"**{field}:** [{value}]({value})")
+                    else:
+                        st.write(f"**{field}:** {value}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
+            
+            st.markdown("##### 🏷️ Trade Names")
+            for field in names_fields:
+                value = company_data.get(field)
+                if value is not None and value:
+                    st.write(f"**{field}:**")
+                    for name in value:
+                        st.write(f"  • {name}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
+            
+            st.markdown("##### ⚖️ Regulatory Information")
+            for field in regulatory_fields:
+                value = company_data.get(field)
+                if value is not None:
+                    if len(str(value)) > 200:
+                        st.write(f"**{field}:**")
+                        st.text_area("", value, height=100, disabled=True, key=f"reg_{field}")
+                    else:
+                        st.write(f"**{field}:** {value}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
+            
+            st.markdown("##### 📝 Annotations")
+            for field in annotation_fields:
+                value = company_data.get(field)
+                if value is not None:
+                    if field == 'notes' and value and len(str(value)) > 100:
+                        st.write(f"**{field}:**")
+                        st.text_area("", value, height=80, disabled=True, key=f"ann_{field}")
+                    else:
+                        st.write(f"**{field}:** {value}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
+        
+        # Address fields (JSONB)
+        st.markdown("##### 🏠 Address Information (JSONB)")
+        for field in address_fields:
+            value = company_data.get(field)
+            if value is not None:
+                st.write(f"**{field}:**")
+                if isinstance(value, dict):
+                    for key, val in value.items():
+                        st.write(f"  • **{key}:** {val}")
+                else:
+                    st.write(f"  {value}")
+            else:
+                st.write(f"**{field}:** *Not available*")
+        
+        # Metadata (collapsible)
+        with st.expander("🔧 Technical Metadata", expanded=False):
+            for field in metadata_fields:
+                value = company_data.get(field)
+                if value is not None:
+                    if isinstance(value, list) and value:
+                        st.write(f"**{field}:**")
+                        for item in value:
+                            st.write(f"  • {item}")
+                    else:
+                        st.write(f"**{field}:** {value}")
+                else:
+                    st.write(f"**{field}:** *Not available*")
+    
+    with tab2:
+        st.markdown("#### 📋 Complete License Information")
+        
+        if licenses_data:
+            st.markdown(f"**Found {len(licenses_data)} licenses with all database fields:**")
+            
+            for i, license_data in enumerate(licenses_data, 1):
+                with st.expander(f"📄 License {i}: {license_data.get('license_type', 'Unknown Type')}", expanded=i == 1):
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Core License Information:**")
+                        core_fields = ['nmls_id', 'license_id', 'license_number', 'license_type', 'regulator']
+                        for field in core_fields:
+                            value = license_data.get(field)
+                            st.write(f"**{field}:** {value if value is not None else '*Not available*'}")
+                        
+                        st.markdown("**Status Information:**")
+                        status_fields = ['status', 'active', 'authorized_to_conduct_business']
+                        for field in status_fields:
+                            value = license_data.get(field)
+                            if field == 'active':
+                                display_value = "✅ Active" if value else "❌ Inactive" if value is False else "*Unknown*"
+                            elif field == 'authorized_to_conduct_business':
+                                display_value = "✅ Authorized" if value else "❌ Not Authorized" if value is False else "*Unknown*"
+                            else:
+                                display_value = value if value is not None else "*Not available*"
+                            st.write(f"**{field}:** {display_value}")
+                    
+                    with col2:
+                        st.markdown("**Important Dates:**")
+                        date_fields = ['original_issue_date', 'status_date', 'renewed_through']
+                        for field in date_fields:
+                            value = license_data.get(field)
+                            if value:
+                                st.write(f"**{field}:** {value}")
+                            else:
+                                st.write(f"**{field}:** *Not available*")
+                        
+                        st.markdown("**Additional Information:**")
+                        additional_fields = ['state_trade_names']
+                        for field in additional_fields:
+                            value = license_data.get(field)
+                            if value:
+                                st.write(f"**{field}:** {value}")
+                            else:
+                                st.write(f"**{field}:** *Not available*")
+                        
+                        # Resident Agent (JSONB)
+                        resident_agent = license_data.get('resident_agent')
+                        if resident_agent:
+                            st.markdown("**Resident Agent:**")
+                            if isinstance(resident_agent, dict):
+                                for key, val in resident_agent.items():
+                                    st.write(f"  • **{key}:** {val}")
+                            else:
+                                st.write(f"  {resident_agent}")
+                        else:
+                            st.write("**resident_agent:** *Not available*")
+                    
+                    # Metadata
+                    metadata_fields = ['created_at', 'updated_at']
+                    st.markdown("**Record Metadata:**")
+                    for field in metadata_fields:
+                        value = license_data.get(field)
+                        if value:
+                            st.write(f"**{field}:** {value}")
+        else:
+            st.info("No license data found for this company")
+    
+    with tab3:
+        st.markdown("#### 🏠 Complete Address Information")
+        
+        if addresses_data:
+            st.markdown(f"**Found {len(addresses_data)} addresses with all database fields:**")
+            
+            for i, address_data in enumerate(addresses_data, 1):
+                address_type = address_data.get('address_type', 'Unknown')
+                with st.expander(f"📍 Address {i}: {address_type.title()} Address", expanded=i == 1):
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Address Components:**")
+                        address_fields = ['address_type', 'full_address', 'city', 'state', 'zip_code']
+                        for field in address_fields:
+                            value = address_data.get(field)
+                            st.write(f"**{field}:** {value if value is not None else '*Not available*'}")
+                        
+                        # Street lines (array)
+                        street_lines = address_data.get('street_lines')
+                        if street_lines and isinstance(street_lines, list):
+                            st.write("**street_lines:**")
+                            for line in street_lines:
+                                st.write(f"  • {line}")
+                        else:
+                            st.write("**street_lines:** *Not available*")
+                    
+                    with col2:
+                        st.markdown("**Geographic Coordinates:**")
+                        geo_fields = ['latitude', 'longitude']
+                        for field in geo_fields:
+                            value = address_data.get(field)
+                            st.write(f"**{field}:** {value if value is not None else '*Not available*'}")
+                        
+                        st.markdown("**Record Metadata:**")
+                        st.write(f"**created_at:** {address_data.get('created_at', '*Not available*')}")
+        else:
+            st.info("No address data found for this company")
+    
+    with tab4:
+        st.markdown("#### 📈 Database Summary")
+        
+        # Count non-null fields
+        company_fields_with_data = sum(1 for v in company_data.values() if v is not None and v != '')
+        total_company_fields = len(company_data)
+        
+        licenses_total_fields = len(licenses_data) * 17 if licenses_data else 0  # 17 fields per license
+        licenses_fields_with_data = sum(
+            sum(1 for v in license.values() if v is not None and v != '') 
+            for license in licenses_data
+        )
+        
+        addresses_total_fields = len(addresses_data) * 11 if addresses_data else 0  # 11 fields per address
+        addresses_fields_with_data = sum(
+            sum(1 for v in address.values() if v is not None and v != '') 
+            for address in addresses_data
+        )
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "Company Data Completeness",
+                f"{company_fields_with_data}/{total_company_fields}",
+                f"{(company_fields_with_data/total_company_fields*100):.1f}%"
+            )
+            
+            st.markdown("**Company Data Quality:**")
+            key_fields = ['phone', 'email', 'website', 'business_structure']
+            for field in key_fields:
+                value = company_data.get(field)
+                status = "✅" if value else "❌"
+                st.write(f"{status} {field}")
+        
+        with col2:
+            if licenses_data:
+                st.metric(
+                    "License Data Completeness",
+                    f"{licenses_fields_with_data}/{licenses_total_fields}",
+                    f"{(licenses_fields_with_data/licenses_total_fields*100):.1f}%"
+                )
+                
+                active_licenses = sum(1 for l in licenses_data if l.get('active'))
+                authorized_licenses = sum(1 for l in licenses_data if l.get('authorized_to_conduct_business'))
+                
+                st.markdown("**License Summary:**")
+                st.write(f"📊 Total Licenses: {len(licenses_data)}")
+                st.write(f"✅ Active: {active_licenses}")
+                st.write(f"🏛️ Authorized: {authorized_licenses}")
+            else:
+                st.metric("License Data", "0/0", "No licenses")
         
         with col3:
-            st.metric("Address Records", metadata.get('total_addresses', 0))
-        
-        with col4:
-            has_annotations = metadata.get('has_annotations', False)
-            st.metric("Has Annotations", "✅ Yes" if has_annotations else "❌ No")
-        
-        # Data completeness assessment
-        st.markdown("#### Data Completeness Assessment")
-        
-        completeness_score = 0
-        total_fields = 0
-        
-        # Check company info completeness
-        key_company_fields = [
-            'company_name', 'phone', 'email', 'website', 'business_structure',
-            'formed_in', 'date_formed', 'trade_names'
-        ]
-        
-        for field in key_company_fields:
-            total_fields += 1
-            value = company_info.get(field)
-            if value and value != 'N/A' and value != []:
-                completeness_score += 1
-        
-        completeness_percentage = (completeness_score / total_fields) * 100 if total_fields > 0 else 0
-        
-        st.progress(completeness_percentage / 100)
-        st.write(f"**Data Completeness:** {completeness_percentage:.1f}% ({completeness_score}/{total_fields} key fields)")
-        
-        # Data quality indicators
-        st.markdown("#### Data Quality Indicators")
-        
-        quality_indicators = []
-        
-        if company_info.get('phone'):
-            quality_indicators.append("✅ Has phone number")
-        else:
-            quality_indicators.append("❌ Missing phone number")
-        
-        if company_info.get('email'):
-            quality_indicators.append("✅ Has email address")
-        else:
-            quality_indicators.append("❌ Missing email address")
-        
-        if company_info.get('website'):
-            quality_indicators.append("✅ Has website")
-        else:
-            quality_indicators.append("❌ Missing website")
-        
-        if licenses:
-            quality_indicators.append(f"✅ Has {len(licenses)} license records")
-        else:
-            quality_indicators.append("❌ No license records")
-        
-        if addresses:
-            quality_indicators.append(f"✅ Has {len(addresses)} address records")
-        else:
-            quality_indicators.append("❌ No address records")
-        
-        for indicator in quality_indicators:
-            st.write(indicator)
+            if addresses_data:
+                st.metric(
+                    "Address Data Completeness",
+                    f"{addresses_fields_with_data}/{addresses_total_fields}",
+                    f"{(addresses_fields_with_data/addresses_total_fields*100):.1f}%"
+                )
+                
+                st.markdown("**Address Summary:**")
+                st.write(f"📍 Total Addresses: {len(addresses_data)}")
+                address_types = set(a.get('address_type') for a in addresses_data if a.get('address_type'))
+                for addr_type in address_types:
+                    st.write(f"• {addr_type.title()}")
+            else:
+                st.metric("Address Data", "0/0", "No addresses")
 
 if __name__ == "__main__":
     main() 
