@@ -1024,20 +1024,32 @@ def main():
             )
             
             st.markdown("---")
-            if annotations_available:
-                st.subheader("📝 Company Annotations")
-            else:
-                st.subheader("📝 Company Annotations")
+            
+            # Enhanced header with better styling
+            st.markdown("""
+            <div style="background: linear-gradient(90deg, #1f4e79 0%, #2d5aa0 100%); padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+                <h2 style="color: white; margin: 0; display: flex; align-items: center;">
+                    📝 Company Annotations
+                </h2>
+                <p style="color: #e8f4fd; margin: 0.5rem 0 0 0; font-size: 0.9rem;">
+                    Review, classify, and annotate companies for your B2B sales workflow
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if not annotations_available:
                 st.info("🔧 **Annotation system will be available after database migration is complete.** Currently showing search results without annotation data.")
             
             if annotations_available:
-                # Select company to annotate
+                # Enhanced company selector with better styling
+                st.markdown("##### 🎯 Select Company to Annotate")
                 company_options = [(f"{c['company_name']} (NMLS: {c['nmls_id']})", c['nmls_id']) for c in companies]
                 selected_option = st.selectbox(
                     "Select a company to review/annotate:",
                     options=company_options,
                     format_func=lambda x: x[0],
-                    help="Choose a company to add your review, classification, and notes"
+                    help="Choose a company to add your review, classification, and notes",
+                    label_visibility="collapsed"
                 )
                 
                 selected_nmls_id = selected_option[1] if selected_option else None
@@ -1050,11 +1062,25 @@ def main():
                 selected_company = next((c for c in companies if c['nmls_id'] == selected_nmls_id), None)
                 
                 if selected_company:
-                    st.markdown(f"**Annotating:** {selected_company['company_name']}")
+                    # Enhanced company info display
+                    st.markdown(f"""
+                    <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid #2d5aa0; margin: 1rem 0;">
+                        <h4 style="margin: 0; color: #1f4e79;">
+                            🏢 Annotating: {selected_company['company_name']}
+                        </h4>
+                        <p style="margin: 0.5rem 0 0 0; color: #6c757d; font-size: 0.9rem;">
+                            NMLS ID: {selected_nmls_id}
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Enhanced form layout with better styling
+                    st.markdown("##### 📋 Annotation Details")
                     
                     col1, col2, col3 = st.columns([1, 2, 3])
                     
                     with col1:
+                        st.markdown("**Review Status**")
                         # Reviewed checkbox
                         current_reviewed = selected_company.get('is_reviewed', False)
                         is_reviewed = st.checkbox(
@@ -1065,6 +1091,7 @@ def main():
                         )
                     
                     with col2:
+                        st.markdown("**Classification**")
                         # Classification dropdown
                         classification_options = [
                             "",
@@ -1082,10 +1109,12 @@ def main():
                             options=classification_options,
                             index=classification_options.index(current_classification) if current_classification in classification_options else 0,
                             key=f"classification_{selected_nmls_id}",
-                            help="Classify this company for your sales process"
+                            help="Classify this company for your sales process",
+                            label_visibility="collapsed"
                         )
                     
                     with col3:
+                        st.markdown("**Notes**")
                         # Notes text area
                         current_notes = selected_company.get('notes', '')
                         notes = st.text_area(
@@ -1093,13 +1122,16 @@ def main():
                             value=current_notes,
                             key=f"notes_{selected_nmls_id}",
                             help="Add your notes about this company",
-                            height=100
+                            height=100,
+                            label_visibility="collapsed",
+                            placeholder="Add your notes about this company..."
                         )
                     
-                    # Save/Update button
+                    # Enhanced action buttons
+                    st.markdown("##### 🎬 Actions")
                     col_save1, col_save2, col_save3 = st.columns([1, 1, 2])
                     with col_save1:
-                        if st.button("💾 Save Annotations", key=f"save_{selected_nmls_id}"):
+                        if st.button("💾 Save Annotations", key=f"save_{selected_nmls_id}", type="primary", use_container_width=True):
                             # Save annotations directly to database
                             try:
                                 async def update_annotations_db():
@@ -1195,18 +1227,32 @@ def main():
                                     st.info("💡 **Tip:** Check your database connection settings.")
                     
                     with col_save2:
-                        if st.button("🔄 Refresh Data", key=f"refresh_{selected_nmls_id}"):
+                        if st.button("🔄 Refresh Data", key=f"refresh_{selected_nmls_id}", use_container_width=True):
                             st.rerun()
                     
-                    # Show current annotation status
+                    # Enhanced current annotation status display
                     if selected_company.get('is_reviewed') or selected_company.get('classification') or selected_company.get('notes'):
-                        st.markdown("**Current Annotations:**")
+                        st.markdown("---")
+                        st.markdown("##### 📊 Current Annotation Status")
+                        
+                        # Create a nice status card
+                        status_items = []
                         if selected_company.get('is_reviewed'):
-                            st.success("✅ Marked as reviewed")
+                            status_items.append("✅ **Reviewed**")
                         if selected_company.get('classification'):
-                            st.info(f"🏷️ Classification: {selected_company.get('classification')}")
+                            status_items.append(f"🏷️ **Classification:** {selected_company.get('classification')}")
+                        
+                        if status_items:
+                            status_text = " • ".join(status_items)
+                            st.markdown(f"""
+                            <div style="background: #d4edda; padding: 1rem; border-radius: 8px; border-left: 4px solid #28a745; margin: 0.5rem 0;">
+                                <p style="margin: 0; color: #155724;">{status_text}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
                         if selected_company.get('notes'):
-                            st.text_area("📝 Existing Notes:", selected_company.get('notes'), disabled=True, height=100)
+                            st.markdown("**📝 Current Notes:**")
+                            st.text_area("", selected_company.get('notes'), disabled=True, height=100, key=f"existing_notes_{selected_nmls_id}")
             
             # Complete Database Information Section
             st.markdown("---")
