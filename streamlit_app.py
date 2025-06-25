@@ -648,10 +648,7 @@ def main():
     import atexit
     atexit.register(cleanup_resources)
     
-    # DEPLOYMENT TEST - THIS SHOULD BE VISIBLE AT THE TOP
-    st.error("🚨 DEPLOYMENT TEST - If you see this, the app is updating! 🚨")
-    
-    st.markdown('<h1 class="main-header">NMLS Search - DEPLOYMENT TEST ACTIVE</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">NMLS Search</h1>', unsafe_allow_html=True)
     
     
     # Initialize session state for search query
@@ -707,7 +704,7 @@ def main():
     
     # EXCLUDE LOGIC SECTION - MOVED FOR VISIBILITY
     with st.expander("❌ Exclude Logic - Remove Unwanted Companies", expanded=True):
-        st.error("🔥 EXCLUDE LOGIC SECTION - THIS SHOULD BE VISIBLE! 🔥")
+
         
         # Quick Exclude Toggles - Make more compact
         exclude_mortgage = st.checkbox(
@@ -814,7 +811,7 @@ def main():
         if 'lender_type_filter' not in st.session_state.advanced_filters:
             st.session_state.advanced_filters['lender_type_filter'] = 'All Types'
         
-        # Add new exclude fields if they don't exist
+        # Add new exclude fields if they don't exist (comprehensive migration)
         exclude_fields = {
             'exclude_mortgage_licenses': False,
             'exclude_specific_licenses': [],
@@ -828,6 +825,10 @@ def main():
         for field, default_value in exclude_fields.items():
             if field not in st.session_state.advanced_filters:
                 st.session_state.advanced_filters[field] = default_value
+        
+        # Extra safety check - ensure the field exists before any UI elements try to access it
+        if 'exclude_mortgage_licenses' not in st.session_state.advanced_filters:
+            st.session_state.advanced_filters['exclude_mortgage_licenses'] = False
 
         # Primary Filters Section
         st.markdown("##### 🎯 Primary Filters")
