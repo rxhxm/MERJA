@@ -1254,7 +1254,7 @@ def main():
                 if complete_database_data:
                     display_complete_database_info(complete_database_data)
                 else:
-                    st.error("❌ Unable to load complete database information.")
+                    st.error("❌ Unable to load complete database information. Check error messages above for details.")
             
             # Show license details for selected companies
             st.markdown("---")
@@ -2942,6 +2942,7 @@ async def get_complete_company_database_info(nmls_id: str) -> Dict[str, Any]:
     """Get ALL database information for a company from all tables and columns"""
     pool = await get_or_create_pool()
     if not pool:
+        st.error("❌ Database connection pool not available")
         return {}
 
     try:
@@ -2952,6 +2953,7 @@ async def get_complete_company_database_info(nmls_id: str) -> Dict[str, Any]:
             """, nmls_id)
             
             if not company_data:
+                st.error(f"❌ No company found with NMLS ID: {nmls_id}")
                 return {}
             
             company_id = company_data['id']
@@ -2973,9 +2975,13 @@ async def get_complete_company_database_info(nmls_id: str) -> Dict[str, Any]:
                 'addresses': [dict(row) for row in addresses_data]
             }
             
+            # Debug info
+            st.success(f"✅ Loaded complete data: {len(complete_data['company'])} company fields, {len(complete_data['licenses'])} licenses, {len(complete_data['addresses'])} addresses")
+            
             return complete_data
             
     except Exception as e:
+        st.error(f"❌ Database error: {str(e)}")
         logger.error(f"Error fetching complete database info for {nmls_id}: {e}")
         return {}
 
